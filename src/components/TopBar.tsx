@@ -162,6 +162,15 @@ export function TopBar() {
               style={tryCompile(song.harmony, ['bar', 'k', 'L']).error ? { borderBottomColor: 'var(--accent)' } : undefined}
               title="The chord (scale degree) as a function of bar. Tracks read it as h."
             />
+            <button
+              className={`lock ${song.harmonyLocked ? 'on' : ''}`}
+              style={{ margin: 0, opacity: song.harmonyLocked ? 1 : 0.55 }}
+              title={song.harmonyLocked ? 'Harmony locked — garden mutations keep it' : 'Lock the harmony against garden mutations'}
+              aria-pressed={!!song.harmonyLocked}
+              onClick={() => setSong({ harmonyLocked: !song.harmonyLocked })}
+            >
+              <Icon name={song.harmonyLocked ? 'lock' : 'unlock'} size={12} />
+            </button>
             <select className="select" value="" onChange={(e) => e.target.value && setSong({ harmony: e.target.value })} title="Chord progressions" aria-label="Chord progressions">
               <option value="" disabled>
                 Progressions

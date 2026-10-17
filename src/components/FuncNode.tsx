@@ -130,6 +130,7 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
   const ctx = useContext(GraphContext);
   const updateNodeData = useStore((s) => s.updateNodeData);
   const checkpoint = useStore((s) => s.checkpoint);
+  const setLocked = useStore((s) => s.setLocked);
   const def = NODE_DEFS[type];
   if (!def || !ctx) return null;
   const d = data as NodeData;
@@ -141,7 +142,7 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
   for (const v of trace) (lo = Math.min(lo, v)), (hi = Math.max(hi, v));
 
   return (
-    <div className={`fnode ${error ? 'err' : ''}`} title={def.hint}>
+    <div className={`fnode ${error ? 'err' : ''} ${d.locked ? 'locked' : ''}`} title={def.hint}>
       <div className="fnode-head">
         <span className="dot" style={{ background: color }} />
         <b>{def.label}</b>
@@ -149,10 +150,12 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
         {def.params.length > 0 && (
           <button
             className={`lock nodrag ${d.locked ? 'on' : ''}`}
-            title={d.locked ? 'Locked — the randomizer leaves this node alone' : 'Lock against the randomizer'}
-            onClick={() => updateNodeData(ctx.trackId, id, { locked: !d.locked })}
+            title={d.locked ? 'Locked — Mutate leaves this node alone. Click (or L) to unlock' : 'Lock against Mutate (L)'}
+            aria-pressed={!!d.locked}
+            onClick={() => setLocked(ctx.trackId, [id], !d.locked)}
           >
-            <Icon name={d.locked ? 'lock' : 'unlock'} size={11} />
+            <Icon name={d.locked ? 'lock' : 'unlock'} size={12} />
+            {d.locked && <span className="serif">固</span>}
           </button>
         )}
       </div>

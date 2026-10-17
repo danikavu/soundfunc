@@ -99,6 +99,8 @@ export interface Song {
   exportLoops: number;
   /** chord progression: the chord's scale degree as a function of `bar` (and `k`) */
   harmony: string;
+  /** keep the progression when mutating the whole garden */
+  harmonyLocked?: boolean;
 }
 
 export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0' };

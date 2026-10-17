@@ -236,6 +236,11 @@ describe('randomizer', () => {
     for (let i = 0; i < 100; i++) {
       const f = mutateFormula('x - 3', 0.9, rng, ['x']);
       expect(() => compile(f, ['x'])).not.toThrow();
+      // unary minus is rewritten together with its number, never as -(-2)
+      let g = 'pick(n, -2, 0, -4)';
+      for (let j = 0; j < 5; j++) g = mutateFormula(g, 0.9, rng, ['n']);
+      expect(g).not.toContain('(-(');
+      expect(g).not.toContain('--');
     }
   });
   it('is deterministic per seed and actually changes something', () => {

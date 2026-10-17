@@ -99,7 +99,7 @@ export function runMutate(scope: 'track' | 'garden') {
   const mood = chaos < 0.35 ? 'harmonious' : chaos < 0.7 ? 'adventurous' : 'experimental';
   toast(
     r.tracks
-      ? `${scope === 'garden' ? `Mutated ${r.tracks} tracks and the harmony` : 'Mutated'} · ${mood} · best of ${r.tried} candidates — ⌘Z to undo`
+      ? `${scope === 'garden' ? `Mutated ${r.tracks} tracks${useStore.getState().project.song.harmonyLocked ? '' : ' and the harmony'}` : 'Mutated'} · ${mood} · best of ${r.tried} candidates — ⌘Z to undo`
       : 'Nothing to mutate — every node is locked',
   );
 }
@@ -130,6 +130,49 @@ function Mutator() {
   );
 }
 
+/** Lock the selected nodes (or unlock them if they are all locked already). */
+export function toggleLockSelected(): boolean {
+  const { project, selectedTrackId, setLocked } = useStore.getState();
+  const track = project.tracks.find((t) => t.id === selectedTrackId) ?? project.tracks[0];
+  const sel = track?.graph.nodes.filter((n) => (n as { selected?: boolean }).selected && NODE_DEFS[n.type]?.params.length);
+  if (!track || !sel?.length) return false;
+  const lock = !sel.every((n) => n.data.locked);
+  setLocked(track.id, sel.map((n) => n.id), lock);
+  toast(`${lock ? 'Locked' : 'Unlocked'} ${sel.length} node${sel.length > 1 ? 's' : ''}`);
+  return true;
+}
+
+function LockStatus() {
+  const track = useSelectedTrack();
+  const setLocked = useStore((s) => s.setLocked);
+  if (!track) return null;
+  const lockable = track.graph.nodes.filter((n) => NODE_DEFS[n.type]?.params.length);
+  const locked = lockable.filter((n) => n.data.locked).length;
+  const selected = lockable.filter((n) => (n as { selected?: boolean }).selected);
+  return (
+    <div className="lock-status">
+      {selected.length > 0 && (
+        <button className="btn small ghost" onClick={toggleLockSelected} title="Lock / unlock the selected nodes (L)">
+          <Icon name={selected.every((n) => n.data.locked) ? 'unlock' : 'lock'} size={12} />
+          {selected.every((n) => n.data.locked) ? 'Unlock' : 'Lock'} {selected.length} selected
+        </button>
+      )}
+      {locked > 0 ? (
+        <>
+          <span>
+            <b>{locked}</b> of {lockable.length} locked
+          </span>
+          <button className="btn small ghost" onClick={() => setLocked(track.id, 'all', false)}>
+            Unlock all
+          </button>
+        </>
+      ) : (
+        selected.length === 0 && <span>click a node’s lock (or select + L) to protect it</span>
+      )}
+    </div>
+  );
+}
+
 export function NodeEditor() {
   const track = useSelectedTrack();
   const song = useStore((s) => s.project.song);
@@ -155,23 +198,39 @@ export function NodeEditor() {
     [track, setGraph],
   );
 
+  /**
+   * Always start from the store's current graph: React Flow can fire a selection
+   * change in the same click as an edit inside a node (e.g. the lock button), and
+   * the props captured at render time would overwrite that edit.
+   */
+  const live = useCallback(() => {
+    const t = useStore.getState().project.tracks.find((x) => x.id === track?.id);
+    return { nodes: (t?.graph.nodes ?? []) as Node[], edges: (t?.graph.edges ?? []) as Edge[] };
+  }, [track?.id]);
+
   const onNodesChange = useCallback(
-    (changes: NodeChange[]) => save(applyNodeChanges(changes, nodes), edges, changes.some((c) => c.type === 'remove')),
-    [nodes, edges, save],
+    (changes: NodeChange[]) => {
+      const g = live();
+      save(applyNodeChanges(changes, g.nodes), g.edges, changes.some((c) => c.type === 'remove'));
+    },
+    [live, save],
   );
   const onEdgesChange = useCallback(
-    (changes: EdgeChange[]) => save(nodes, applyEdgeChanges(changes, edges), changes.some((c) => c.type === 'remove')),
-    [nodes, edges, save],
+    (changes: EdgeChange[]) => {
+      const g = live();
+      save(g.nodes, applyEdgeChanges(changes, g.edges), changes.some((c) => c.type === 'remove'));
+    },
+    [live, save],
   );
 
   const connect = useCallback(
-    (c: Connection, baseNodes = nodes, baseEdges = edges) => {
+    (c: Connection, baseNodes = live().nodes, baseEdges = live().edges) => {
       // one wire per input: a new connection replaces the old one
       const kept = baseEdges.filter((e) => !(e.target === c.target && e.targetHandle === c.targetHandle));
       const edge: Edge = { id: `${c.source}.${c.sourceHandle}-${c.target}.${c.targetHandle}`, ...c };
       save(baseNodes, [...kept, edge], true);
     },
-    [nodes, edges, save],
+    [live, save],
   );
 
   const openPalette = (clientX: number, clientY: number, from?: PaletteState['from']) => {
@@ -196,14 +255,14 @@ export function NodeEditor() {
     // when wiring backwards into an input, place the new node to the left of the drop point
     const position = from?.type === 'target' ? { x: palette.flow.x - 220, y: palette.flow.y } : palette.flow;
     const node: GNode = { id: uid(type), type, position, data: { ...def.defaults } };
-    const nextNodes = [...(nodes as GNode[]).map((n) => ({ ...n, selected: false })), { ...node, selected: true }] as Node[];
+    const nextNodes = [...(live().nodes as GNode[]).map((n) => ({ ...n, selected: false })), { ...node, selected: true }] as Node[];
     setPalette(null);
     if (from?.type === 'source' && def.inputs[0]) {
       connect({ source: from.node, sourceHandle: from.handle, target: node.id, targetHandle: def.inputs[0].id }, nextNodes);
     } else if (from?.type === 'target' && def.outputs[0]) {
       connect({ source: node.id, sourceHandle: def.outputs[0].id, target: from.node, targetHandle: from.handle }, nextNodes);
     } else {
-      save(nextNodes, edges, true);
+      save(nextNodes, live().edges, true);
     }
   };
 
@@ -234,6 +293,7 @@ export function NodeEditor() {
           <Icon name="plus" size={14} /> Add node
         </button>
         <Mutator />
+        <LockStatus />
       </div>
       <div className="nodes-canvas">
         <GraphContext.Provider value={{ trackId: track.id, traces: render.traces, errors: render.errors }}>

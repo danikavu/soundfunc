@@ -200,10 +200,18 @@ export function mutateFormula(src: string, chaos: number, rng: Rng, vars: readon
         edits.push({ p: t.p, n: t.n, text: '0b' + mutateMask(t.v, chaos, rng).toString(2).padStart(t.n - 2, '0') });
       } else {
         const prevTok = toks[i - 1];
-        const signed = prevTok?.t === 'op' && prevTok.v === '-' ? -t.v : t.v;
+        const before = toks[i - 2];
+        const minus = prevTok?.t === 'op' && prevTok.v === '-';
+        // a unary minus belongs to the number: "pick(n, -2" → rewrite "-2" as one value
+        const unary = minus && (!before || (before.t === 'op' && before.v !== ')'));
+        const signed = minus ? -t.v : t.v;
         const nvSigned = mutateByRole(signed, roles[i], chaos, rng);
-        const nv = signed === t.v ? nvSigned : -nvSigned;
-        // after a minus sign the literal keeps its own sign in parentheses: x - (-1)
+        if (unary) {
+          edits.push({ p: prevTok.p, n: t.p + t.n - prevTok.p, text: String(nvSigned) });
+          return;
+        }
+        // after a binary minus the literal keeps its own sign in parentheses: x - (-1)
+        const nv = minus ? -nvSigned : nvSigned;
         const text = nv < 0 ? `(${nv})` : String(nv);
         edits.push({ p: t.p, n: t.n, text });
       }

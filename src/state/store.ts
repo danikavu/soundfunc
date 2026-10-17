@@ -28,6 +28,8 @@ interface State {
   removeTrack: (id: string) => void;
   setGraph: (trackId: string, nodes: GNode[], edges: GEdge[], record?: boolean) => void;
   updateNodeData: (trackId: string, nodeId: string, patch: NodeData) => void;
+  /** lock / unlock nodes against the randomizer (one undo step) */
+  setLocked: (trackId: string, nodeIds: string[] | 'all', locked: boolean) => void;
   loadProject: (p: Project) => void;
   resetProject: () => void;
   toggleTheme: () => void;
@@ -104,6 +106,16 @@ export const useStore = create<State>()(
         },
         setGraph: (trackId, nodes, edges, record = false) =>
           commit(mapTrack(trackId, (t) => ({ ...t, graph: { nodes, edges } })), record),
+        setLocked: (trackId, nodeIds, locked) =>
+          commit(
+            mapTrack(trackId, (t) => ({
+              ...t,
+              graph: {
+                ...t.graph,
+                nodes: t.graph.nodes.map((n) => (nodeIds === 'all' || nodeIds.includes(n.id) ? { ...n, data: { ...n.data, locked } } : n)),
+              },
+            })),
+          ),
         updateNodeData: (trackId, nodeId, patch) =>
           commit(
             mapTrack(trackId, (t) => ({
@@ -128,7 +140,7 @@ export const useStore = create<State>()(
           const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
           const targetId = selectedTrackId ?? project.tracks[0]?.id;
           let song = project.song;
-          if (scope === 'garden' && chaos > 0.15) song = { ...song, harmony: mutateHarmony(song.harmony, chaos, seed) };
+          if (scope === 'garden' && chaos > 0.15 && !song.harmonyLocked) song = { ...song, harmony: mutateHarmony(song.harmony, chaos, seed) };
           let tried = 0, changed = 0;
           const tracks = project.tracks.map((t, i) => {
             if (scope === 'track' && t.id !== targetId) return t;
