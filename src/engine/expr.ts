@@ -117,6 +117,9 @@ function noise(x: number, seed = 0): number {
   return hash(i, seed) * (1 - u) + hash(i + 1, seed) * u;
 }
 
+export const PI_DIGITS =
+  '31415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679';
+
 const fract = (x: number) => x - Math.floor(x);
 const mod = (a: number, b: number) => (b === 0 ? 0 : ((a % b) + b) % b);
 
@@ -174,6 +177,15 @@ export const FUNCTIONS: Record<string, { fn: (...a: number[]) => number; doc: st
     doc: 'digits(x, n) nth digit',
   },
   recaman: { fn: recaman, doc: 'Recamán sequence' },
+  pidigit: { fn: (n) => Number(PI_DIGITS[mod(Math.floor(n), PI_DIGITS.length)]), doc: 'nth digit of π (0 → 3)' },
+  thue: {
+    fn: (n) => {
+      let c = 0;
+      for (let v = Math.abs(Math.floor(n)); v; v >>>= 1) c += v & 1;
+      return c % 2;
+    },
+    doc: 'Thue–Morse sequence 0/1',
+  },
   lorenz: { fn: lorenz, doc: 'Lorenz attractor x, ≈ −1..1' },
   euclid: { fn: (n, k, s, r = 0) => euclid(n, k, s, r), doc: 'euclid(n, pulses, steps, rot) → 0/1' },
   bits: {
@@ -277,14 +289,21 @@ export function tokenize(src: string): Tok[] {
   return out;
 }
 
-// ---------- parser → closures ----------
+// ---------- parser → syntax tree ----------
 
-export interface CompileResult {
-  fn: Compiled;
-  variables: string[];
-}
+export type BinOp = '+' | '-' | '*' | '/' | '%' | '^' | '<' | '>' | '<=' | '>=' | '==' | '!=' | '&&' | '||';
 
-export function compile(src: string, allowedVars?: readonly string[]): CompileResult {
+export type Ast =
+  | { k: 'num'; v: number; raw?: string }
+  | { k: 'var'; name: string }
+  | { k: 'const'; name: string }
+  | { k: 'neg'; a: Ast }
+  | { k: 'not'; a: Ast }
+  | { k: 'bin'; op: BinOp; a: Ast; b: Ast }
+  | { k: 'cond'; c: Ast; a: Ast; b: Ast }
+  | { k: 'call'; fn: string; args: Ast[] };
+
+export function parse(src: string, allowedVars?: readonly string[]): { ast: Ast; variables: string[] } {
   const toks = tokenize(src);
   let k = 0;
   const vars = new Set<string>();
@@ -297,88 +316,75 @@ export function compile(src: string, allowedVars?: readonly string[]): CompileRe
     if (!isOp(v)) throw new ExprError(`Expected '${v}'`, toks[k].p);
     k++;
   };
+  const bin = (op: BinOp, a: Ast, b: Ast): Ast => ({ k: 'bin', op, a, b });
 
-  function expr(): Compiled {
+  function expr(): Ast {
     const c = or();
     if (isOp('?')) {
       k++;
       const a = expr();
       expect(':');
       const b = expr();
-      return (s) => (c(s) ? a(s) : b(s));
+      return { k: 'cond', c, a, b };
     }
     return c;
   }
-  function or(): Compiled {
+  function or(): Ast {
     let l = and();
     while (isOp('||')) {
       k++;
-      const a = l, b = and();
-      l = (s) => (a(s) || b(s) ? 1 : 0);
+      l = bin('||', l, and());
     }
     return l;
   }
-  function and(): Compiled {
+  function and(): Ast {
     let l = cmp();
     while (isOp('&&')) {
       k++;
-      const a = l, b = cmp();
-      l = (s) => (a(s) && b(s) ? 1 : 0);
+      l = bin('&&', l, cmp());
     }
     return l;
   }
-  function cmp(): Compiled {
+  function cmp(): Ast {
     let l = add();
     for (;;) {
       const t = peek();
       if (t.t !== 'op' || !['<', '>', '<=', '>=', '==', '!='].includes(t.v)) return l;
       k++;
-      const a = l, b = add();
-      switch (t.v) {
-        case '<': l = (s) => +(a(s) < b(s)); break;
-        case '>': l = (s) => +(a(s) > b(s)); break;
-        case '<=': l = (s) => +(a(s) <= b(s)); break;
-        case '>=': l = (s) => +(a(s) >= b(s)); break;
-        case '==': l = (s) => +(a(s) === b(s)); break;
-        default: l = (s) => +(a(s) !== b(s));
-      }
+      l = bin(t.v as BinOp, l, add());
     }
   }
-  function add(): Compiled {
+  function add(): Ast {
     let l = mul();
     while (isOp('+') || isOp('-')) {
-      const op = (toks[k++] as { v: string }).v;
-      const a = l, b = mul();
-      l = op === '+' ? (s) => a(s) + b(s) : (s) => a(s) - b(s);
+      const op = (toks[k++] as { v: string }).v as BinOp;
+      l = bin(op, l, mul());
     }
     return l;
   }
-  function mul(): Compiled {
+  function mul(): Ast {
     let l = unary();
     for (;;) {
       if (isOp('*') || isOp('/') || isOp('%')) {
-        const op = (toks[k++] as { v: string }).v;
-        const a = l, b = unary();
-        l = op === '*' ? (s) => a(s) * b(s) : op === '/' ? (s) => a(s) / b(s) : (s) => mod(a(s), b(s));
+        const op = (toks[k++] as { v: string }).v as BinOp;
+        l = bin(op, l, unary());
         continue;
       }
-      // implicit multiplication: "2x", "2(x)", "(a)(b)", "x y" is not allowed
+      // implicit multiplication: "2x", "2(x)", "(a)(b)"; "x y" is not allowed
       const t = peek();
       const prev = toks[k - 1];
       const prevEndsValue = prev && (prev.t === 'num' || (prev.t === 'op' && prev.v === ')'));
       if (prevEndsValue && (t.t === 'id' || (t.t === 'op' && t.v === '('))) {
-        const a = l, b = unary();
-        l = (s) => a(s) * b(s);
+        l = bin('*', l, unary());
         continue;
       }
       return l;
     }
   }
-  function unary(): Compiled {
+  function unary(): Ast {
     if (isOp('-')) {
       k++;
-      const a = unary();
-      return (s) => -a(s);
+      return { k: 'neg', a: unary() };
     }
     if (isOp('+')) {
       k++;
@@ -386,26 +392,24 @@ export function compile(src: string, allowedVars?: readonly string[]): CompileRe
     }
     if (isOp('!')) {
       k++;
-      const a = unary();
-      return (s) => +!a(s);
+      return { k: 'not', a: unary() };
     }
     return power();
   }
-  function power(): Compiled {
+  function power(): Ast {
     const base = atom();
     if (isOp('^')) {
       k++;
-      const ex = unary();
-      return (s) => Math.pow(base(s), ex(s));
+      return bin('^', base, unary());
     }
     return base;
   }
-  function atom(): Compiled {
+  function atom(): Ast {
     const t = peek();
     if (t.t === 'num') {
       k++;
-      const v = t.v;
-      return () => v;
+      const raw = src.slice(t.p, t.p + t.n);
+      return /^0[xXbB]/.test(raw) ? { k: 'num', v: t.v, raw } : { k: 'num', v: t.v };
     }
     if (t.t === 'op' && t.v === '(') {
       k++;
@@ -418,9 +422,8 @@ export function compile(src: string, allowedVars?: readonly string[]): CompileRe
       const name = t.v;
       if (isOp('(')) {
         k++;
-        const f = FUNCTIONS[name];
-        if (!f) throw new ExprError(`Unknown function '${name}'`, t.p);
-        const args: Compiled[] = [];
+        if (!FUNCTIONS[name]) throw new ExprError(`Unknown function '${name}'`, t.p);
+        const args: Ast[] = [];
         if (!isOp(')')) {
           args.push(expr());
           while (isOp(',')) {
@@ -429,33 +432,94 @@ export function compile(src: string, allowedVars?: readonly string[]): CompileRe
           }
         }
         expect(')');
-        const fn = f.fn;
-        switch (args.length) {
-          case 0: return () => fn();
-          case 1: { const [a] = args; return (s) => fn(a(s)); }
-          case 2: { const [a, b] = args; return (s) => fn(a(s), b(s)); }
-          case 3: { const [a, b, c] = args; return (s) => fn(a(s), b(s), c(s)); }
-          default: return (s) => fn(...args.map((a) => a(s)));
-        }
+        return { k: 'call', fn: name, args };
       }
-      if (name in CONSTANTS) {
-        const v = CONSTANTS[name];
-        return () => v;
-      }
-      if (allowedVars && !allowedVars.includes(name)) {
-        throw new ExprError(`Unknown variable '${name}'`, t.p);
-      }
+      if (name in CONSTANTS) return { k: 'const', name };
+      if (allowedVars && !allowedVars.includes(name)) throw new ExprError(`Unknown variable '${name}'`, t.p);
       vars.add(name);
-      return (s) => s[name] ?? 0;
+      return { k: 'var', name };
     }
     if (t.t === 'eof') throw new ExprError('Unexpected end of formula', t.p);
     throw new ExprError(`Unexpected '${t.v}'`, t.p);
   }
 
   if (toks.length === 1) throw new ExprError('Empty formula', 0);
-  const fn = expr();
+  const ast = expr();
   if (peek().t !== 'eof') throw new ExprError(`Unexpected '${(peek() as { v: string }).v}'`, peek().p);
-  return { fn, variables: [...vars] };
+  return { ast, variables: [...vars] };
+}
+
+// ---------- syntax tree → closures ----------
+
+export function compileAst(ast: Ast): Compiled {
+  switch (ast.k) {
+    case 'num': {
+      const v = ast.v;
+      return () => v;
+    }
+    case 'const': {
+      const v = CONSTANTS[ast.name];
+      return () => v;
+    }
+    case 'var': {
+      const name = ast.name;
+      return (s) => s[name] ?? 0;
+    }
+    case 'neg': {
+      const a = compileAst(ast.a);
+      return (s) => -a(s);
+    }
+    case 'not': {
+      const a = compileAst(ast.a);
+      return (s) => +!a(s);
+    }
+    case 'cond': {
+      const c = compileAst(ast.c), a = compileAst(ast.a), b = compileAst(ast.b);
+      return (s) => (c(s) ? a(s) : b(s));
+    }
+    case 'bin': {
+      const a = compileAst(ast.a), b = compileAst(ast.b);
+      switch (ast.op) {
+        case '+': return (s) => a(s) + b(s);
+        case '-': return (s) => a(s) - b(s);
+        case '*': return (s) => a(s) * b(s);
+        case '/': return (s) => a(s) / b(s);
+        case '%': return (s) => mod(a(s), b(s));
+        case '^': return (s) => Math.pow(a(s), b(s));
+        case '<': return (s) => +(a(s) < b(s));
+        case '>': return (s) => +(a(s) > b(s));
+        case '<=': return (s) => +(a(s) <= b(s));
+        case '>=': return (s) => +(a(s) >= b(s));
+        case '==': return (s) => +(a(s) === b(s));
+        case '!=': return (s) => +(a(s) !== b(s));
+        case '&&': return (s) => (a(s) && b(s) ? 1 : 0);
+        case '||': return (s) => (a(s) || b(s) ? 1 : 0);
+      }
+      break;
+    }
+    case 'call': {
+      const fn = FUNCTIONS[ast.fn].fn;
+      const args = ast.args.map(compileAst);
+      switch (args.length) {
+        case 0: return () => fn();
+        case 1: { const [a] = args; return (s) => fn(a(s)); }
+        case 2: { const [a, b] = args; return (s) => fn(a(s), b(s)); }
+        case 3: { const [a, b, c] = args; return (s) => fn(a(s), b(s), c(s)); }
+        default: return (s) => fn(...args.map((a) => a(s)));
+      }
+    }
+  }
+  throw new Error('unreachable');
+}
+
+export interface CompileResult {
+  fn: Compiled;
+  variables: string[];
+}
+
+export function compile(src: string, allowedVars?: readonly string[]): CompileResult {
+  const { ast, variables } = parse(src, allowedVars);
+  return { fn: compileAst(ast), variables };
 }
 
 export function tryCompile(src: string, allowedVars?: readonly string[]): { fn: Compiled | null; error: string | null } {

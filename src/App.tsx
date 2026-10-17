@@ -8,6 +8,7 @@ import { Sidebar } from './components/Sidebar';
 import { Visualizer } from './components/Visualizer';
 import { NodeEditor, runMutate, toggleLockSelected } from './components/NodeEditor';
 import { Inspector } from './components/Inspector';
+import { FunctionSheet } from './components/FunctionSheet';
 
 const isTyping = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
@@ -28,7 +29,10 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
-      if (e.key.toLowerCase() === 'l' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        useStore.getState().setShowFunction(!useStore.getState().showFunction);
+      } else if (e.key.toLowerCase() === 'l' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         if (toggleLockSelected()) e.preventDefault();
       } else if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
@@ -59,6 +63,7 @@ export function App() {
         </div>
         <Inspector />
       </div>
+      <FunctionSheet />
     </div>
   );
 }

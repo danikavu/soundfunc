@@ -12,6 +12,9 @@ interface State {
   selectedTrackId: string | null;
   theme: 'light' | 'dark';
   playing: boolean;
+  /** the "function in full" sheet */
+  showFunction: boolean;
+  setShowFunction: (open: boolean) => void;
   /** randomizer dial: 0 harmonious → 1 experimental */
   chaos: number;
   past: Project[];
@@ -62,6 +65,8 @@ export const useStore = create<State>()(
         theme: 'light',
         playing: false,
         chaos: 0.3,
+        showFunction: false,
+        setShowFunction: (showFunction) => set({ showFunction }),
         past: [],
         future: [],
 

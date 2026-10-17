@@ -292,6 +292,9 @@ export function NodeEditor() {
         >
           <Icon name="plus" size={14} /> Add node
         </button>
+        <button className="btn" onClick={() => useStore.getState().setShowFunction(true)} title="See the whole track as one function — math, SoundFunc, JavaScript, Python (F)">
+          <span className="serif" style={{ fontSize: 14, lineHeight: 1 }}>∑</span> Function
+        </button>
         <Mutator />
         <LockStatus />
       </div>
@@ -319,7 +322,7 @@ export function NodeEditor() {
             <Controls showInteractive={false} position="bottom-right" />
           </ReactFlow>
         </GraphContext.Provider>
-        <span className="muted nodes-hint">double-click canvas · drag a wire into space · ⌫ deletes · R mutates</span>
+        <span className="muted nodes-hint">double-click canvas · drag a wire into space · ⌫ deletes · R mutates · F shows the function</span>
       </div>
       {!render.hasOutput && (
         <div className="viz-tip" style={{ left: '50%', top: 70, transform: 'translateX(-50%)', color: 'var(--accent)' }}>

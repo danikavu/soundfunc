@@ -1,10 +1,15 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { compile } from './expr';
+import { compile, compileAst, parse } from './expr';
+import { compose, toSource, toTex, trackCode } from './symbolic';
 import { compileGraph, euclid } from './graph';
 import { exportMidi, collectNotes } from './midi';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
 import { KITS, PRESETS, defaultProject, trackFromPreset, trackFromTemplate } from './presets';
-import { harmonyAt, normalizeProject, renderTrack, type Project, type Track } from './project';
+import { harmonyAt, normalizeProject, renderTrack, scaleLength, type Project, type Track } from './project';
 import { chordName, chordTones } from './music';
 import { mulberry32, mutateFormula, mutateTrack, musicalScore } from './mutate';
 import { parsePattern } from './graph';
@@ -273,5 +278,86 @@ describe('randomizer', () => {
     // scoring is finite for a real candidate
     const r = renderTrack(t, song);
     expect(Number.isFinite(musicalScore(renderTrack(mutateTrack(t, song, 0.2, 3).track, song), r, t, song, 0.2))).toBe(true);
+  });
+});
+
+describe('symbolic: the written-out function equals the graph', () => {
+  const all = () => {
+    const out: { label: string; track: Track; song: Project['song'] }[] = [];
+    const base = defaultProject().song;
+    const song = { ...base, harmony: 'pick(bar, 0, 4, 5, 3)' };
+    PRESETS.forEach((p, i) => out.push({ label: p.id, track: trackFromPreset(p, i), song }));
+    for (const kit of KITS) kit.tracks.forEach((t, i) => out.push({ label: `${kit.id}/${t.name}`, track: trackFromTemplate(t, t.name, i), song: { ...base, ...kit.song } }));
+    return out;
+  };
+  const scopeFor = (track: Track, song: Project['song'], n: number, k: number) => {
+    const t = n * track.stepBeats;
+    const beat = k * track.steps * track.stepBeats + t;
+    return { n, x: n / track.steps, t, k, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / 4 + 1e-9), L: scaleLength(song) } as Record<string, number>;
+  };
+
+  it('symbolic expressions reproduce every preset and kit track', () => {
+    for (const { label, track, song } of all()) {
+      const c = compose(track);
+      for (const k of [0, 1]) {
+        const r = renderTrack(track, song, k, false);
+        for (let n = 0; n < track.steps; n++) {
+          const scope = scopeFor(track, song, n, k);
+          for (const b of c.math.bindings) scope[b.name] = compileAst(b.ast)(scope);
+          const val = (port: string) => compileAst(c.math.outputs.find((o) => o.port === port)!.ast)(scope);
+          expect(val('pitch'), `${label} pitch n=${n} k=${k}`).toBeCloseTo(r.pitchCurve[n], 9);
+          expect(Math.min(1, Math.max(0, val('velocity'))), `${label} vel n=${n} k=${k}`).toBeCloseTo(r.velocityCurve[n], 9);
+        }
+      }
+    }
+  });
+
+  it('generated JavaScript runs and matches the engine', () => {
+    for (const { label, track, song } of all()) {
+      const c = compose(track);
+      const code = trackCode([c], song, 'js').replace(/^export /gm, '');
+      const fnName = code.match(/function (\w+)\(n, k = 0\)/)![1];
+      const fn = new Function(`${code}\nreturn ${fnName};`)() as (n: number, k: number) => Record<string, number>;
+      const r = renderTrack(track, song, 1, false);
+      for (let n = 0; n < track.steps; n++) {
+        const o = fn(n, 1);
+        expect(o.pitch, `${label} js pitch n=${n}`).toBeCloseTo(r.pitchCurve[n], 9);
+        expect(Math.min(1, Math.max(0, o.velocity)), `${label} js vel n=${n}`).toBeCloseTo(r.velocityCurve[n], 9);
+      }
+    }
+  });
+
+  it('generated Python runs and matches the engine', () => {
+    let python = '';
+    try {
+      python = execFileSync('python3', ['--version']).toString();
+    } catch {
+      return; // no python on this machine
+    }
+    expect(python).toMatch(/Python 3/);
+    const dir = mkdtempSync(join(tmpdir(), 'soundfunc-py-'));
+    for (const { label, track, song } of all()) {
+      const c = compose(track);
+      const code = trackCode([c], song, 'py');
+      const fnName = code.match(/def (\w+)\(n, k=0\)/)![1];
+      const file = join(dir, 'track.py');
+      writeFileSync(file, `${code}\nimport json\nprint(json.dumps([${fnName}(n, 1) for n in range(${track.steps})]))\n`);
+      const rows = JSON.parse(execFileSync('python3', ['-I', file]).toString().trim().split('\n').pop()!) as Record<string, number>[];
+      const r = renderTrack(track, song, 1, false);
+      rows.forEach((o, n) => {
+        expect(o.pitch, `${label} py pitch n=${n}`).toBeCloseTo(r.pitchCurve[n], 9);
+        expect(Math.min(1, Math.max(0, o.velocity)), `${label} py vel n=${n}`).toBeCloseTo(r.velocityCurve[n], 9);
+      });
+    }
+  });
+
+  it('prints readable formulas and LaTeX', () => {
+    const pond = compose(trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0));
+    expect(toSource(pond.math.outputs[0].ast)).toBe('4 * sine(x)');
+    expect(toTex(pond.math.outputs[0].ast)).toBe('4\\,\\operatorname{sine}\\left(x\\right)');
+    // a formula printed as source parses back to the same value
+    const ast = parse('-(2 + x)^2 % 3 - pick(n, -1, 2) * (x > 0.5 ? 1 : -1)').ast;
+    const again = parse(toSource(ast)).ast;
+    for (const x of [0, 0.3, 0.7]) expect(compileAst(again)({ x, n: 3 })).toBeCloseTo(compileAst(ast)({ x, n: 3 }), 12);
   });
 });

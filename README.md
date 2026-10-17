@@ -23,6 +23,7 @@ npm run build
 - **Rhythm kits** plant a whole groove at once: Two-Step DnB, Amen Break, Jungle Roller (generative), Four on the Floor, Trap Rolls, Polyrhythm Garden. Click replaces the garden (⌘Z undoes), ⇧-click layers it.
 - **Harmony** (top bar): the song's chord progression is a function of `bar`, e.g. `pick(bar, 3, 4, 2, 5)` (王道進行 IV–V–iii–vi) or `(3 * bar) % 7` (circle of fifths). Every formula reads the current chord as `h`; `L` is the number of degrees per octave. Note Out's `chord` input stacks that many scale tones every `stack` degrees (2 = thirds, 3 = quartal), with `inversion` and `strum`.
 - **Randomizer** (Mutate, or `R` / `⇧R` for the whole garden): rewrites node parameters *and formulas* — numbers move according to their role (scale degree, period, pulse count, probability), related functions swap, rhythm masks rotate or flip bits, experimental mode grafts new terms — then renders ~40 candidates and keeps the most musical (contour, chord-tone fit, density, distance from the original). The 調和 ↔ 実験 dial trades consonance for novelty; lock a node to protect it.
+- **∑ Function** (toolbar, or `F`): the whole track — or the whole garden — as one closed-form function. Every node is inlined (a Wave becomes `offset + amp·sine(cycles·x)`, Steps becomes `pick(…)`, Range its clamp formula), shared parts are named in a *where* clause, constants are folded. View it as typeset **Math** (KaTeX, with the clock, harmony and degree→MIDI mapping written out), **SoundFunc** formulas (paste-ready), or standalone **JavaScript** / **Python** that reproduce the engine's numbers exactly (tested bit-for-bit, including the `rand` hash). Copy, or download as `.tex`, `.txt`, `.js`, `.py`.
 - **Export**: MIDI (multi-track, tempo + key signature, GM instruments), note data CSV (pitch, MIDI number, frequency, velocity, key, timing), or the project as JSON. Projects also autosave to the browser.
 
 ## Structure
@@ -36,6 +37,8 @@ src/engine/   framework-free core (unit-tested)
   audio.ts      Web Audio scheduler + synth voices (bell FM, koto pluck, pad, shakuhachi…)
   midi.ts       Standard MIDI File writer (notes, GM drums, pitch-bend glides) + CSV export
   timbre.ts     formula → one-cycle waveform → Fourier harmonics
+  mutate.ts     the randomizer: role-aware parameter & formula mutation + musical fitness
+  symbolic.ts   graph → closed-form expression → LaTeX / SoundFunc / JavaScript / Python
   presets.ts    default functions
 src/state/    zustand store (persisted, undo/redo)
 src/components/ React UI (React Flow node editor, canvas visualizer)

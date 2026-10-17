@@ -99,10 +99,10 @@ const SERIES: Record<string, { label: string; fn: (n: number, p: number) => numb
   prime: { label: 'Primes', fn: (n) => FUNCTIONS.prime.fn(n) },
   collatz: { label: 'Collatz steps', fn: (n) => FUNCTIONS.collatz.fn(n + 1) },
   logistic: { label: 'Logistic map (p = r)', fn: (n, p) => FUNCTIONS.logistic.fn(p || 3.7, n) },
-  pi: { label: 'Digits of π', fn: (n) => Number(PI_DIGITS[Math.floor(n) % PI_DIGITS.length]) },
+  pi: { label: 'Digits of π', fn: (n) => FUNCTIONS.pidigit.fn(n) },
   phi: { label: 'Golden angle', fn: (n) => FUNCTIONS.fract.fn(n * CONSTANTS.phi) },
   random: { label: 'Random (p = seed)', fn: (n, p) => FUNCTIONS.rand.fn(n, p) },
-  thue: { label: 'Thue–Morse', fn: (n) => popcount(Math.floor(n)) % 2 },
+  thue: { label: 'Thue–Morse', fn: (n) => FUNCTIONS.thue.fn(n) },
   triangular: { label: 'Triangular', fn: (n) => (n * (n + 1)) / 2 },
   recaman: { label: 'Recamán', fn: (n) => FUNCTIONS.recaman.fn(n) },
   lorenz: { label: 'Lorenz attractor', fn: (n) => FUNCTIONS.lorenz.fn(n) },
@@ -135,18 +135,6 @@ export function parseList(src: string): number[] {
     .filter((v) => Number.isFinite(v));
 }
 
-const PI_DIGITS =
-  '31415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679';
-
-function popcount(n: number): number {
-  let c = 0;
-  n = Math.abs(n);
-  while (n) {
-    c += n & 1;
-    n >>>= 1;
-  }
-  return c;
-}
 
 export const ctxVars = ['n', 'x', 't', 'k', 'steps', 'h', 'bar', 'L'] as const;
 
