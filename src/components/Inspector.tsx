@@ -6,7 +6,7 @@ import { TRACK_COLORS } from '../engine/presets';
 import { DRUMS, WAVEFORMS, isDrum, keyLabel, type PlayMode, type Waveform } from '../engine/project';
 import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
-import { Icon, Seg, Slider, getRender } from './ui';
+import { Icon, NumberField, Seg, Slider, TextArea, TextField, getRender } from './ui';
 
 type Tab = 'sound' | 'notes' | 'guide';
 
@@ -31,13 +31,13 @@ function TimbreEditor() {
         <span>
           One cycle of the wave, <code className="mono">f(p)</code> with p = 0 → 1
         </span>
-        <textarea
+        <TextArea
           className={`formula ${samples ? '' : 'bad'}`}
           rows={1}
           spellCheck={false}
           value={track.timbre}
           onFocus={checkpoint}
-          onChange={(e) => updateTrack(track.id, { timbre: e.target.value }, false)}
+          onValue={(timbre) => updateTrack(track.id, { timbre }, false)}
         />
       </div>
       <svg className="spark" viewBox="0 0 200 44" preserveAspectRatio="none" style={{ height: 44 }}>
@@ -65,7 +65,7 @@ function SoundTab() {
 
   return (
     <>
-      <input className="track-title" value={track.name} onFocus={checkpoint} onChange={(e) => updateTrack(track.id, { name: e.target.value }, false)} />
+      <TextField className="track-title" value={track.name} onFocus={checkpoint} onValue={(name) => updateTrack(track.id, { name }, false)} />
       <div className="row" style={{ gap: 6, marginBottom: 4 }}>
         {TRACK_COLORS.map((c) => (
           <button
@@ -140,12 +140,12 @@ function SoundTab() {
       <div className="grid2">
         <label className="field">
           <span>Steps</span>
-          <input className="input" type="number" min={1} max={256} value={track.steps} onChange={(e) => up({ steps: Math.max(1, Math.min(256, Math.round(Number(e.target.value) || 1))) })} />
+          <NumberField className="input" integer min={1} max={256} value={track.steps} onValue={(steps) => up({ steps })} />
         </label>
         {!drum && (
           <label className="field">
             <span>Octave</span>
-            <input className="input" type="number" min={0} max={8} value={track.octave} onChange={(e) => up({ octave: Math.max(0, Math.min(8, Math.round(Number(e.target.value)))) })} />
+            <NumberField className="input" integer min={0} max={8} value={track.octave} onValue={(octave) => up({ octave })} />
           </label>
         )}
       </div>

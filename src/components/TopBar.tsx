@@ -4,7 +4,7 @@ import { NOTE_NAMES, PROGRESSIONS, SCALES } from '../engine/music';
 import { tryCompile } from '../engine/expr';
 import { useStore } from '../state/store';
 import { togglePlay } from '../state/transport';
-import { Enso, Icon, download, fileSafe, isProject } from './ui';
+import { Enso, Icon, NumberField, TextField, download, fileSafe, isProject } from './ui';
 
 export function toast(msg: string) {
   window.dispatchEvent(new CustomEvent('sf-toast', { detail: msg }));
@@ -113,7 +113,7 @@ export function TopBar() {
         <span>SoundFunc</span>
         <small className="hide-narrow">音 · 数</small>
       </div>
-      <input className="project-name hide-narrow" value={project.name} onChange={(e) => setProjectName(e.target.value)} aria-label="Project name" />
+      <TextField className="project-name hide-narrow" value={project.name} onValue={setProjectName} aria-label="Project name" />
 
       <div className="transport">
         <button className={`play ${playing ? 'on' : ''}`} onClick={() => void togglePlay()} title="Play / stop (space)">
@@ -121,14 +121,7 @@ export function TopBar() {
         </button>
         <label className="field-inline">
           <span>Tempo</span>
-          <input
-            className="input num"
-            type="number"
-            min={20}
-            max={300}
-            value={song.bpm}
-            onChange={(e) => setSong({ bpm: Math.max(20, Math.min(300, Number(e.target.value) || 90)) })}
-          />
+          <NumberField className="input num" min={20} max={300} value={song.bpm} onValue={(bpm) => setSong({ bpm })} />
         </label>
         <label className="field-inline">
           <span>Key</span>
@@ -153,12 +146,12 @@ export function TopBar() {
         <div className="field-inline">
           <span>Harmony · chord of bar</span>
           <div className="harmony">
-            <input
+            <TextField
               className="input"
               value={song.harmony}
               spellCheck={false}
               onFocus={checkpoint}
-              onChange={(e) => setSong({ harmony: e.target.value }, false)}
+              onValue={(harmony) => setSong({ harmony }, false)}
               style={tryCompile(song.harmony, ['bar', 'k', 'L']).error ? { borderBottomColor: 'var(--accent)' } : undefined}
               title="The chord (scale degree) as a function of bar. Tracks read it as h."
             />

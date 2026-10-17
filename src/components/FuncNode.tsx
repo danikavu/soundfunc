@@ -3,7 +3,7 @@ import { Handle, Position, useNodeConnections, type NodeProps } from '@xyflow/re
 import { tryCompile } from '../engine/expr';
 import { NODE_DEFS, ctxVars, type Category, type NodeData, type ParamDef } from '../engine/graph';
 import { useStore } from '../state/store';
-import { Icon } from './ui';
+import { Icon, NumberField, TextArea, TextField } from './ui';
 
 export const CATEGORY_COLORS: Record<Category, string> = {
   source: '#6f8a63',
@@ -56,13 +56,13 @@ function Param({ p, data, onChange, onFocus }: { p: ParamDef; data: NodeData; on
     const { error } = tryCompile(value, ['a', 'b', 'c', ...ctxVars]);
     return (
       <div>
-        <textarea
+        <TextArea
           className={`formula nodrag nowheel ${error ? 'bad' : ''}`}
           value={value}
           spellCheck={false}
           rows={1}
           onFocus={onFocus}
-          onChange={(e) => onChange({ [p.key]: e.target.value })}
+          onValue={(v) => onChange({ [p.key]: v })}
           onKeyDown={(e) => e.stopPropagation()}
         />
         {error && <div className="fnode-error">{error}</div>}
@@ -73,13 +73,13 @@ function Param({ p, data, onChange, onFocus }: { p: ParamDef; data: NodeData; on
     return (
       <label className="fnode-param">
         <span>{p.label}</span>
-        <input
+        <TextField
           className="input mono nodrag"
           value={String(data[p.key] ?? '')}
           placeholder={p.placeholder}
           spellCheck={false}
           onFocus={onFocus}
-          onChange={(e) => onChange({ [p.key]: e.target.value })}
+          onValue={(v) => onChange({ [p.key]: v })}
           onKeyDown={(e) => e.stopPropagation()}
         />
       </label>
@@ -102,15 +102,15 @@ function Param({ p, data, onChange, onFocus }: { p: ParamDef; data: NodeData; on
   return (
     <label className="fnode-param">
       <span>{p.label}</span>
-      <input
+      <NumberField
         className="input nodrag"
-        type="number"
         step={p.step ?? 0.1}
         min={p.min}
         max={p.max}
         value={Number(data[p.key] ?? 0)}
         onFocus={onFocus}
-        onChange={(e) => e.target.value !== '' && onChange({ [p.key]: Number(e.target.value) })}
+        onValue={(v) => onChange({ [p.key]: v })}
+        onKeyDown={(e) => e.stopPropagation()}
       />
     </label>
   );

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
 import type { Project, Song, Track, TrackRender } from '../engine/project';
 import { renderTrack } from '../engine/project';
 
@@ -117,4 +117,137 @@ export const fileSafe = (s: string) => s.trim().replace(/[^\w\- ]+/g, '').replac
 export function isProject(x: unknown): x is Project {
   const p = x as Project;
   return !!p && typeof p === 'object' && Array.isArray(p.tracks) && !!p.song && typeof p.song.bpm === 'number';
+}
+
+// ---------- fields that keep the caret where you put it ----------
+
+/**
+ * Editing state that belongs to the field while it has focus. The store is
+ * still updated on every keystroke, but a value echoed back later (React Flow
+ * re-renders nodes after a tick) never overwrites what is being typed — which
+ * is what used to throw the caret to the end.
+ */
+function useDraft(value: string) {
+  const [draft, setDraft] = useState(value);
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setDraft(value);
+  }, [value]);
+  return {
+    draft,
+    setDraft,
+    bind: {
+      onFocus: () => {
+        focused.current = true;
+      },
+      onBlur: () => {
+        focused.current = false;
+      },
+    },
+  };
+}
+
+type TextProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & { value: string; onValue: (v: string) => void };
+
+export function TextField({ value, onValue, onFocus, onBlur, ...rest }: TextProps) {
+  const { draft, setDraft, bind } = useDraft(value);
+  return (
+    <input
+      {...rest}
+      value={draft}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        onValue(e.target.value);
+      }}
+      onFocus={(e) => {
+        bind.onFocus();
+        onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        bind.onBlur();
+        onBlur?.(e);
+      }}
+    />
+  );
+}
+
+type AreaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'onChange'> & { value: string; onValue: (v: string) => void };
+
+export function TextArea({ value, onValue, onFocus, onBlur, ...rest }: AreaProps) {
+  const { draft, setDraft, bind } = useDraft(value);
+  return (
+    <textarea
+      {...rest}
+      value={draft}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        onValue(e.target.value);
+      }}
+      onFocus={(e) => {
+        bind.onFocus();
+        onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        bind.onBlur();
+        onBlur?.(e);
+      }}
+    />
+  );
+}
+
+type NumberProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'min' | 'max'> & {
+  value: number;
+  onValue: (v: number) => void;
+  min?: number;
+  max?: number;
+  integer?: boolean;
+};
+
+/**
+ * Numbers apply as soon as what you've typed is a valid in-range value; half-typed
+ * input ("", "-", "1." or a tempo of "1" on the way to "120") is left alone until
+ * Enter or blur, when it is clamped.
+ */
+export function NumberField({ value, onValue, min, max, integer, onFocus, onBlur, onKeyDown, ...rest }: NumberProps) {
+  const { draft, setDraft, bind } = useDraft(String(value));
+  const clamp = (v: number) => {
+    let x = integer ? Math.round(v) : v;
+    if (min !== undefined) x = Math.max(min, x);
+    if (max !== undefined) x = Math.min(max, x);
+    return x;
+  };
+  const settle = () => {
+    const v = Number(draft);
+    const next = draft.trim() === '' || !Number.isFinite(v) ? value : clamp(v);
+    if (next !== value) onValue(next);
+    setDraft(String(next));
+  };
+  return (
+    <input
+      {...rest}
+      type="number"
+      min={min}
+      max={max}
+      value={draft}
+      onChange={(e) => {
+        const s = e.target.value;
+        setDraft(s);
+        const v = Number(s);
+        if (s.trim() !== '' && Number.isFinite(v) && clamp(v) === v) onValue(v);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') settle();
+        onKeyDown?.(e);
+      }}
+      onFocus={(e) => {
+        bind.onFocus();
+        onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        bind.onBlur();
+        settle();
+        onBlur?.(e);
+      }}
+    />
+  );
 }
