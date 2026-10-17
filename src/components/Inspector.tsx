@@ -1,9 +1,10 @@
 import { Fragment, useState } from 'react';
 import { engine } from '../engine/audio';
 import { CONSTANTS, FUNCTIONS } from '../engine/expr';
-import { PITCH_MODES, type PitchMode } from '../engine/music';
+import { PITCH_MODES, midiToName, type PitchMode } from '../engine/music';
 import { TRACK_COLORS } from '../engine/presets';
-import { WAVEFORMS, keyLabel, type Waveform } from '../engine/project';
+import { DRUMS, WAVEFORMS, isDrum, keyLabel, type PlayMode, type Waveform } from '../engine/project';
+import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Seg, Slider, getRender } from './ui';
 
@@ -19,11 +20,48 @@ const STEP_LENGTHS = [
   { value: 2, label: '1/2' },
 ];
 
+function TimbreEditor() {
+  const track = useSelectedTrack()!;
+  const { updateTrack, checkpoint } = useStore();
+  const samples = timbreSamples(track.timbre, 128);
+  const d = samples ? Array.from(samples, (v, i) => `${i ? 'L' : 'M'}${((i / 127) * 200).toFixed(1)},${(22 - v * 18).toFixed(1)}`).join('') : '';
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="field">
+        <span>
+          One cycle of the wave, <code className="mono">f(p)</code> with p = 0 → 1
+        </span>
+        <textarea
+          className={`formula ${samples ? '' : 'bad'}`}
+          rows={1}
+          spellCheck={false}
+          value={track.timbre}
+          onFocus={checkpoint}
+          onChange={(e) => updateTrack(track.id, { timbre: e.target.value }, false)}
+        />
+      </div>
+      <svg className="spark" viewBox="0 0 200 44" preserveAspectRatio="none" style={{ height: 44 }}>
+        <line x1="0" x2="200" y1="22" y2="22" stroke="var(--line)" strokeDasharray="2 4" />
+        {d && <path d={d} fill="none" stroke={track.color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
+      </svg>
+      <div className="seg" style={{ marginTop: 6 }}>
+        {TIMBRE_PRESETS.map((t) => (
+          <button key={t.label} className={t.formula === track.timbre ? 'on' : ''} onClick={() => updateTrack(track.id, { timbre: t.formula })}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SoundTab() {
   const track = useSelectedTrack()!;
   const { project, updateTrack, setSong, duplicateTrack, removeTrack, checkpoint } = useStore();
   const up = (patch: Parameters<typeof updateTrack>[1]) => updateTrack(track.id, patch);
   const render = getRender(track, project.song);
+  const drum = isDrum(track.waveform);
+  const glide = track.playMode === 'glide' && !drum;
 
   return (
     <>
@@ -40,17 +78,63 @@ function SoundTab() {
         ))}
       </div>
       <div className="muted" style={{ fontSize: 11 }}>
-        {render.notes.length} notes · {keyLabel(project.song)}
+        {glide ? 'continuous glide' : `${render.notes.length} ${drum ? 'hits' : 'notes'}`} · {keyLabel(project.song)}
       </div>
 
       <div className="eyebrow">Voice</div>
-      <Seg<Waveform> value={track.waveform} onChange={(waveform) => up({ waveform })} options={Object.entries(WAVEFORMS).map(([value, label]) => ({ value: value as Waveform, label }))} />
-      <div style={{ marginTop: 10 }}>
-        <Slider label="Volume" value={track.volume} min={0} max={1} onChange={(volume) => up({ volume })} />
-        <Slider label="Pan" value={track.pan} min={-1} max={1} format={(v) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `L${Math.round(-v * 100)}` : `R${Math.round(v * 100)}`)} onChange={(pan) => up({ pan })} />
-        <Slider label="Attack" value={track.attack} min={0.003} max={1.5} format={(v) => `${Math.round(v * 1000)}ms`} onChange={(attack) => up({ attack })} />
-        <Slider label="Release" value={track.release} min={0.02} max={3} format={(v) => `${v.toFixed(2)}s`} onChange={(release) => up({ release })} />
+      <Seg<Waveform>
+        value={track.waveform}
+        onChange={(waveform) => up({ waveform })}
+        options={Object.entries(WAVEFORMS).map(([value, label]) => ({ value: value as Waveform, label }))}
+      />
+      <div className="field" style={{ marginTop: 10 }}>
+        <span>Drums</span>
+        <Seg<Waveform> value={track.waveform} onChange={(waveform) => up({ waveform })} options={Object.entries(DRUMS).map(([value, d]) => ({ value: value as Waveform, label: d.label }))} />
       </div>
+      {track.waveform === 'custom' && <TimbreEditor />}
+
+      {!drum && (
+        <>
+          <div className="eyebrow">Play as</div>
+          <Seg<PlayMode>
+            value={track.playMode}
+            onChange={(playMode) => up({ playMode })}
+            options={[
+              { value: 'notes', label: 'Notes' },
+              { value: 'glide', label: 'Glide — follow the curve' },
+            ]}
+          />
+          {glide && (
+            <>
+              <p className="muted" style={{ fontSize: 11, margin: '10px 0 4px' }}>
+                One voice slides continuously along f(x). Velocity shapes its volume. Exports as MIDI pitch bend.
+              </p>
+              <div style={{ marginTop: 6 }}>
+                <Seg<boolean>
+                  value={track.quantize}
+                  onChange={(quantize) => up({ quantize })}
+                  options={[
+                    { value: true, label: 'Snap to scale' },
+                    { value: false, label: 'Free pitch' },
+                  ]}
+                />
+              </div>
+              <Slider label="Portamento" value={track.glide} min={0} max={0.5} format={(v) => `${Math.round(v * 1000)}ms`} onChange={(g) => up({ glide: g })} />
+            </>
+          )}
+        </>
+      )}
+
+      <div className="eyebrow">Mix</div>
+      <Slider label="Volume" value={track.volume} min={0} max={1} onChange={(volume) => up({ volume })} />
+      <Slider label="Pan" value={track.pan} min={-1} max={1} format={(v) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `L${Math.round(-v * 100)}` : `R${Math.round(v * 100)}`)} onChange={(pan) => up({ pan })} />
+      <Slider label="Space" value={track.send} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(send) => up({ send })} />
+      {!drum && (
+        <>
+          <Slider label="Attack" value={track.attack} min={0.003} max={1.5} format={(v) => `${Math.round(v * 1000)}ms`} onChange={(attack) => up({ attack })} />
+          <Slider label="Release" value={track.release} min={0.02} max={3} format={(v) => `${v.toFixed(2)}s`} onChange={(release) => up({ release })} />
+        </>
+      )}
 
       <div className="eyebrow">Pattern</div>
       <div className="grid2">
@@ -58,25 +142,34 @@ function SoundTab() {
           <span>Steps</span>
           <input className="input" type="number" min={1} max={256} value={track.steps} onChange={(e) => up({ steps: Math.max(1, Math.min(256, Math.round(Number(e.target.value) || 1))) })} />
         </label>
-        <label className="field">
-          <span>Octave</span>
-          <input className="input" type="number" min={0} max={8} value={track.octave} onChange={(e) => up({ octave: Math.max(0, Math.min(8, Math.round(Number(e.target.value)))) })} />
-        </label>
+        {!drum && (
+          <label className="field">
+            <span>Octave</span>
+            <input className="input" type="number" min={0} max={8} value={track.octave} onChange={(e) => up({ octave: Math.max(0, Math.min(8, Math.round(Number(e.target.value)))) })} />
+          </label>
+        )}
       </div>
       <div className="field" style={{ marginTop: 12 }}>
         <span>Step length</span>
         <Seg<number> value={track.stepBeats} onChange={(stepBeats) => up({ stepBeats })} options={STEP_LENGTHS} />
       </div>
-      <label className="field" style={{ marginTop: 12 }}>
-        <span>Pitch means</span>
-        <select className="select" value={track.pitchMode} onChange={(e) => up({ pitchMode: e.target.value as PitchMode })}>
-          {Object.entries(PITCH_MODES).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </select>
-      </label>
+      {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} />}
+      {drum ? (
+        <p className="muted" style={{ fontSize: 11 }}>
+          On drums, <b>pitch</b> tunes the hit in semitones. <b>ratchet</b> turns a step into a roll.
+        </p>
+      ) : (
+        <label className="field" style={{ marginTop: 12 }}>
+          <span>Pitch means</span>
+          <select className="select" value={track.pitchMode} onChange={(e) => up({ pitchMode: e.target.value as PitchMode })}>
+            {Object.entries(PITCH_MODES).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div className="eyebrow">Export</div>
       <Slider label="Loops" value={project.song.exportLoops} min={1} max={32} step={1} format={(v) => `×${v}`} onChange={(exportLoops) => setSong({ exportLoops })} />
@@ -96,7 +189,18 @@ function SoundTab() {
 function NotesTab() {
   const track = useSelectedTrack()!;
   const song = useStore((s) => s.project.song);
-  const { notes } = getRender(track, song);
+  const { notes, curve } = getRender(track, song);
+  if (track.playMode === 'glide' && !isDrum(track.waveform)) {
+    let lo = 127, hi = 0;
+    curve.midi.forEach((m, i) => curve.velocity[i] >= 0.01 && ((lo = Math.min(lo, m)), (hi = Math.max(hi, m))));
+    return (
+      <p className="muted" style={{ marginTop: 0, fontSize: 11.5 }}>
+        <b className="serif">{track.name}</b> glides instead of playing notes: {curve.midi.length} pitch samples per pass
+        {lo <= hi && ` between ${midiToName(Math.round(lo))} and ${midiToName(Math.round(hi))}`}. The CSV export holds every sample, and MIDI export
+        writes them as pitch bend (±24 semitones) with CC11 expression for volume.
+      </p>
+    );
+  }
   return (
     <>
       <p className="muted" style={{ marginTop: 0, fontSize: 11.5 }}>
@@ -139,6 +243,28 @@ function GuideTab() {
         Each step, the graph runs once. Whatever reaches <b>Note Out</b> becomes a note: <code>pitch</code> is mapped onto the key & scale,{' '}
         <code>velocity</code> 0 means rest, and <code>length</code> is measured in steps.
       </p>
+      <p>
+        <b>shift</b> delays a hit by part of a step (swing, flams). <b>ratchet</b> repeats it 2–8× inside the step (rolls). In <b>Glide</b> mode the track
+        is one sliding voice: <code>x</code> and <code>t</code> flow smoothly while <code>n</code> still ticks per step.
+      </p>
+      <div className="eyebrow">Chords</div>
+      <p style={{ margin: 0 }}>
+        The top bar’s <b>Harmony</b> is a function of <code>bar</code> giving the chord’s scale degree, e.g. <code>pick(bar, 0, 4, 5, 3)</code> = I–V–vi–IV.
+        Any formula reads it as <code>h</code>: <code>h + pick(n, 0, 2, 4)</code> arpeggiates the current chord. On Note Out, <code>chord</code> = number of
+        tones, <code>stack</code> = degrees between them (2 thirds, 3 fourths), <code>inversion</code> rotates the voicing, <code>strum</code> rolls it
+        (negative = downward).
+      </p>
+      <div className="eyebrow">Randomizer</div>
+      <p style={{ margin: 0 }}>
+        <b>Mutate</b> (R, or ⇧R for the whole garden) rewrites parameters and formulas, renders ~40 candidates and keeps the one that scores best on
+        melodic contour, chord-tone fit, rhythmic density and distance from the original. The 調和 ↔ 実験 dial trades consonance for novelty. Lock a node
+        (hover its header) to protect it.
+      </p>
+      <div className="eyebrow">Pattern notation</div>
+      <p style={{ margin: 0 }}>
+        <code>X</code> accent · <code>x</code> hit · <code>o</code> ghost · <code>1–9</code> velocity · <code>.</code> rest · <code>|</code> and spaces are
+        ignored. Binary works in formulas too: <code>bits(0b1000100010001000, n)</code>.
+      </p>
       <div className="eyebrow">Variables</div>
       <dl>
         <dt><code>n</code></dt><dd>step index 0, 1, 2…</dd>
@@ -146,6 +272,9 @@ function GuideTab() {
         <dt><code>t</code></dt><dd>time in beats</dd>
         <dt><code>k</code></dt><dd>loop count — evolve over time</dd>
         <dt><code>steps</code></dt><dd>pattern length</dd>
+        <dt><code>h</code></dt><dd>current chord of the song’s Harmony, as a scale degree</dd>
+        <dt><code>bar</code></dt><dd>bar number since the song began</dd>
+        <dt><code>L</code></dt><dd>degrees per octave (7, or 5 for pentatonic)</dd>
         <dt><code>a b c</code></dt><dd>Formula node inputs</dd>
         {Object.keys(CONSTANTS).map((c) => (
           <Fragment key={c}><dt><code>{c}</code></dt><dd>{CONSTANTS[c].toFixed(4)}</dd></Fragment>

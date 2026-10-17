@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { exportMidi, exportNotesCsv } from '../engine/midi';
-import { NOTE_NAMES, SCALES } from '../engine/music';
+import { NOTE_NAMES, PROGRESSIONS, SCALES } from '../engine/music';
+import { tryCompile } from '../engine/expr';
 import { useStore } from '../state/store';
 import { togglePlay } from '../state/transport';
 import { Enso, Icon, download, fileSafe, isProject } from './ui';
@@ -102,7 +103,7 @@ function FileMenu() {
 }
 
 export function TopBar() {
-  const { project, setSong, setProjectName, playing, theme, toggleTheme, undo, redo, past, future } = useStore();
+  const { project, setSong, setProjectName, playing, theme, toggleTheme, undo, redo, past, future, checkpoint } = useStore();
   const { song } = project;
 
   return (
@@ -149,7 +150,31 @@ export function TopBar() {
             ))}
           </select>
         </label>
-        <label className="field-inline hide-narrow" style={{ width: 90 }}>
+        <div className="field-inline">
+          <span>Harmony · chord of bar</span>
+          <div className="harmony">
+            <input
+              className="input"
+              value={song.harmony}
+              spellCheck={false}
+              onFocus={checkpoint}
+              onChange={(e) => setSong({ harmony: e.target.value }, false)}
+              style={tryCompile(song.harmony, ['bar', 'k', 'L']).error ? { borderBottomColor: 'var(--accent)' } : undefined}
+              title="The chord (scale degree) as a function of bar. Tracks read it as h."
+            />
+            <select className="select" value="" onChange={(e) => e.target.value && setSong({ harmony: e.target.value })} title="Chord progressions" aria-label="Chord progressions">
+              <option value="" disabled>
+                Progressions
+              </option>
+              {PROGRESSIONS.map((p) => (
+                <option key={p.formula} value={p.formula}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <label className="field-inline hide-narrow" style={{ width: 80 }}>
           <span>Space</span>
           <input type="range" min={0} max={1} step={0.01} value={song.reverb} onChange={(e) => setSong({ reverb: Number(e.target.value) })} />
         </label>

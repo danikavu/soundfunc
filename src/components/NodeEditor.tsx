@@ -18,7 +18,8 @@ import { CATEGORY_LABELS, NODE_DEFS, type Category, type GEdge, type GNode } fro
 import { uid } from '../engine/presets';
 import { useSelectedTrack, useStore } from '../state/store';
 import { FuncNode, GraphContext, CATEGORY_COLORS } from './FuncNode';
-import { Icon, getRender } from './ui';
+import { Icon, Seg, getRender } from './ui';
+import { toast } from './TopBar';
 
 const nodeTypes = Object.fromEntries(Object.keys(NODE_DEFS).map((k) => [k, FuncNode]));
 
@@ -87,6 +88,44 @@ function Palette({ state, hasOutput, onPick, onClose }: { state: PaletteState; h
         </div>
       ))}
       {items.length === 0 && <p className="muted" style={{ padding: 8 }}>Nothing matches.</p>}
+    </div>
+  );
+}
+
+/** The randomizer: one button, one dial from 調和 harmonious to 実験 experimental. */
+export function runMutate(scope: 'track' | 'garden') {
+  const { mutate, chaos } = useStore.getState();
+  const r = mutate(scope);
+  const mood = chaos < 0.35 ? 'harmonious' : chaos < 0.7 ? 'adventurous' : 'experimental';
+  toast(
+    r.tracks
+      ? `${scope === 'garden' ? `Mutated ${r.tracks} tracks and the harmony` : 'Mutated'} · ${mood} · best of ${r.tried} candidates — ⌘Z to undo`
+      : 'Nothing to mutate — every node is locked',
+  );
+}
+
+function Mutator() {
+  const chaos = useStore((s) => s.chaos);
+  const setChaos = useStore((s) => s.setChaos);
+  const [scope, setScope] = useState<'track' | 'garden'>('track');
+  return (
+    <div className="mutator">
+      <button className="btn" onClick={() => runMutate(scope)} title="Mutate parameters & formulas, keep the most musical of many candidates (R)">
+        <Icon name="dice" size={14} /> Mutate
+      </button>
+      <label className="chaos" title="How far the randomizer may wander">
+        <span className="serif">調和</span>
+        <input type="range" min={0} max={1} step={0.01} value={chaos} onChange={(e) => setChaos(Number(e.target.value))} aria-label="Harmonious to experimental" />
+        <span className="serif">実験</span>
+      </label>
+      <Seg<'track' | 'garden'>
+        value={scope}
+        onChange={setScope}
+        options={[
+          { value: 'track', label: 'Track' },
+          { value: 'garden', label: 'Garden' },
+        ]}
+      />
     </div>
   );
 }
@@ -180,30 +219,6 @@ export function NodeEditor() {
         if ((e.target as HTMLElement).classList.contains('react-flow__pane')) openPalette(e.clientX, e.clientY);
       }}
     >
-      <GraphContext.Provider value={{ trackId: track.id, traces: render.traces, errors: render.errors }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={(c) => connect(c)}
-          onConnectEnd={onConnectEnd}
-          onNodeDragStart={checkpoint}
-          isValidConnection={(c) => c.source !== c.target}
-          colorMode={theme}
-          zoomOnDoubleClick={false}
-          deleteKeyCode={['Backspace', 'Delete']}
-          minZoom={0.25}
-          maxZoom={2}
-          defaultEdgeOptions={{ type: 'default' }}
-          proOptions={{ hideAttribution: false }}
-        >
-          <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="var(--line)" />
-          <Controls showInteractive={false} position="bottom-right" />
-        </ReactFlow>
-      </GraphContext.Provider>
-
       <div className="toolbar">
         <button
           className="btn"
@@ -218,9 +233,33 @@ export function NodeEditor() {
         >
           <Icon name="plus" size={14} /> Add node
         </button>
-        <span className="muted" style={{ fontSize: 11, marginLeft: 6 }}>
-          double-click canvas · drag a wire into space · ⌫ deletes
-        </span>
+        <Mutator />
+      </div>
+      <div className="nodes-canvas">
+        <GraphContext.Provider value={{ trackId: track.id, traces: render.traces, errors: render.errors }}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={(c) => connect(c)}
+            onConnectEnd={onConnectEnd}
+            onNodeDragStart={checkpoint}
+            isValidConnection={(c) => c.source !== c.target}
+            colorMode={theme}
+            zoomOnDoubleClick={false}
+            deleteKeyCode={['Backspace', 'Delete']}
+            minZoom={0.25}
+            maxZoom={2}
+            defaultEdgeOptions={{ type: 'default' }}
+            proOptions={{ hideAttribution: false }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="var(--line)" />
+            <Controls showInteractive={false} position="bottom-right" />
+          </ReactFlow>
+        </GraphContext.Provider>
+        <span className="muted nodes-hint">double-click canvas · drag a wire into space · ⌫ deletes · R mutates</span>
       </div>
       {!render.hasOutput && (
         <div className="viz-tip" style={{ left: '50%', top: 70, transform: 'translateX(-50%)', color: 'var(--accent)' }}>

@@ -1,4 +1,6 @@
-import { compile, FUNCTIONS, CONSTANTS } from './expr';
+import { compile, euclid, FUNCTIONS, CONSTANTS } from './expr';
+
+export { euclid };
 
 export interface StepCtx {
   /** step index within the pattern */
@@ -11,6 +13,12 @@ export interface StepCtx {
   k: number;
   /** pattern length in steps */
   steps: number;
+  /** current chord of the song's harmony, as a scale degree */
+  h: number;
+  /** bar number since the song started (4 beats per bar) */
+  bar: number;
+  /** scale degrees per octave (7 for major, 5 for pentatonic…) */
+  L: number;
 }
 
 export type NodeData = Record<string, string | number | boolean>;
@@ -45,7 +53,8 @@ export interface PortDef {
 export type ParamDef =
   | { key: string; label: string; kind: 'number'; min?: number; max?: number; step?: number }
   | { key: string; label: string; kind: 'select'; options: { value: string; label: string }[] }
-  | { key: string; label: string; kind: 'formula' };
+  | { key: string; label: string; kind: 'formula' }
+  | { key: string; label: string; kind: 'text'; placeholder?: string };
 
 export type Category = 'source' | 'math' | 'wave' | 'series' | 'rhythm' | 'output';
 
@@ -95,7 +104,36 @@ const SERIES: Record<string, { label: string; fn: (n: number, p: number) => numb
   random: { label: 'Random (p = seed)', fn: (n, p) => FUNCTIONS.rand.fn(n, p) },
   thue: { label: 'Thue–Morse', fn: (n) => popcount(Math.floor(n)) % 2 },
   triangular: { label: 'Triangular', fn: (n) => (n * (n + 1)) / 2 },
+  recaman: { label: 'Recamán', fn: (n) => FUNCTIONS.recaman.fn(n) },
+  lorenz: { label: 'Lorenz attractor', fn: (n) => FUNCTIONS.lorenz.fn(n) },
+  sierpinski: { label: 'Sierpiński (p = row)', fn: (n, p) => ((Math.floor(n) & Math.floor(p || 7)) === 0 ? 1 : 0) },
 };
+
+/**
+ * Drum-machine notation, one character per step (spaces and | are ignored):
+ *   X accent · x hit · o ghost · 1–9 velocity in ninths · . - _ rest
+ */
+export function parsePattern(src: string): number[] {
+  const out: number[] = [];
+  for (const ch of src) {
+    if (ch === ' ' || ch === '|') continue;
+    if (ch === 'X') out.push(1);
+    else if (ch === 'x') out.push(0.75);
+    else if (ch === 'o' || ch === 'O') out.push(0.35);
+    else if (ch >= '1' && ch <= '9') out.push(Number(ch) / 9);
+    else out.push(0);
+  }
+  return out;
+}
+
+/** "0 3 5 7" or "0, 3, -2.5" → numbers */
+export function parseList(src: string): number[] {
+  return src
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .map(Number)
+    .filter((v) => Number.isFinite(v));
+}
 
 const PI_DIGITS =
   '31415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679';
@@ -110,22 +148,14 @@ function popcount(n: number): number {
   return c;
 }
 
-/** Bjorklund-style Euclidean rhythm: is step n a hit? */
-export function euclid(n: number, pulses: number, steps: number, rotate = 0): number {
-  steps = Math.max(1, Math.floor(steps));
-  pulses = Math.max(0, Math.min(steps, Math.floor(pulses)));
-  const i = (((Math.floor(n) + Math.floor(rotate)) % steps) + steps) % steps;
-  return Math.floor((i * pulses) / steps) !== Math.floor(((i - 1) * pulses) / steps) || (i === 0 && pulses > 0) ? 1 : 0;
-}
-
-export const ctxVars = ['n', 'x', 't', 'k', 'steps'] as const;
+export const ctxVars = ['n', 'x', 't', 'k', 'steps', 'h', 'bar', 'L'] as const;
 
 export const NODE_DEFS: Record<string, NodeDef> = {
   step: {
     type: 'step',
     label: 'Time',
     category: 'source',
-    hint: 'The clock: step n, progress x (0→1), beats t, loop k',
+    hint: 'The clock: step n, progress x (0→1), beats t, loop k, plus the current chord h and bar',
     defaults: {},
     inputs: [],
     outputs: [
@@ -133,9 +163,11 @@ export const NODE_DEFS: Record<string, NodeDef> = {
       { id: 'x', label: 'x 0→1' },
       { id: 't', label: 't beats' },
       { id: 'k', label: 'k loop' },
+      { id: 'h', label: 'h chord' },
+      { id: 'bar', label: 'bar' },
     ],
     params: [],
-    build: () => (_i, c) => [c.n, c.x, c.t, c.k],
+    build: () => (_i, c) => [c.n, c.x, c.t, c.k, c.h, c.bar],
   },
   number: {
     type: 'number',
@@ -155,7 +187,7 @@ export const NODE_DEFS: Record<string, NodeDef> = {
     type: 'expr',
     label: 'Formula',
     category: 'math',
-    hint: 'Write any expression. Use a, b, c inputs and n, x, t, k',
+    hint: 'Write any expression. Use a, b, c inputs and n, x, t, k, h (chord), bar, L',
     defaults: { formula: 'sin(x * tau) * 4' },
     inputs: [
       { id: 'a', label: 'a', fallback: 0 },
@@ -176,6 +208,9 @@ export const NODE_DEFS: Record<string, NodeDef> = {
         scope.t = c.t;
         scope.k = c.k;
         scope.steps = c.steps;
+        scope.h = c.h;
+        scope.bar = c.bar;
+        scope.L = c.L;
         return [fn(scope)];
       };
     },
@@ -298,6 +333,42 @@ export const NODE_DEFS: Record<string, NodeDef> = {
       return (ins) => [euclid(ins[0], p, l, r)];
     },
   },
+  pattern: {
+    type: 'pattern',
+    label: 'Pattern',
+    category: 'rhythm',
+    hint: 'Type a beat: X accent, x hit, o ghost, . rest — outputs velocity',
+    defaults: { pattern: 'X...x...X..x..o.', rotate: 0 },
+    inputs: [{ id: 'n', label: 'n', fallback: (c) => c.n }],
+    outputs: [{ id: 'out', label: 'velocity' }],
+    params: [
+      { key: 'pattern', label: 'beat', kind: 'text', placeholder: 'X..o x...' },
+      { key: 'rotate', label: 'rotate', kind: 'number', step: 1 },
+    ],
+    build: (d) => {
+      const pat = parsePattern(String(d.pattern ?? ''));
+      const r = num(d.rotate);
+      return (ins) => [pat.length ? pat[FUNCTIONS.mod.fn(Math.floor(ins[0]) + r, pat.length)] : 0];
+    },
+  },
+  list: {
+    type: 'list',
+    label: 'Steps',
+    category: 'series',
+    hint: 'A list of values played in order — basslines, chords, riffs',
+    defaults: { values: '0 0 3 5', every: 4 },
+    inputs: [{ id: 'n', label: 'n', fallback: (c) => c.n }],
+    outputs: [{ id: 'out', label: 'value' }],
+    params: [
+      { key: 'values', label: 'values', kind: 'text', placeholder: '0 3 5 7' },
+      { key: 'every', label: 'hold steps', kind: 'number', step: 1, min: 1 },
+    ],
+    build: (d) => {
+      const vals = parseList(String(d.values ?? ''));
+      const every = Math.max(1, num(d.every, 1));
+      return (ins) => [vals.length ? vals[FUNCTIONS.mod.fn(Math.floor(ins[0] / every), vals.length)] : 0];
+    },
+  },
   chance: {
     type: 'chance',
     label: 'Chance',
@@ -319,12 +390,18 @@ export const NODE_DEFS: Record<string, NodeDef> = {
     type: 'output',
     label: 'Note Out',
     category: 'output',
-    hint: 'Pitch, velocity (0 = rest) and length (in steps) of each note',
+    hint: 'pitch · velocity (0 = rest) · length in steps · shift (late by part of a step) · ratchet (repeats) · chord (tones stacked every `stack` degrees) · inversion · strum',
     defaults: {},
     inputs: [
       { id: 'pitch', label: 'pitch', fallback: 0 },
       { id: 'velocity', label: 'velocity', fallback: 0.8 },
       { id: 'length', label: 'length', fallback: 1 },
+      { id: 'shift', label: 'shift', fallback: 0 },
+      { id: 'ratchet', label: 'ratchet', fallback: 1 },
+      { id: 'chord', label: 'chord', fallback: 1 },
+      { id: 'stack', label: 'stack', fallback: 2 },
+      { id: 'inversion', label: 'inversion', fallback: 0 },
+      { id: 'strum', label: 'strum', fallback: 0 },
     ],
     outputs: [],
     params: [],
@@ -347,6 +424,12 @@ export interface StepOutput {
   pitch: number;
   velocity: number;
   length: number;
+  shift: number;
+  ratchet: number;
+  chord: number;
+  stack: number;
+  inversion: number;
+  strum: number;
 }
 
 export interface GraphProgram {
@@ -442,7 +525,7 @@ export function compileGraph(graph: Graph): GraphProgram {
       }
       if (!outputNode) return null;
       const o = values.get(outputNode.node.id)!;
-      return { pitch: o[0], velocity: o[1], length: o[2] };
+      return { pitch: o[0], velocity: o[1], length: o[2], shift: o[3], ratchet: o[4], chord: o[5], stack: o[6], inversion: o[7], strum: o[8] };
     },
   };
 }

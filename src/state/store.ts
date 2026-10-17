@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { GEdge, GNode, NodeData } from '../engine/graph';
-import { defaultProject, PRESETS, trackFromPreset, uid } from '../engine/presets';
-import type { Project, Song, Track } from '../engine/project';
+import { defaultProject, KITS, PRESETS, trackFromPreset, trackFromTemplate, uid } from '../engine/presets';
+import { mutateHarmony, mutateTrack } from '../engine/mutate';
+import { normalizeProject, type Project, type Song, type Track } from '../engine/project';
 
 const HISTORY_LIMIT = 80;
 
@@ -11,14 +12,18 @@ interface State {
   selectedTrackId: string | null;
   theme: 'light' | 'dark';
   playing: boolean;
+  /** randomizer dial: 0 harmonious → 1 experimental */
+  chaos: number;
   past: Project[];
   future: Project[];
 
   setProjectName: (name: string) => void;
-  setSong: (patch: Partial<Song>) => void;
+  setSong: (patch: Partial<Song>, record?: boolean) => void;
   updateTrack: (id: string, patch: Partial<Track>, record?: boolean) => void;
   selectTrack: (id: string) => void;
   addTrack: (presetId: string) => void;
+  /** plant a multi-track kit (and its tempo/key); replaces the current tracks unless layering */
+  addKit: (kitId: string, layer?: boolean) => void;
   duplicateTrack: (id: string) => void;
   removeTrack: (id: string) => void;
   setGraph: (trackId: string, nodes: GNode[], edges: GEdge[], record?: boolean) => void;
@@ -27,6 +32,9 @@ interface State {
   resetProject: () => void;
   toggleTheme: () => void;
   setPlaying: (on: boolean) => void;
+  setChaos: (chaos: number) => void;
+  /** mutate the selected track, or every track plus the harmony; one undo step */
+  mutate: (scope: 'track' | 'garden') => { tracks: number; tried: number };
   checkpoint: () => void;
   undo: () => void;
   redo: () => void;
@@ -51,11 +59,12 @@ export const useStore = create<State>()(
         selectedTrackId: null,
         theme: 'light',
         playing: false,
+        chaos: 0.3,
         past: [],
         future: [],
 
         setProjectName: (name) => commit((p) => ({ ...p, name }), false),
-        setSong: (patch) => commit((p) => ({ ...p, song: { ...p.song, ...patch } })),
+        setSong: (patch, record = true) => commit((p) => ({ ...p, song: { ...p.song, ...patch } }), record),
         updateTrack: (id, patch, record = true) => commit(mapTrack(id, (t) => ({ ...t, ...patch })), record),
         selectTrack: (id) => set({ selectedTrackId: id }),
         addTrack: (presetId) => {
@@ -63,6 +72,19 @@ export const useStore = create<State>()(
           const track = trackFromPreset(preset, get().project.tracks.length);
           commit((p) => ({ ...p, tracks: [...p.tracks, track] }));
           set({ selectedTrackId: track.id });
+        },
+        addKit: (kitId, layer = false) => {
+          const kit = KITS.find((k) => k.id === kitId);
+          if (!kit) return;
+          const start = layer ? get().project.tracks.length : 0;
+          const tracks = kit.tracks.map((t, i) => trackFromTemplate(t, t.name, start + i));
+          commit((p) => ({
+            ...p,
+            name: layer ? p.name : kit.name,
+            song: { ...p.song, ...kit.song },
+            tracks: layer ? [...p.tracks, ...tracks] : tracks,
+          }));
+          set({ selectedTrackId: tracks[0]?.id ?? null });
         },
         duplicateTrack: (id) => {
           const src = get().project.tracks.find((t) => t.id === id);
@@ -93,12 +115,31 @@ export const useStore = create<State>()(
             })),
             false,
           ),
-        loadProject: (project) => {
+        loadProject: (raw) => {
+          const project = normalizeProject(raw);
           commit(() => project);
           set({ selectedTrackId: project.tracks[0]?.id ?? null });
         },
         resetProject: () => get().loadProject(defaultProject()),
         setPlaying: (playing) => set({ playing }),
+        setChaos: (chaos) => set({ chaos }),
+        mutate: (scope) => {
+          const { project, chaos, selectedTrackId } = get();
+          const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
+          const targetId = selectedTrackId ?? project.tracks[0]?.id;
+          let song = project.song;
+          if (scope === 'garden' && chaos > 0.15) song = { ...song, harmony: mutateHarmony(song.harmony, chaos, seed) };
+          let tried = 0, changed = 0;
+          const tracks = project.tracks.map((t, i) => {
+            if (scope === 'track' && t.id !== targetId) return t;
+            const r = mutateTrack(t, song, chaos, seed + i * 7919);
+            tried += r.tried;
+            if (r.track !== t) changed++;
+            return r.track;
+          });
+          commit((p) => ({ ...p, song, tracks }));
+          return { tracks: changed, tried };
+        },
         toggleTheme: () => set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
         /** snapshot before a continuous edit (typing, dragging) so it undoes as one step */
         checkpoint: () => set((s) => ({ past: [...s.past, s.project].slice(-HISTORY_LIMIT), future: [] })),
@@ -118,8 +159,18 @@ export const useStore = create<State>()(
     },
     {
       name: 'soundfunc',
-      version: 1,
-      partialize: (s) => ({ project: s.project, selectedTrackId: s.selectedTrackId, theme: s.theme }),
+      version: 2,
+      // projects saved by older versions just get the new track fields filled in
+      migrate: (state) => {
+        const s = state as { project?: Project };
+        if (s.project) s.project = normalizeProject(s.project);
+        return s as State;
+      },
+      merge: (persisted, current) => {
+        const p = persisted as Partial<State> | undefined;
+        return { ...current, ...p, project: p?.project ? normalizeProject(p.project) : current.project };
+      },
+      partialize: (s) => ({ project: s.project, selectedTrackId: s.selectedTrackId, theme: s.theme, chaos: s.chaos }),
     },
   ),
 );

@@ -6,7 +6,7 @@ import { togglePlay } from './state/transport';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { Visualizer } from './components/Visualizer';
-import { NodeEditor } from './components/NodeEditor';
+import { NodeEditor, runMutate } from './components/NodeEditor';
 import { Inspector } from './components/Inspector';
 
 const isTyping = (t: EventTarget | null) =>
@@ -28,7 +28,10 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
-      if (e.code === 'Space') {
+      if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        runMutate(e.shiftKey ? 'garden' : 'track');
+      } else if (e.code === 'Space') {
         e.preventDefault();
         void togglePlay();
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {

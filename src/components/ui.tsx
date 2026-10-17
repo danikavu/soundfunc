@@ -9,6 +9,18 @@ const paths: Record<string, ReactNode> = {
   stop: <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none" />,
   plus: <path d="M12 5v14M5 12h14" />,
   close: <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,
+  dice: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="4" />
+      <circle cx="9" cy="9" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="15" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="9" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="15" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  lock: <path d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z" />,
+  unlock: <path d="M7 11V8a5 5 0 0 1 9.6-2M6 11h12v9H6z" />,
   trash: <path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" />,
   copy: <path d="M9 9h10v10H9zM5 15V5h10" />,
   moon: <path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z" />,
@@ -61,7 +73,7 @@ export function Slider(props: {
   );
 }
 
-export function Seg<T extends string | number>(props: {
+export function Seg<T extends string | number | boolean>(props: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;

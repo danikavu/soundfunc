@@ -3,8 +3,12 @@ import { compile } from './expr';
 import { compileGraph, euclid } from './graph';
 import { exportMidi, collectNotes } from './midi';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
-import { PRESETS, defaultProject, trackFromPreset } from './presets';
-import { renderTrack } from './project';
+import { KITS, PRESETS, defaultProject, trackFromPreset, trackFromTemplate } from './presets';
+import { harmonyAt, normalizeProject, renderTrack, type Project, type Track } from './project';
+import { chordName, chordTones } from './music';
+import { mulberry32, mutateFormula, mutateTrack, musicalScore } from './mutate';
+import { parsePattern } from './graph';
+import { timbreHarmonics } from './timbre';
 
 const ev = (s: string, scope = {}) => compile(s).fn(scope);
 
@@ -68,14 +72,16 @@ describe('graph', () => {
       ],
     });
     expect(p.errors.size).toBeGreaterThan(0);
-    expect(p.run({ n: 0, x: 0, t: 0, k: 0, steps: 1 })).not.toBeNull();
+    expect(p.run({ n: 0, x: 0, t: 0, k: 0, steps: 1, h: 0, bar: 0, L: 7 })).not.toBeNull();
   });
   it('every preset renders notes without errors', () => {
     const song = defaultProject().song;
     PRESETS.forEach((preset, i) => {
       const r = renderTrack(trackFromPreset(preset, i), song);
       expect(r.errors.size, preset.id).toBe(0);
-      expect(r.notes.length, preset.id).toBeGreaterThan(0);
+      // glide presets sound through their curve rather than discrete notes
+      const sounding = preset.track.playMode === 'glide' ? r.curve.velocity.filter((v) => v > 0.01).length : r.notes.length;
+      expect(sounding, preset.id).toBeGreaterThan(0);
       for (const n of r.notes) expect(n.midi).toBeGreaterThanOrEqual(0);
     });
   });
@@ -102,5 +108,165 @@ describe('midi', () => {
     const notes = collectNotes(p);
     const total = 8 * 4; // longest pattern is 8 beats, 4 loops
     for (const t of notes) for (const n of t.notes) expect(n.beat).toBeLessThan(total);
+  });
+});
+
+describe('patterns & rhythm', () => {
+  it('parses hex/binary literals and pattern helpers', () => {
+    expect(ev('0xff')).toBe(255);
+    expect(ev('0b101')).toBe(5);
+    expect([0, 1, 2, 3].map((n) => ev('bits(0b1001, n, 4)', { n }))).toEqual([1, 0, 0, 1]);
+    expect(ev('pick(5, 10, 20, 30)')).toBe(30);
+    expect(ev('every(8, 4)')).toBe(1);
+    expect(ev('recaman(4)')).toBe(2); // 0 1 3 6 2
+  });
+  it('reads drum notation', () => {
+    expect(parsePattern('X.x|o 9')).toEqual([1, 0, 0.75, 0.35, 1]);
+  });
+  it('ratchets and swing produce extra, shifted hits', () => {
+    const kit = KITS.find((k) => k.id === 'trap')!;
+    const hats = trackFromTemplate(kit.tracks[2], 'hats', 0);
+    const r = renderTrack(hats, defaultProject().song);
+    expect(r.notes.length).toBeGreaterThan(hats.steps); // rolls add hits
+    const swung = renderTrack({ ...hats, swing: 0.5 }, defaultProject().song);
+    expect(swung.notes.find((n) => n.step === 1)!.beat).toBeCloseTo(1.5 * hats.stepBeats);
+  });
+});
+
+describe('glide', () => {
+  const theremin = () => trackFromPreset(PRESETS.find((p) => p.id === 'theremin')!, 0);
+  it('produces a continuous, unquantized curve and no notes', () => {
+    const r = renderTrack(theremin(), defaultProject().song);
+    expect(r.notes).toHaveLength(0);
+    expect(r.curve.midi.length).toBe(16 * 16);
+    expect(r.curve.midi.some((m) => Math.abs(m - Math.round(m)) > 0.05)).toBe(true);
+  });
+  it('snaps to whole notes when quantized', () => {
+    const r = renderTrack({ ...theremin(), quantize: true }, defaultProject().song);
+    expect(r.curve.midi.every((m) => m === Math.round(m))).toBe(true);
+  });
+  it('exports glide as pitch bend and drums on channel 10', () => {
+    const kit = KITS.find((k) => k.id === 'dnb')!;
+    const p: Project = { name: 'dnb', song: { ...defaultProject().song, ...kit.song }, tracks: kit.tracks.map((t, i) => trackFromTemplate(t, t.name, i)) };
+    const bytes = exportMidi(p);
+    const has = (status: number) => bytes.some((b, i) => b === status && i > 14);
+    expect(has(0x99)).toBe(true); // note-on, channel 10
+    expect([...bytes].some((b) => (b & 0xf0) === 0xe0)).toBe(true); // pitch bend
+  });
+});
+
+describe('kits & custom timbre', () => {
+  it('every kit renders without errors', () => {
+    for (const kit of KITS) {
+      const song = { ...defaultProject().song, ...kit.song };
+      kit.tracks.forEach((t, i) => {
+        const r = renderTrack(trackFromTemplate(t, t.name, i), song);
+        expect(r.errors.size, `${kit.id}/${t.name}`).toBe(0);
+        expect(r.notes.length + r.curve.velocity.filter((v) => v > 0.01).length, `${kit.id}/${t.name}`).toBeGreaterThan(0);
+      });
+    }
+  });
+  it('turns a formula into harmonics', () => {
+    const h = timbreHarmonics('sin(tau*p)')!;
+    expect(Math.abs(h.imag[1])).toBeGreaterThan(0.9);
+    expect(Math.abs(h.imag[2])).toBeLessThan(0.01);
+    expect(timbreHarmonics('sin(')).toBeNull();
+  });
+  it('fills in fields missing from older saved projects', () => {
+    const old = defaultProject();
+    const stripped = { ...old, tracks: old.tracks.map(({ playMode, swing, send, ...t }) => t as Track) };
+    const p = normalizeProject(stripped);
+    expect(p.tracks[0].playMode).toBe('notes');
+    expect(p.tracks[0].send).toBe(1);
+  });
+});
+
+describe('chords & harmony', () => {
+  it('stacks scale thirds into diatonic chords', () => {
+    // C major: I = C E G, ii = D F A, V7 = G B D F
+    expect(chordTones(0, 3, 2, 0, 0, 'major', 4)).toEqual([60, 64, 67]);
+    expect(chordTones(1, 3, 2, 0, 0, 'major', 4)).toEqual([62, 65, 69]);
+    expect(chordTones(4, 4, 2, 0, 0, 'major', 4)).toEqual([67, 71, 74, 77]);
+    // first inversion lifts the root
+    expect(chordTones(0, 3, 2, 1, 0, 'major', 4)).toEqual([64, 67, 72]);
+    // quartal: stacked fourths
+    expect(chordTones(0, 3, 3, 0, 0, 'major', 4)).toEqual([60, 65, 71]);
+  });
+  it('names chords', () => {
+    expect(chordName(0, 0, 'major').name).toBe('C');
+    expect(chordName(1, 0, 'major').name).toBe('Dm');
+    expect(chordName(6, 0, 'major')).toEqual({ name: 'B°', roman: 'vii°' });
+    expect(chordName(4, 0, 'major', 4).name).toBe('G7');
+  });
+  it('evaluates the progression per bar and feeds h to tracks', () => {
+    const song = { ...defaultProject().song, root: 0, scale: 'major', harmony: 'pick(bar, 0, 4, 5, 3)' };
+    expect([0, 4, 8, 12, 16].map((b) => harmonyAt(song, b))).toEqual([0, 4, 5, 3, 0]);
+    const pad = trackFromPreset(PRESETS.find((p) => p.id === 'chordPad')!, 0);
+    const notes = renderTrack(pad, song, 1).notes; // loop 1 = bar 1 = V
+    expect(notes.map((n) => n.midi % 12).sort((a, b) => a - b)).toEqual([2, 5, 7, 11]); // G B D F
+  });
+  it('strums chords across time', () => {
+    const strum = trackFromPreset(PRESETS.find((p) => p.id === 'strum')!, 0);
+    const notes = renderTrack(strum, defaultProject().song).notes.filter((n) => n.step === 0);
+    expect(notes).toHaveLength(3);
+    expect(notes[1].beat).toBeGreaterThan(notes[0].beat);
+  });
+});
+
+describe('randomizer', () => {
+  it('mutates formulas into valid formulas', () => {
+    const rng = mulberry32(1);
+    for (let i = 0; i < 200; i++) {
+      const out = mutateFormula('3*sin(tau*x) + bits(0xA030, n) + pick(n, 0, 2, 4)', i / 200, rng, ['n', 'x', 'k', 'h', 'L'], true);
+      expect(() => compile(out, ['n', 'x', 'k', 'h', 'L'])).not.toThrow();
+    }
+  });
+  it('reads number roles from context: degrees stay degrees, probabilities stay in 0..1', () => {
+    const rng = mulberry32(5);
+    const vars = ['n', 'x', 'k', 'h', 'L'];
+    for (let i = 0; i < 300; i++) {
+      const f = mutateFormula('h + pick(n, 0, 2, 4) + chance(n, 0.5, 3) + every(n, 4, 2)', 1, rng, vars);
+      const nums = (re: RegExp) => [...f.matchAll(re)].map((m) => m[1].split(',').map((v) => Number(v.replace(/[()\s]/g, ''))));
+      for (const args of nums(/pick\(n,([^)]*(?:\([^)]*\))*[^)]*)\)/g)) for (const d of args) expect(Math.abs(d)).toBeLessThanOrEqual(14);
+      for (const [p] of nums(/chance\(n, ([^,]+),/g)) expect(p).toBeLessThanOrEqual(0.95);
+    }
+  });
+  it('keeps the meaning of minus signs', () => {
+    const rng = mulberry32(9);
+    for (let i = 0; i < 100; i++) {
+      const f = mutateFormula('x - 3', 0.9, rng, ['x']);
+      expect(() => compile(f, ['x'])).not.toThrow();
+    }
+  });
+  it('is deterministic per seed and actually changes something', () => {
+    const t = trackFromPreset(PRESETS.find((p) => p.id === 'fib')!, 0);
+    const song = defaultProject().song;
+    const a = mutateTrack(t, song, 0.3, 42);
+    const b = mutateTrack(t, song, 0.3, 42);
+    expect(JSON.stringify(a.track.graph)).toBe(JSON.stringify(b.track.graph));
+    expect(JSON.stringify(a.track.graph)).not.toBe(JSON.stringify(t.graph));
+  });
+  it('respects locked nodes', () => {
+    const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+    t.graph.nodes = t.graph.nodes.map((n) => ({ ...n, data: { ...n.data, locked: true } }));
+    expect(mutateTrack(t, defaultProject().song, 0.9, 7).track.graph).toEqual(t.graph);
+  });
+  it('harmonious mode stays closer to chord tones than experimental', () => {
+    const song = { ...defaultProject().song, root: 0, scale: 'major', harmony: 'pick(bar, 0, 3, 4, 0)' };
+    const t = trackFromPreset(PRESETS.find((p) => p.id === 'arp')!, 0);
+    const avgNovelty = (chaos: number) => {
+      let total = 0;
+      for (let s = 0; s < 12; s++) {
+        const m = mutateTrack(t, song, chaos, 100 + s);
+        const a = renderTrack(m.track, song).notes.map((n) => n.midi);
+        const o = renderTrack(t, song).notes.map((n) => n.midi);
+        total += a.reduce((acc, v, i) => acc + Math.abs(v - (o[i] ?? v)), 0) / Math.max(1, a.length);
+      }
+      return total / 12;
+    };
+    expect(avgNovelty(0.1)).toBeLessThan(avgNovelty(0.95));
+    // scoring is finite for a real candidate
+    const r = renderTrack(t, song);
+    expect(Number.isFinite(musicalScore(renderTrack(mutateTrack(t, song, 0.2, 3).track, song), r, t, song, 0.2))).toBe(true);
   });
 });

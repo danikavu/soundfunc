@@ -1,10 +1,11 @@
-import { PRESETS } from '../engine/presets';
-import { WAVEFORMS, audibleTracks } from '../engine/project';
+import { KITS, PRESETS } from '../engine/presets';
+import { audibleTracks, voiceLabel } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon } from './ui';
+import { toast } from './TopBar';
 
 export function Sidebar() {
-  const { project, selectTrack, updateTrack, addTrack, removeTrack } = useStore();
+  const { project, selectTrack, updateTrack, addTrack, addKit, removeTrack } = useStore();
   const selected = useSelectedTrack();
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
 
@@ -21,7 +22,7 @@ export function Sidebar() {
           <div style={{ minWidth: 0 }}>
             <div className="track-name">{t.name}</div>
             <div className="track-meta">
-              {WAVEFORMS[t.waveform]} · {t.steps} steps
+              {voiceLabel(t.waveform)}{t.playMode === 'glide' ? ' · glide' : ''} · {t.steps} steps
             </div>
           </div>
           <div className="track-actions" onClick={(e) => e.stopPropagation()}>
@@ -38,6 +39,25 @@ export function Sidebar() {
         </div>
       ))}
       {project.tracks.length === 0 && <p className="muted serif">An empty garden. Plant something below.</p>}
+
+      <div className="eyebrow">Rhythm kits</div>
+      {KITS.map((k) => (
+        <button
+          key={k.id}
+          className="preset"
+          onClick={(e) => {
+            addKit(k.id, e.shiftKey);
+            toast(e.shiftKey ? `Layered ${k.name}` : `Planted ${k.name} — ⌘Z to bring your garden back`);
+          }}
+          title={`${k.description}\n\nClick to replace the garden · ⇧-click to layer on top`}
+        >
+          <b>{k.name}</b>
+          <code>
+            {k.song?.bpm ? `${k.song.bpm} bpm · ` : ''}
+            {k.tracks.length} tracks
+          </code>
+        </button>
+      ))}
 
       <div className="eyebrow">Plant a function</div>
       {PRESETS.map((p) => (

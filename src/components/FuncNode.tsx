@@ -3,6 +3,7 @@ import { Handle, Position, useNodeConnections, type NodeProps } from '@xyflow/re
 import { tryCompile } from '../engine/expr';
 import { NODE_DEFS, ctxVars, type Category, type NodeData, type ParamDef } from '../engine/graph';
 import { useStore } from '../state/store';
+import { Icon } from './ui';
 
 export const CATEGORY_COLORS: Record<Category, string> = {
   source: '#6f8a63',
@@ -68,6 +69,22 @@ function Param({ p, data, onChange, onFocus }: { p: ParamDef; data: NodeData; on
       </div>
     );
   }
+  if (p.kind === 'text') {
+    return (
+      <label className="fnode-param">
+        <span>{p.label}</span>
+        <input
+          className="input mono nodrag"
+          value={String(data[p.key] ?? '')}
+          placeholder={p.placeholder}
+          spellCheck={false}
+          onFocus={onFocus}
+          onChange={(e) => onChange({ [p.key]: e.target.value })}
+          onKeyDown={(e) => e.stopPropagation()}
+        />
+      </label>
+    );
+  }
   if (p.kind === 'select') {
     return (
       <label className="fnode-param">
@@ -129,6 +146,15 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
         <span className="dot" style={{ background: color }} />
         <b>{def.label}</b>
         {trace.length > 0 && <span className="val">{lo === hi ? fmt(lo) : `${fmt(lo)} … ${fmt(hi)}`}</span>}
+        {def.params.length > 0 && (
+          <button
+            className={`lock nodrag ${d.locked ? 'on' : ''}`}
+            title={d.locked ? 'Locked — the randomizer leaves this node alone' : 'Lock against the randomizer'}
+            onClick={() => updateNodeData(ctx.trackId, id, { locked: !d.locked })}
+          >
+            <Icon name={d.locked ? 'lock' : 'unlock'} size={11} />
+          </button>
+        )}
       </div>
       <div className="fnode-body">
         {def.inputs.length > 0 && (

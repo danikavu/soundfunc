@@ -57,6 +57,47 @@ function logistic(r: number, n: number, x0 = 0.5): number {
   return x;
 }
 
+const recamanCache: number[] = [0];
+const recamanSeen = new Set<number>([0]);
+function recaman(n: number): number {
+  n = Math.max(0, Math.min(100000, Math.floor(n)));
+  for (let i = recamanCache.length; i <= n; i++) {
+    const prev = recamanCache[i - 1];
+    const next = prev - i > 0 && !recamanSeen.has(prev - i) ? prev - i : prev + i;
+    recamanCache.push(next);
+    recamanSeen.add(next);
+  }
+  return recamanCache[n];
+}
+
+// Lorenz attractor, integrated with a fixed step; x component, roughly -1..1
+const lorenzCache: number[] = [];
+let lorenzState: [number, number, number] | null = null;
+function lorenz(n: number): number {
+  n = Math.max(0, Math.min(20000, Math.floor(n)));
+  if (!lorenzState) {
+    lorenzState = [0.1, 0, 0];
+    for (let i = 0; i < 400; i++) lorenzState = lorenzStep(...lorenzState); // settle onto the attractor
+  }
+  while (lorenzCache.length <= n) {
+    for (let i = 0; i < 8; i++) lorenzState = lorenzStep(...lorenzState);
+    lorenzCache.push(lorenzState[0] / 20);
+  }
+  return lorenzCache[n];
+}
+function lorenzStep(x: number, y: number, z: number): [number, number, number] {
+  const dt = 0.005;
+  return [x + dt * 10 * (y - x), y + dt * (x * (28 - z) - y), z + dt * (x * y - (8 / 3) * z)];
+}
+
+/** Euclidean rhythm: 1 if step n is a hit when spreading `pulses` over `steps`. */
+export function euclid(n: number, pulses: number, steps: number, rotate = 0): number {
+  steps = Math.max(1, Math.floor(steps));
+  pulses = Math.max(0, Math.min(steps, Math.floor(pulses)));
+  const i = (((Math.floor(n) + Math.floor(rotate)) % steps) + steps) % steps;
+  return Math.floor((i * pulses) / steps) !== Math.floor(((i - 1) * pulses) / steps) ? 1 : 0;
+}
+
 // deterministic hash in [0,1)
 function hash(n: number, seed = 0): number {
   let h = Math.imul(Math.floor(n) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(Math.floor(seed) + 0x632be5ab, 0xc2b2ae35);
@@ -132,6 +173,41 @@ export const FUNCTIONS: Record<string, { fn: (...a: number[]) => number; doc: st
     },
     doc: 'digits(x, n) nth digit',
   },
+  recaman: { fn: recaman, doc: 'Recamán sequence' },
+  lorenz: { fn: lorenz, doc: 'Lorenz attractor x, ≈ −1..1' },
+  euclid: { fn: (n, k, s, r = 0) => euclid(n, k, s, r), doc: 'euclid(n, pulses, steps, rot) → 0/1' },
+  bits: {
+    fn: (mask, n, len = 16) => {
+      // read a rhythm written as binary, left to right: bits(0b1000100010001000, n)
+      len = Math.max(1, Math.min(52, Math.floor(len)));
+      const i = mod(Math.floor(n), len);
+      return Math.floor(mask / Math.pow(2, len - 1 - i)) % 2;
+    },
+    doc: 'bits(0b1001…, n, len) rhythm from binary',
+  },
+  bit: { fn: (x, i) => Math.floor(Math.abs(x) / Math.pow(2, Math.floor(i))) % 2, doc: 'bit(x, i) ith bit' },
+  band: { fn: (a, b) => ((Math.floor(a) & Math.floor(b)) >>> 0), doc: 'bitwise and' },
+  bor: { fn: (a, b) => ((Math.floor(a) | Math.floor(b)) >>> 0), doc: 'bitwise or' },
+  bxor: { fn: (a, b) => ((Math.floor(a) ^ Math.floor(b)) >>> 0), doc: 'bitwise xor' },
+  pick: {
+    fn: (i, ...vals) => (vals.length ? vals[mod(Math.floor(i), vals.length)] : 0),
+    doc: 'pick(i, a, b, c…) choose by index',
+  },
+  every: { fn: (n, m, off = 0) => (mod(Math.floor(n) - Math.floor(off), Math.max(1, Math.floor(m))) === 0 ? 1 : 0), doc: 'every(n, m, offset) → 1 every m steps' },
+  chance: { fn: (n, p, seed = 0) => (hash(n, seed) < p ? 1 : 0), doc: 'chance(n, p, seed) → 1 with probability p' },
+  phase: { fn: (n, len) => (len ? mod(n, len) / len : 0), doc: 'phase(n, len) 0→1 ramp every len steps' },
+  decay: { fn: (n, len, rate = 4) => Math.exp(-rate * (len ? mod(n, len) / len : 0)), doc: 'decay(n, len, rate) falling envelope' },
+  quant: { fn: (v, s) => (s ? Math.round(v / s) * s : v), doc: 'quant(v, step) snap to a grid' },
+  wrap: { fn: (v, lo, hi) => (hi === lo ? lo : lo + mod(v - lo, hi - lo)), doc: 'wrap(v, lo, hi) wrap into range' },
+  fold: {
+    fn: (v, lo, hi) => {
+      const span = hi - lo;
+      if (span <= 0) return lo;
+      const u = mod(v - lo, 2 * span);
+      return lo + (u > span ? 2 * span - u : u);
+    },
+    doc: 'fold(v, lo, hi) bounce inside range',
+  },
   rand: { fn: hash, doc: 'rand(n, seed) deterministic 0..1' },
   noise: { fn: noise, doc: 'noise(x, seed) smooth 0..1' },
   gcd: {
@@ -154,15 +230,16 @@ export const CONSTANTS: Record<string, number> = {
 
 // ---------- tokenizer ----------
 
-type Tok =
-  | { t: 'num'; v: number; p: number }
-  | { t: 'id'; v: string; p: number }
-  | { t: 'op'; v: string; p: number }
-  | { t: 'eof'; p: number };
+/** p = position in the source, n = length — lets the randomizer rewrite formulas in place */
+export type Tok =
+  | { t: 'num'; v: number; p: number; n: number }
+  | { t: 'id'; v: string; p: number; n: number }
+  | { t: 'op'; v: string; p: number; n: number }
+  | { t: 'eof'; p: number; n: number };
 
 const OPS = ['<=', '>=', '==', '!=', '&&', '||', '+', '-', '*', '/', '%', '^', '(', ')', ',', '<', '>', '!', '?', ':'];
 
-function tokenize(src: string): Tok[] {
+export function tokenize(src: string): Tok[] {
   const out: Tok[] = [];
   let i = 0;
   while (i < src.length) {
@@ -171,25 +248,32 @@ function tokenize(src: string): Tok[] {
       i++;
       continue;
     }
+    if (c === '0' && /[xXbB]/.test(src[i + 1] ?? '')) {
+      const m = /^0([xX][0-9a-fA-F]+|[bB][01]+)/.exec(src.slice(i));
+      if (!m) throw new ExprError(`Bad number`, i);
+      out.push({ t: 'num', v: parseInt(m[1].slice(1), /[xX]/.test(m[1][0]) ? 16 : 2), p: i, n: m[0].length });
+      i += m[0].length;
+      continue;
+    }
     if (/[0-9.]/.test(c)) {
       const m = /^(\d+\.?\d*|\.\d+)(e[+-]?\d+)?/i.exec(src.slice(i));
       if (!m) throw new ExprError(`Bad number`, i);
-      out.push({ t: 'num', v: parseFloat(m[0]), p: i });
+      out.push({ t: 'num', v: parseFloat(m[0]), p: i, n: m[0].length });
       i += m[0].length;
       continue;
     }
     if (/[a-zA-Z_]/.test(c)) {
       const m = /^[a-zA-Z_][a-zA-Z0-9_]*/.exec(src.slice(i))!;
-      out.push({ t: 'id', v: m[0], p: i });
+      out.push({ t: 'id', v: m[0], p: i, n: m[0].length });
       i += m[0].length;
       continue;
     }
     const op = OPS.find((o) => src.startsWith(o, i));
     if (!op) throw new ExprError(`Unexpected '${c}'`, i);
-    out.push({ t: 'op', v: op, p: i });
+    out.push({ t: 'op', v: op, p: i, n: op.length });
     i += op.length;
   }
-  out.push({ t: 'eof', p: src.length });
+  out.push({ t: 'eof', p: src.length, n: 0 });
   return out;
 }
 
