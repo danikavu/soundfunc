@@ -441,6 +441,9 @@ input[type='range']:hover::-webkit-slider-thumb {
 .track-meta {
   font-size: 10.5px;
   color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .track-actions {
   display: flex;
@@ -466,6 +469,26 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 .ms.on.solo {
   background: var(--accent);
+}
+/* remove: takes no room until the row is hovered, then slides in beside M/S */
+.ms.remove {
+  display: inline-grid;
+  place-items: center;
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: width 0.3s var(--ease), opacity 0.25s var(--ease), transform 0.3s var(--ease), background 0.2s, color 0.2s;
+}
+.track:hover .ms.remove,
+.ms.remove:focus-visible {
+  width: 20px;
+  opacity: 1;
+  transform: scale(1);
+}
+.ms.remove:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .preset {

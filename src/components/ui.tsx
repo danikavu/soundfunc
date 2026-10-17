@@ -8,6 +8,7 @@ const paths: Record<string, ReactNode> = {
   play: <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" stroke="none" />,
   stop: <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none" />,
   plus: <path d="M12 5v14M5 12h14" />,
+  close: <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,
   trash: <path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" />,
   copy: <path d="M9 9h10v10H9zM5 15V5h10" />,
   moon: <path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z" />,

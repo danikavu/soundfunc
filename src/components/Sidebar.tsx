@@ -1,9 +1,10 @@
 import { PRESETS } from '../engine/presets';
 import { WAVEFORMS, audibleTracks } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
+import { Icon } from './ui';
 
 export function Sidebar() {
-  const { project, selectTrack, updateTrack, addTrack } = useStore();
+  const { project, selectTrack, updateTrack, addTrack, removeTrack } = useStore();
   const selected = useSelectedTrack();
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
 
@@ -29,6 +30,9 @@ export function Sidebar() {
             </button>
             <button className={`ms solo ${t.solo ? 'on' : ''}`} title="Solo" onClick={() => updateTrack(t.id, { solo: !t.solo })}>
               S
+            </button>
+            <button className="ms remove" title="Remove track (⌘Z to undo)" aria-label={`Remove ${t.name}`} onClick={() => removeTrack(t.id)}>
+              <Icon name="close" size={11} />
             </button>
           </div>
         </div>
