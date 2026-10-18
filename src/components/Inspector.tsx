@@ -8,7 +8,8 @@ import { useLibrary, voiceOf, wearsVoice } from '../state/library';
 import { toast } from './TopBar';
 import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
-import { Icon, NumberField, Seg, Slider, TextArea, TextField, getRender } from './ui';
+import { Icon, NumberField, Seg, Slider, TextField, getRender } from './ui';
+import { FormulaEditor } from './FormulaEditor';
 
 type Tab = 'sound' | 'notes' | 'guide';
 
@@ -33,11 +34,9 @@ function TimbreEditor() {
         <span>
           One cycle of the wave, <code className="mono">f(p)</code> with p = 0 → 1
         </span>
-        <TextArea
-          className={`formula ${samples ? '' : 'bad'}`}
-          rows={1}
-          spellCheck={false}
+        <FormulaEditor
           value={track.timbre}
+          vars={{ p: 'phase through one cycle, 0 → 1' }}
           onFocus={checkpoint}
           onValue={(timbre) => updateTrack(track.id, { timbre }, false)}
         />

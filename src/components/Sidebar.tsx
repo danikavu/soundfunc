@@ -11,7 +11,17 @@ export function Sidebar() {
 
   return (
     <aside className="panel">
-      <div className="eyebrow">Tracks</div>
+      <div className="eyebrow">
+        Tracks
+        <span className="eyebrow-actions">
+          <button className="btn small ghost" onClick={() => addTrack('blank')} title="A clock, one formula and Note Out">
+            <Icon name="plus" size={11} /> Empty
+          </button>
+          <button className="btn small ghost" onClick={() => useStore.getState().setShowImport(true)} title="Paste LaTeX, Desmos or plain math">
+            <span className="serif">ƒ</span> Paste function
+          </button>
+        </span>
+      </div>
       {project.tracks.map((t) => (
         <div
           key={t.id}

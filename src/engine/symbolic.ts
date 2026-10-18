@@ -16,7 +16,7 @@ const call = (fn: string, ...args: Ast[]): Ast => ({ k: 'call', fn, args });
 const bin = (op: BinOp, a: Ast, b: Ast): Ast => ({ k: 'bin', op, a, b });
 const n = (x: unknown, d = 0) => (typeof x === 'number' && isFinite(x) ? x : Number(x) || d);
 
-function substitute(ast: Ast, map: Record<string, Ast>): Ast {
+export function substitute(ast: Ast, map: Record<string, Ast>): Ast {
   switch (ast.k) {
     case 'var':
       return map[ast.name] ?? ast;
@@ -395,7 +395,7 @@ export function toSource(ast: Ast, min = 0): string {
 
 // ---------- printing: LaTeX ----------
 
-const TEX_VARS: Record<string, string> = { bar: '\\mathrm{bar}', steps: 'N' };
+const TEX_VARS: Record<string, string> = { bar: '\\mathrm{bar}', steps: 'N', __undefined: '\\text{silence}' };
 const TEX_CONST: Record<string, string> = { pi: '\\pi', tau: '\\tau', phi: '\\varphi', e: 'e' };
 const TEX_FN: Record<string, string> = {
   sin: '\\sin', cos: '\\cos', tan: '\\tan', asin: '\\arcsin', acos: '\\arccos', atan: '\\arctan', sinh: '\\sinh', tanh: '\\tanh',

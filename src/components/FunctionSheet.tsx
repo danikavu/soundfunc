@@ -3,29 +3,10 @@ import { compose, describeTrack, trackCode, trackSource, trackTex } from '../eng
 import { useSelectedTrack, useStore } from '../state/store';
 import { toast } from './TopBar';
 import { Icon, Seg, download, fileSafe } from './ui';
+import { Tex, useKatex } from './tex';
 
 type Tab = 'math' | 'source' | 'js' | 'py';
 type Scope = 'track' | 'garden';
-
-type Katex = typeof import('katex').default;
-
-/** KaTeX is loaded only when the sheet first opens — it's the heaviest part of the page. */
-function useKatex(): Katex | null {
-  const [k, setK] = useState<Katex | null>(null);
-  useEffect(() => {
-    let live = true;
-    void Promise.all([import('katex'), import('katex/dist/katex.min.css')]).then(([m]) => live && setK(() => m.default));
-    return () => {
-      live = false;
-    };
-  }, []);
-  return k;
-}
-
-function Tex({ tex, katex }: { tex: string; katex: Katex | null }) {
-  const html = useMemo(() => (katex ? katex.renderToString(tex, { displayMode: true, throwOnError: false, strict: false }) : null), [tex, katex]);
-  return html ? <div className="tex" dangerouslySetInnerHTML={{ __html: html }} /> : <code className="tex-raw">{tex}</code>;
-}
 
 /** a light touch of colour for code: comments, strings, keywords, numbers */
 function highlight(code: string, lang: 'js' | 'py'): (string | ReactNode)[] {

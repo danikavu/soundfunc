@@ -121,6 +121,20 @@ textarea {
   flex: 1;
   height: 1px;
   background: var(--line-soft);
+  order: 1;
+}
+.eyebrow-actions {
+  order: 2;
+  display: flex;
+  gap: 0;
+  margin: -6px -8px -6px 0;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.eyebrow-actions .btn {
+  font-size: 11px;
+  padding: 3px 7px;
+  color: var(--ink-2);
 }
 
 .serif {
@@ -1356,4 +1370,126 @@ button:focus-visible {
 .save-voice .input {
   flex: 1;
   font-size: 12px;
+}
+
+/* ---------- paste a function ---------- */
+
+.import-sheet {
+  width: min(860px, 100%);
+}
+.import-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 16px;
+}
+.import-src {
+  min-height: 92px;
+  font-size: 13px;
+  resize: vertical;
+  field-sizing: fixed;
+}
+.import-plot {
+  width: 100%;
+  height: 140px;
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+}
+.import-error,
+.import-warn {
+  margin: 0;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+.import-error {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.import-warn {
+  color: var(--ink-2);
+  background: var(--paper-2);
+}
+.import-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 6px;
+}
+.import-options input[type='checkbox'] {
+  accent-color: var(--ink);
+}
+
+/* ---------- formula editor ---------- */
+
+.formula-edit {
+  position: relative;
+}
+.formula-math {
+  cursor: text;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.formula-math:hover {
+  border-color: var(--line);
+}
+.tex-inline .katex {
+  font-size: 1.02em;
+  color: var(--ink);
+  white-space: normal;
+}
+.ac-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 220px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+  animation: rise 0.15s var(--ease);
+}
+.ac-menu button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ac-menu button.hl {
+  background: var(--paper-2);
+}
+.ac-menu code {
+  font: 11.5px var(--mono);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.ac-menu small {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ac-hint {
+  font-size: 9.5px;
+  color: var(--ink-3);
+  padding: 4px 6px 2px;
+  border-top: 1px solid var(--line-soft);
+  margin-top: 2px;
+}
+.import-sheet .tex .katex {
+  font-size: 0.95em;
 }

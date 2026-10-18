@@ -28,6 +28,11 @@ interface State {
   updateTrack: (id: string, patch: Partial<Track>, record?: boolean) => void;
   selectTrack: (id: string) => void;
   addTrack: (presetId: string) => void;
+  /** add a ready-made track (e.g. an imported function) and select it */
+  plantTrack: (track: Track) => void;
+  /** the "paste a function" sheet */
+  showImport: boolean;
+  setShowImport: (open: boolean) => void;
   /** plant a multi-track kit (and its tempo/key); replaces the current tracks unless layering */
   addKit: (kitId: string, layer?: boolean) => void;
   duplicateTrack: (id: string) => void;
@@ -99,6 +104,12 @@ export const useStore = create<State>()(
           if (!layer) set({ currentProjectId: null });
           set({ selectedTrackId: tracks[0]?.id ?? null });
         },
+        plantTrack: (track) => {
+          commit((p) => ({ ...p, tracks: [...p.tracks, track] }));
+          set({ selectedTrackId: track.id });
+        },
+        showImport: false,
+        setShowImport: (showImport) => set({ showImport }),
         duplicateTrack: (id) => {
           const src = get().project.tracks.find((t) => t.id === id);
           if (!src) return;

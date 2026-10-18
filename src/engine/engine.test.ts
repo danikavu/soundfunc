@@ -14,6 +14,7 @@ import { chordName, chordTones } from './music';
 import { mulberry32, mutateFormula, mutateTrack, musicalScore } from './mutate';
 import { parsePattern } from './graph';
 import { timbreHarmonics } from './timbre';
+import { importMath } from './importMath';
 import { cleanProject, projectKey, voiceOf, wearsVoice } from '../state/library';
 
 const ev = (s: string, scope = {}) => compile(s).fn(scope);
@@ -381,5 +382,60 @@ describe('library', () => {
     expect(v).toMatchObject({ name: 'Folded', waveform: 'custom', timbre: t.timbre });
     expect(wearsVoice(t, v)).toBe(true);
     expect(wearsVoice({ ...t, timbre: 'sin(tau*p)' }, v)).toBe(false);
+  });
+});
+
+describe('importing functions', () => {
+  // the first "graphed arpeggios" function, written three ways
+  const reference = compile(
+    'floor((12 * ((3*floor(t/2) + 2*(floor(4t) % 4) + (floor(4t) % 8 == 4) + 5) % 7) + 2) / 7) / 12 - (floor(4t) % 8 == 0) + (floor(t/2) == 2) * (floor(4t) % 4 == 1) / 12 + exp(-12 * fract(4t)) / 6',
+    ['t'],
+  ).fn;
+  const same = (src: string) => {
+    const r = importMath(src);
+    const f = compileAst(r.value);
+    for (let i = 0; i < 64; i++) {
+      const t = i / 4 + 0.13;
+      expect(f({ t }), `t=${t}`).toBeCloseTo(reference({ t }), 9);
+    }
+    return r;
+  };
+
+  it('reads LaTeX as Desmos copies it', () => {
+    const r = same(
+      'y=\\frac{\\operatorname{floor}\\left(\\frac{12\\operatorname{mod}\\left(3\\operatorname{floor}\\left(\\frac{x}{2}\\right)+2\\operatorname{mod}\\left(\\operatorname{floor}\\left(4x\\right),4\\right)+\\left\\{\\operatorname{mod}\\left(\\operatorname{floor}\\left(4x\\right),8\\right)=4:1,0\\right\\}+5,7\\right)+2}{7}\\right)}{12}-\\left\\{\\operatorname{mod}\\left(\\operatorname{floor}\\left(4x\\right),8\\right)=0:1,0\\right\\}+\\frac{\\left\\{\\operatorname{floor}\\left(\\frac{x}{2}\\right)=2:1,0\\right\\}\\left\\{\\operatorname{mod}\\left(\\operatorname{floor}\\left(4x\\right),4\\right)=1:1,0\\right\\}}{12}+\\frac{e^{-12\\operatorname{mod}\\left(4x,1\\right)}}{6}',
+    );
+    expect(r.gate).toBeNull();
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('reads LaTeX with \\lfloor and Iverson brackets', () => {
+    same(
+      'y = \\frac{\\left\\lfloor \\frac{12\\operatorname{mod}(3\\lfloor x/2 \\rfloor + 2(\\lfloor 4x \\rfloor \\bmod 4) + (\\lfloor 4x\\rfloor \\bmod 8 = 4) + 5, 7) + 2}{7} \\right\\rfloor}{12} - (\\lfloor 4x \\rfloor \\bmod 8 = 0) + \\frac{(\\lfloor x/2 \\rfloor = 2)(\\lfloor 4x \\rfloor \\bmod 4 = 1)}{12} + \\frac{e^{-12\\operatorname{frac}(4x)}}{6}',
+    );
+  });
+
+  it('reads plain math with ⌊ ⌋ and mod(…)', () => {
+    same('y = ⌊(12·mod(3⌊x/2⌋ + 2(⌊4x⌋ mod 4) + (⌊4x⌋ mod 8 = 4) + 5, 7) + 2)/7⌋/12 − (⌊4x⌋ mod 8 = 0) + (⌊x/2⌋ = 2)(⌊4x⌋ mod 4 = 1)/12 + e^(−12 frac(4x))/6');
+  });
+
+  it('keeps undefined piecewise regions as silence', () => {
+    const r = importMath('\\begin{cases} 1 - 3(x-7)^2 & \\text{if } x \\ge 7 \\\\ 2 & \\text{if } \\operatorname{frac}(x) < \\frac14 \\end{cases}');
+    const v = compileAst(r.value), g = compileAst(r.gate!);
+    expect(v({ t: 7.5 })).toBeCloseTo(1 - 3 * 0.25);
+    expect(g({ t: 7.5 })).toBe(1);
+    expect(v({ t: 2.1 })).toBe(2);
+    expect(g({ t: 2.1 })).toBe(1);
+    expect(g({ t: 2.6 })).toBe(0); // neither case holds → undefined → silent
+    // Desmos style, nested
+    const d = importMath('\\left\\{\\operatorname{mod}(x,1)<0.5:\\left\\{x<2:1,3\\right\\}\\right\\}');
+    expect(compileAst(d.gate!)({ t: 0.7 })).toBe(0);
+    expect(compileAst(d.value)({ t: 2.2 })).toBe(3);
+  });
+
+  it('explains what it could not use', () => {
+    expect(importMath('a x + 1').warnings.join(' ')).toMatch(/“a”/);
+    expect(importMath('wobble(x)').warnings.join(' ')).toMatch(/Unknown function “wobble”/);
+    expect(() => importMath('⌊x/2')).toThrow(/⌋/);
   });
 });

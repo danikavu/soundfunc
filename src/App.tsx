@@ -9,6 +9,7 @@ import { Visualizer } from './components/Visualizer';
 import { NodeEditor, runMutate, toggleLockSelected } from './components/NodeEditor';
 import { Inspector } from './components/Inspector';
 import { FunctionSheet } from './components/FunctionSheet';
+import { ImportSheet } from './components/ImportSheet';
 import { saveGarden } from './components/GardenMenu';
 
 const isTyping = (t: EventTarget | null) =>
@@ -71,6 +72,7 @@ export function App() {
         <Inspector />
       </div>
       <FunctionSheet />
+      <ImportSheet />
     </div>
   );
 }

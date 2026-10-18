@@ -1,9 +1,9 @@
 import { createContext, memo, useContext } from 'react';
 import { Handle, Position, useNodeConnections, type NodeProps } from '@xyflow/react';
-import { tryCompile } from '../engine/expr';
-import { NODE_DEFS, ctxVars, type Category, type NodeData, type ParamDef } from '../engine/graph';
+import { NODE_DEFS, type Category, type NodeData, type ParamDef } from '../engine/graph';
 import { useStore } from '../state/store';
-import { Icon, NumberField, TextArea, TextField } from './ui';
+import { Icon, NumberField, TextField } from './ui';
+import { FormulaEditor } from './FormulaEditor';
 
 export const CATEGORY_COLORS: Record<Category, string> = {
   source: '#6f8a63',
@@ -52,22 +52,7 @@ const fmt = (v: number) => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 1
 
 function Param({ p, data, onChange, onFocus }: { p: ParamDef; data: NodeData; onChange: (patch: NodeData) => void; onFocus: () => void }) {
   if (p.kind === 'formula') {
-    const value = String(data[p.key] ?? '');
-    const { error } = tryCompile(value, ['a', 'b', 'c', ...ctxVars]);
-    return (
-      <div>
-        <TextArea
-          className={`formula nodrag nowheel ${error ? 'bad' : ''}`}
-          value={value}
-          spellCheck={false}
-          rows={1}
-          onFocus={onFocus}
-          onValue={(v) => onChange({ [p.key]: v })}
-          onKeyDown={(e) => e.stopPropagation()}
-        />
-        {error && <div className="fnode-error">{error}</div>}
-      </div>
-    );
+    return <FormulaEditor value={String(data[p.key] ?? '')} onValue={(v) => onChange({ [p.key]: v })} onFocus={onFocus} />;
   }
   if (p.kind === 'text') {
     return (
