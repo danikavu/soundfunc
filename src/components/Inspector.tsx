@@ -3,7 +3,9 @@ import { engine } from '../engine/audio';
 import { CONSTANTS, FUNCTIONS } from '../engine/expr';
 import { PITCH_MODES, midiToName, type PitchMode } from '../engine/music';
 import { TRACK_COLORS } from '../engine/presets';
-import { DRUMS, WAVEFORMS, isDrum, keyLabel, type PlayMode, type Waveform } from '../engine/project';
+import { DRUMS, WAVEFORMS, isDrum, keyLabel, voiceLabel, type PlayMode, type Waveform } from '../engine/project';
+import { useLibrary, voiceOf, wearsVoice } from '../state/library';
+import { toast } from './TopBar';
 import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, NumberField, Seg, Slider, TextArea, TextField, getRender } from './ui';
@@ -55,6 +57,100 @@ function TimbreEditor() {
   );
 }
 
+function WaveGlyph({ formula, color }: { formula: string; color: string }) {
+  const s = timbreSamples(formula, 48);
+  if (!s) return null;
+  const d = Array.from(s, (v, i) => `${i ? 'L' : 'M'}${((i / 47) * 26).toFixed(1)},${(7 - v * 5.5).toFixed(1)}`).join('');
+  return (
+    <svg width="26" height="14" viewBox="0 0 26 14" aria-hidden>
+      <path d={d} fill="none" stroke={color} strokeWidth={1.3} />
+    </svg>
+  );
+}
+
+/** Saved voices: the waveform, custom f(p) and envelope, reusable on any track. */
+function VoiceShelf() {
+  const track = useSelectedTrack()!;
+  const updateTrack = useStore((s) => s.updateTrack);
+  const { voices, saveVoice, deleteVoice } = useLibrary();
+  const [naming, setNaming] = useState<string | null>(null);
+
+  const suggest = () => {
+    const preset = TIMBRE_PRESETS.find((p) => p.formula === track.timbre);
+    const base = track.waveform === 'custom' ? (preset?.label ?? 'My wave') : voiceLabel(track.waveform);
+    let name = base, i = 2;
+    while (voices.some((v) => v.name === name)) name = `${base} ${i++}`;
+    return name;
+  };
+  const save = () => {
+    const name = (naming ?? '').trim();
+    if (!name) return setNaming(null);
+    const replacing = voices.some((v) => v.name === name);
+    saveVoice(voiceOf(track, name));
+    setNaming(null);
+    toast(`${replacing ? 'Updated' : 'Saved'} voice “${name}”`);
+  };
+
+  return (
+    <div className="field" style={{ marginTop: 10 }}>
+      <span>My voices</span>
+      <div className="voice-shelf">
+        {voices.map((v) => (
+          <button
+            key={v.id}
+            className={`voice-chip ${wearsVoice(track, v) ? 'on' : ''}`}
+            title={`${voiceLabel(v.waveform)}${v.waveform === 'custom' ? ` · f(p) = ${v.timbre}` : ''} · attack ${Math.round(v.attack * 1000)}ms · release ${v.release.toFixed(2)}s`}
+            onClick={() => updateTrack(track.id, { waveform: v.waveform, timbre: v.timbre, attack: v.attack, release: v.release })}
+          >
+            {v.waveform === 'custom' && <WaveGlyph formula={v.timbre} color="currentColor" />}
+            {v.name}
+            <span
+              className="x"
+              role="button"
+              aria-label={`Delete voice ${v.name}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(`Delete the voice “${v.name}”? Tracks using it keep their sound.`)) deleteVoice(v.id);
+              }}
+            >
+              <Icon name="close" size={9} />
+            </span>
+          </button>
+        ))}
+        {voices.length === 0 && naming === null && <span className="muted" style={{ fontSize: 11 }}>Save a voice to reuse it on any track, in any garden.</span>}
+      </div>
+      {naming === null ? (
+        <div className="row" style={{ marginTop: 6 }}>
+          <button className="btn small" onClick={() => setNaming(suggest())}>
+            <Icon name="plus" size={11} /> Save voice
+          </button>
+        </div>
+      ) : (
+        <div className="save-voice">
+          <input
+            className="input"
+            autoFocus
+            value={naming}
+            onChange={(e) => setNaming(e.target.value)}
+            onFocus={(e) => e.target.select()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') save();
+              if (e.key === 'Escape') setNaming(null);
+            }}
+            aria-label="Voice name"
+          />
+          <button className="btn small primary" onClick={save}>
+            Save
+          </button>
+          <button className="btn small ghost" onClick={() => setNaming(null)}>
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SoundTab() {
   const track = useSelectedTrack()!;
   const { project, updateTrack, setSong, duplicateTrack, removeTrack, checkpoint } = useStore();
@@ -92,6 +188,7 @@ function SoundTab() {
         <Seg<Waveform> value={track.waveform} onChange={(waveform) => up({ waveform })} options={Object.entries(DRUMS).map(([value, d]) => ({ value: value as Waveform, label: d.label }))} />
       </div>
       {track.waveform === 'custom' && <TimbreEditor />}
+      <VoiceShelf />
 
       {!drum && (
         <>

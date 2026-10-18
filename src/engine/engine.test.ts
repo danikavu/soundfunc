@@ -14,6 +14,7 @@ import { chordName, chordTones } from './music';
 import { mulberry32, mutateFormula, mutateTrack, musicalScore } from './mutate';
 import { parsePattern } from './graph';
 import { timbreHarmonics } from './timbre';
+import { cleanProject, projectKey, voiceOf, wearsVoice } from '../state/library';
 
 const ev = (s: string, scope = {}) => compile(s).fn(scope);
 
@@ -359,5 +360,26 @@ describe('symbolic: the written-out function equals the graph', () => {
     const ast = parse('-(2 + x)^2 % 3 - pick(n, -1, 2) * (x > 0.5 ? 1 : -1)').ast;
     const again = parse(toSource(ast)).ast;
     for (const x of [0, 0.3, 0.7]) expect(compileAst(again)({ x, n: 3 })).toBeCloseTo(compileAst(ast)({ x, n: 3 }), 12);
+  });
+});
+
+describe('library', () => {
+  it('saved projects drop editor-only state, so selecting a node is not an edit', () => {
+    const p = defaultProject();
+    const selected = {
+      ...p,
+      tracks: p.tracks.map((t) => ({ ...t, graph: { ...t.graph, nodes: t.graph.nodes.map((n) => ({ ...n, selected: true, measured: { width: 1, height: 2 } })) } })),
+    };
+    expect(projectKey(selected)).toBe(projectKey(p));
+    expect(JSON.stringify(cleanProject(selected))).not.toContain('selected');
+    const edited = { ...p, song: { ...p.song, bpm: p.song.bpm + 1 } };
+    expect(projectKey(edited)).not.toBe(projectKey(p));
+  });
+  it('voices capture and recognise a track’s sound', () => {
+    const t = { ...trackFromPreset(PRESETS.find((x) => x.id === 'wavetable')!, 0) };
+    const v = voiceOf(t, 'Folded');
+    expect(v).toMatchObject({ name: 'Folded', waveform: 'custom', timbre: t.timbre });
+    expect(wearsVoice(t, v)).toBe(true);
+    expect(wearsVoice({ ...t, timbre: 'sin(tau*p)' }, v)).toBe(false);
   });
 });

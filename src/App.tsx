@@ -9,6 +9,7 @@ import { Visualizer } from './components/Visualizer';
 import { NodeEditor, runMutate, toggleLockSelected } from './components/NodeEditor';
 import { Inspector } from './components/Inspector';
 import { FunctionSheet } from './components/FunctionSheet';
+import { saveGarden } from './components/GardenMenu';
 
 const isTyping = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
@@ -28,6 +29,12 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // ⌘S saves even while typing in a field
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveGarden(e.shiftKey);
+        return;
+      }
       if (isTyping(e.target)) return;
       if (e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();

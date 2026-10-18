@@ -4,6 +4,7 @@ import { NOTE_NAMES, PROGRESSIONS, SCALES } from '../engine/music';
 import { tryCompile } from '../engine/expr';
 import { useStore } from '../state/store';
 import { togglePlay } from '../state/transport';
+import { GardenMenu } from './GardenMenu';
 import { Enso, Icon, NumberField, TextField, download, fileSafe, isProject } from './ui';
 
 export function toast(msg: string) {
@@ -29,7 +30,7 @@ function FileMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const { project, loadProject, resetProject } = useStore();
+  const { project, loadProject } = useStore();
 
   useEffect(() => {
     if (!open) return;
@@ -67,15 +68,9 @@ function FileMenu() {
           </button>
           <hr />
           <button onClick={() => fileRef.current?.click()}>
-            Open project… <small>Load a .soundfunc.json</small>
+            Import project… <small>Load a .soundfunc.json file</small>
           </button>
-          <button
-            onClick={run(() => {
-              if (confirm('Replace the current garden with the default one? (You can undo.)')) resetProject();
-            })}
-          >
-            New garden <small>Reset to the default project</small>
-          </button>
+
         </div>
       )}
       <input
@@ -113,7 +108,10 @@ export function TopBar() {
         <span>SoundFunc</span>
         <small className="hide-narrow">音 · 数</small>
       </div>
-      <TextField className="project-name hide-narrow" value={project.name} onValue={setProjectName} aria-label="Project name" />
+      <div className="row hide-narrow" style={{ gap: 2 }}>
+        <TextField className="project-name" value={project.name} onValue={setProjectName} aria-label="Project name" />
+        <GardenMenu />
+      </div>
 
       <div className="transport">
         <button className={`play ${playing ? 'on' : ''}`} onClick={() => void togglePlay()} title="Play / stop (space)">

@@ -1233,3 +1233,127 @@ button:focus-visible {
 :root[data-theme='dark'] .c-num {
   color: #8fa8d6;
 }
+
+/* ---------- library: gardens & voices ---------- */
+
+.garden-menu .icon-btn {
+  position: relative;
+}
+.unsaved-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.garden-pop {
+  left: 0;
+  right: auto;
+  width: 290px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.garden-pop kbd {
+  float: right;
+  font: 10.5px var(--mono);
+  color: var(--ink-3);
+}
+.garden-list-head {
+  font: 500 9.5px/1 var(--sans);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 8px 10px 4px;
+}
+.garden-empty {
+  font-size: 11.5px;
+  padding: 0 10px 6px;
+  margin: 0;
+}
+.garden-row {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+.garden-row > button:first-child {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+.garden-row .serif {
+  font-size: 14px;
+}
+.garden-row.current {
+  background: var(--paper-2);
+}
+.garden-row .icon-btn {
+  opacity: 0;
+  flex: none;
+  width: 26px;
+  padding: 0;
+  margin-right: 4px;
+  display: grid;
+}
+.garden-row:hover .icon-btn {
+  opacity: 1;
+}
+
+.voice-shelf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.voice-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-soft);
+  background: transparent;
+  padding: 3px 4px 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: all 0.25s var(--ease);
+}
+.voice-chip:hover {
+  border-color: var(--line);
+  color: var(--ink);
+}
+.voice-chip.on {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+.voice-chip svg {
+  flex: none;
+}
+.voice-chip .x {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.voice-chip:hover .x {
+  opacity: 0.7;
+}
+.voice-chip .x:hover {
+  opacity: 1;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.save-voice {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+.save-voice .input {
+  flex: 1;
+  font-size: 12px;
+}

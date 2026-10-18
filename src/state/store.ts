@@ -10,6 +10,9 @@ const HISTORY_LIMIT = 80;
 interface State {
   project: Project;
   selectedTrackId: string | null;
+  /** the saved garden this project came from (null = never saved) */
+  currentProjectId: string | null;
+  setCurrentProjectId: (id: string | null) => void;
   theme: 'light' | 'dark';
   playing: boolean;
   /** the "function in full" sheet */
@@ -33,7 +36,7 @@ interface State {
   updateNodeData: (trackId: string, nodeId: string, patch: NodeData) => void;
   /** lock / unlock nodes against the randomizer (one undo step) */
   setLocked: (trackId: string, nodeIds: string[] | 'all', locked: boolean) => void;
-  loadProject: (p: Project) => void;
+  loadProject: (p: Project, savedId?: string | null) => void;
   resetProject: () => void;
   toggleTheme: () => void;
   setPlaying: (on: boolean) => void;
@@ -62,6 +65,8 @@ export const useStore = create<State>()(
       return {
         project: defaultProject(),
         selectedTrackId: null,
+        currentProjectId: null,
+        setCurrentProjectId: (currentProjectId) => set({ currentProjectId }),
         theme: 'light',
         playing: false,
         chaos: 0.3,
@@ -91,6 +96,7 @@ export const useStore = create<State>()(
             song: { ...p.song, ...kit.song },
             tracks: layer ? [...p.tracks, ...tracks] : tracks,
           }));
+          if (!layer) set({ currentProjectId: null });
           set({ selectedTrackId: tracks[0]?.id ?? null });
         },
         duplicateTrack: (id) => {
@@ -132,9 +138,10 @@ export const useStore = create<State>()(
             })),
             false,
           ),
-        loadProject: (raw) => {
+        loadProject: (raw, savedId = null) => {
           const project = normalizeProject(raw);
           commit(() => project);
+          set({ currentProjectId: savedId });
           set({ selectedTrackId: project.tracks[0]?.id ?? null });
         },
         resetProject: () => get().loadProject(defaultProject()),
@@ -187,7 +194,7 @@ export const useStore = create<State>()(
         const p = persisted as Partial<State> | undefined;
         return { ...current, ...p, project: p?.project ? normalizeProject(p.project) : current.project };
       },
-      partialize: (s) => ({ project: s.project, selectedTrackId: s.selectedTrackId, theme: s.theme, chaos: s.chaos }),
+      partialize: (s) => ({ project: s.project, selectedTrackId: s.selectedTrackId, theme: s.theme, chaos: s.chaos, currentProjectId: s.currentProjectId }),
     },
   ),
 );
