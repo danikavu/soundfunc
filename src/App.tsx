@@ -3,6 +3,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { engine } from './engine/audio';
 import { useStore } from './state/store';
 import { togglePlay } from './state/transport';
+import { withAudition } from './state/audition';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { Visualizer } from './components/Visualizer';
@@ -18,6 +19,7 @@ const isTyping = (t: EventTarget | null) =>
 export function App() {
   const theme = useStore((s) => s.theme);
   const project = useStore((s) => s.project);
+  const audition = useStore((s) => s.audition);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -25,8 +27,8 @@ export function App() {
 
   // the engine always plays the latest project — edits are heard live
   useEffect(() => {
-    engine.setProject(project);
-  }, [project]);
+    engine.setProject(withAudition(project, audition));
+  }, [project, audition]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -34,6 +36,10 @@ export function App() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         saveGarden(e.shiftKey);
+        return;
+      }
+      if (e.key === 'Escape' && useStore.getState().audition) {
+        useStore.getState().setAudition(null);
         return;
       }
       if (isTyping(e.target)) return;

@@ -289,6 +289,23 @@ export function tokenize(src: string): Tok[] {
   return out;
 }
 
+/** Replace a variable name everywhere it is used (not function calls of the same name). */
+export function renameVariable(src: string, from: string, to: string): string {
+  let toks: Tok[];
+  try {
+    toks = tokenize(src);
+  } catch {
+    return src;
+  }
+  let out = src;
+  for (let i = toks.length - 1; i >= 0; i--) {
+    const t = toks[i];
+    const next = toks[i + 1];
+    if (t.t === 'id' && t.v === from && !(next?.t === 'op' && next.v === '(')) out = out.slice(0, t.p) + to + out.slice(t.p + t.n);
+  }
+  return out;
+}
+
 // ---------- parser → syntax tree ----------
 
 export type BinOp = '+' | '-' | '*' | '/' | '%' | '^' | '<' | '>' | '<=' | '>=' | '==' | '!=' | '&&' | '||';

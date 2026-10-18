@@ -19,6 +19,10 @@ export interface StepCtx {
   bar: number;
   /** scale degrees per octave (7 for major, 5 for pentatonic…) */
   L: number;
+  /** beats since the song started (loop k included) */
+  beat: number;
+  /** the song's sliders, by name */
+  vars: Record<string, number>;
 }
 
 export type NodeData = Record<string, string | number | boolean>;
@@ -56,7 +60,7 @@ export type ParamDef =
   | { key: string; label: string; kind: 'formula' }
   | { key: string; label: string; kind: 'text'; placeholder?: string };
 
-export type Category = 'source' | 'math' | 'wave' | 'series' | 'rhythm' | 'output';
+export type Category = 'source' | 'math' | 'wave' | 'series' | 'rhythm' | 'form' | 'output';
 
 export interface NodeDef {
   type: string;
@@ -68,7 +72,8 @@ export interface NodeDef {
   outputs: PortDef[];
   params: ParamDef[];
   /** Build an evaluator. Throw to report a configuration error. */
-  build: (data: NodeData) => (ins: number[], ctx: StepCtx) => number[];
+  /** `sliders` = names of the song's sliders, usable as variables in formulas */
+  build: (data: NodeData, sliders: readonly string[]) => (ins: number[], ctx: StepCtx) => number[];
 }
 
 const num = (v: unknown, d = 0) => (typeof v === 'number' && isFinite(v) ? v : Number(v) || d);
@@ -126,6 +131,12 @@ export function parsePattern(src: string): number[] {
   return out;
 }
 
+/** section lengths in beats */
+export function sectionLengths(d: NodeData): number[] {
+  const mult = d.unit === 'bars' ? 4 : 1;
+  return parseList(String(d.lengths ?? '')).filter((v) => v > 0).map((v) => v * mult);
+}
+
 /** "0 3 5 7" or "0, 3, -2.5" → numbers */
 export function parseList(src: string): number[] {
   return src
@@ -136,7 +147,7 @@ export function parseList(src: string): number[] {
 }
 
 
-export const ctxVars = ['n', 'x', 't', 'k', 'steps', 'h', 'bar', 'L'] as const;
+export const ctxVars = ['n', 'x', 't', 'k', 'steps', 'h', 'bar', 'L', 'beat'] as const;
 
 export const NODE_DEFS: Record<string, NodeDef> = {
   step: {
@@ -184,10 +195,12 @@ export const NODE_DEFS: Record<string, NodeDef> = {
     ],
     outputs: [{ id: 'out', label: 'out' }],
     params: [{ key: 'formula', label: 'f =', kind: 'formula' }],
-    build: (d) => {
-      const fn = compile(String(d.formula ?? '0'), ['a', 'b', 'c', ...ctxVars]).fn;
+    build: (d, sliders) => {
+      const fn = compile(String(d.formula ?? '0'), ['a', 'b', 'c', ...ctxVars, ...sliders]).fn;
       const scope: Record<string, number> = {};
       return (ins, c) => {
+        for (const s of sliders) scope[s] = c.vars[s] ?? 0;
+        scope.beat = c.beat;
         scope.a = ins[0];
         scope.b = ins[1];
         scope.c = ins[2];
@@ -374,6 +387,41 @@ export const NODE_DEFS: Record<string, NodeDef> = {
       return (ins) => [FUNCTIONS.rand.fn(ins[0], seed) < p ? 1 : 0];
     },
   },
+  sections: {
+    type: 'sections',
+    label: 'Sections',
+    category: 'form',
+    hint: 'A piecewise function over time: play A, then B, then C… for the lengths you give. Loops over the song.',
+    defaults: { lengths: '4 4 4 4', unit: 'beats' },
+    inputs: [
+      { id: 'A', label: 'A', fallback: 0 },
+      { id: 'B', label: 'B', fallback: 0 },
+      { id: 'C', label: 'C', fallback: 0 },
+      { id: 'D', label: 'D', fallback: 0 },
+    ],
+    outputs: [
+      { id: 'out', label: 'value' },
+      { id: 'section', label: 'section 0…' },
+      { id: 'local', label: 'local 0→1' },
+    ],
+    params: [
+      { key: 'lengths', label: 'lengths', kind: 'text', placeholder: '4 4 8' },
+      { key: 'unit', label: 'in', kind: 'select', options: [{ value: 'beats', label: 'beats' }, { value: 'bars', label: 'bars' }] },
+    ],
+    build: (d) => {
+      const lens = sectionLengths(d);
+      const total = lens.reduce((a, b) => a + b, 0);
+      return (ins, c) => {
+        if (!total) return [ins[0], 0, 0];
+        let pos = FUNCTIONS.mod.fn(c.beat, total);
+        for (let i = 0; i < lens.length; i++) {
+          if (pos < lens[i] || i === lens.length - 1) return [ins[i % 4], i, Math.min(1, pos / lens[i])];
+          pos -= lens[i];
+        }
+        return [ins[0], 0, 0];
+      };
+    },
+  },
   output: {
     type: 'output',
     label: 'Note Out',
@@ -403,6 +451,7 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   wave: 'Waves',
   series: 'Sequences',
   rhythm: 'Rhythm',
+  form: 'Form',
   output: 'Output',
 };
 
@@ -426,7 +475,7 @@ export interface GraphProgram {
   errors: Map<string, string>;
 }
 
-export function compileGraph(graph: Graph): GraphProgram {
+export function compileGraph(graph: Graph, sliders: readonly string[] = []): GraphProgram {
   const errors = new Map<string, string>();
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const incoming = new Map<string, GEdge[]>();
@@ -466,7 +515,7 @@ export function compileGraph(graph: Graph): GraphProgram {
     if (!def) continue;
     let ev: Step['eval'];
     try {
-      ev = def.build(node.data);
+      ev = def.build(node.data, sliders);
     } catch (e) {
       errors.set(node.id, e instanceof Error ? e.message : String(e));
       ev = () => def.outputs.map(() => 0);

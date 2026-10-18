@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { uid } from '../engine/presets';
+import type { Block } from '../engine/graphEdit';
 import { normalizeProject, type Project, type Track, type Waveform } from '../engine/project';
 
 /** The sound of a track, without its notes: reusable across tracks and projects. */
@@ -53,6 +54,9 @@ export const wearsVoice = (t: Track, v: Voice) =>
 interface Library {
   voices: Voice[];
   projects: SavedProject[];
+  blocks: Block[];
+  saveBlock: (block: Block) => void;
+  deleteBlock: (id: string) => void;
   saveVoice: (voice: Voice) => void;
   deleteVoice: (id: string) => void;
   /** save (or overwrite, when `id` is given) a project; returns its id */
@@ -65,6 +69,9 @@ export const useLibrary = create<Library>()(
     (set, get) => ({
       voices: [],
       projects: [],
+      blocks: [],
+      saveBlock: (block) => set((s) => ({ blocks: [...s.blocks.filter((b) => b.name !== block.name), block] })),
+      deleteBlock: (id) => set((s) => ({ blocks: s.blocks.filter((b) => b.id !== id) })),
       saveVoice: (voice) => set((s) => ({ voices: [...s.voices.filter((v) => v.name !== voice.name), voice] })),
       deleteVoice: (id) => set((s) => ({ voices: s.voices.filter((v) => v.id !== id) })),
       saveProject: (project, id) => {
@@ -83,6 +90,7 @@ export const useLibrary = create<Library>()(
         return {
           ...current,
           voices: p?.voices ?? [],
+          blocks: p?.blocks ?? [],
           projects: (p?.projects ?? []).map((sp) => ({ ...sp, project: normalizeProject(sp.project) })),
         };
       },

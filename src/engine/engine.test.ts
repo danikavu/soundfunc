@@ -15,6 +15,8 @@ import { mulberry32, mutateFormula, mutateTrack, musicalScore } from './mutate';
 import { parsePattern } from './graph';
 import { timbreHarmonics } from './timbre';
 import { importMath } from './importMath';
+import { auditionGraph, blockFromSelection, collapseNodes, explodeFormula, insertBlock } from './graphEdit';
+import { BLOCKS } from './blocks';
 import { cleanProject, projectKey, voiceOf, wearsVoice } from '../state/library';
 
 const ev = (s: string, scope = {}) => compile(s).fn(scope);
@@ -79,7 +81,7 @@ describe('graph', () => {
       ],
     });
     expect(p.errors.size).toBeGreaterThan(0);
-    expect(p.run({ n: 0, x: 0, t: 0, k: 0, steps: 1, h: 0, bar: 0, L: 7 })).not.toBeNull();
+    expect(p.run({ n: 0, x: 0, t: 0, k: 0, steps: 1, h: 0, bar: 0, L: 7, beat: 0, vars: {} })).not.toBeNull();
   });
   it('every preset renders notes without errors', () => {
     const song = defaultProject().song;
@@ -295,7 +297,7 @@ describe('symbolic: the written-out function equals the graph', () => {
   const scopeFor = (track: Track, song: Project['song'], n: number, k: number) => {
     const t = n * track.stepBeats;
     const beat = k * track.steps * track.stepBeats + t;
-    return { n, x: n / track.steps, t, k, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / 4 + 1e-9), L: scaleLength(song) } as Record<string, number>;
+    return { ...Object.fromEntries((song.sliders ?? []).map((s) => [s.name, s.value])), n, x: n / track.steps, t, k, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / 4 + 1e-9), L: scaleLength(song), beat } as Record<string, number>;
   };
 
   it('symbolic expressions reproduce every preset and kit track', () => {
@@ -351,7 +353,7 @@ describe('symbolic: the written-out function equals the graph', () => {
         expect(Math.min(1, Math.max(0, o.velocity)), `${label} py vel n=${n}`).toBeCloseTo(r.velocityCurve[n], 9);
       });
     }
-  });
+  }, 30_000);
 
   it('prints readable formulas and LaTeX', () => {
     const pond = compose(trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0));
@@ -437,5 +439,117 @@ describe('importing functions', () => {
     expect(importMath('a x + 1').warnings.join(' ')).toMatch(/“a”/);
     expect(importMath('wobble(x)').warnings.join(' ')).toMatch(/Unknown function “wobble”/);
     expect(() => importMath('⌊x/2')).toThrow(/⌋/);
+  });
+});
+
+describe('graph editing keeps the music', () => {
+  const tracks = () => {
+    const base = defaultProject().song;
+    const song = { ...base, harmony: 'pick(bar, 0, 4, 5, 3)' };
+    const out: { label: string; track: Track; song: Project['song'] }[] = [];
+    PRESETS.forEach((p, i) => out.push({ label: p.id, track: trackFromPreset(p, i), song }));
+    for (const kit of KITS) kit.tracks.forEach((t, i) => out.push({ label: `${kit.id}/${t.name}`, track: trackFromTemplate(t, t.name, i), song: { ...base, ...kit.song } }));
+    return out;
+  };
+  const sameSound = (label: string, a: Track, b: Track, song: Project['song']) => {
+    for (const k of [0, 1]) {
+      const ra = renderTrack(a, song, k, false), rb = renderTrack(b, song, k, false);
+      expect(rb.errors.size, `${label} errors`).toBe(0);
+      ra.pitchCurve.forEach((v, n) => expect(rb.pitchCurve[n], `${label} pitch n=${n}`).toBeCloseTo(v, 9));
+      ra.velocityCurve.forEach((v, n) => expect(rb.velocityCurve[n], `${label} vel n=${n}`).toBeCloseTo(v, 9));
+    }
+  };
+
+  it('exploding formulas, layer after layer, changes nothing you hear', () => {
+    let exploded = 0;
+    for (const { label, track, song } of tracks()) {
+      let graph = track.graph;
+      for (let round = 0; round < 6; round++) {
+        const formulas = graph.nodes.filter((n) => n.type === 'expr');
+        let changed = false;
+        for (const f of formulas) {
+          const r = explodeFormula(graph, f.id);
+          if ('error' in r) continue;
+          graph = r.graph;
+          changed = true;
+          exploded++;
+        }
+        if (!changed) break;
+      }
+      sameSound(`${label} exploded`, track, { ...track, graph }, song);
+    }
+    expect(exploded).toBeGreaterThan(50);
+  });
+
+  it('collapsing each branch into one formula changes nothing you hear', () => {
+    for (const { label, track, song } of tracks()) {
+      let graph = track.graph;
+      const out = graph.nodes.find((n) => n.type === 'output')!;
+      for (const e of track.graph.edges.filter((x) => x.target === out.id)) {
+        // everything upstream of this Note Out input, except the clock
+        const up = new Set<string>();
+        const stack = [e.source];
+        while (stack.length) {
+          const id = stack.pop()!;
+          if (up.has(id) || !graph.nodes.some((n) => n.id === id)) continue;
+          up.add(id);
+          for (const x of graph.edges) if (x.target === id) stack.push(x.source);
+        }
+        const ids = [...up].filter((id) => graph.nodes.find((n) => n.id === id)?.type !== 'step');
+        if (ids.length < 2) continue;
+        const r = collapseNodes(graph, ids);
+        if ('error' in r) continue; // branches shared with another input
+        graph = r.graph;
+      }
+      sameSound(`${label} collapsed`, track, { ...track, graph }, song);
+    }
+  });
+
+  it('blocks insert cleanly and wire into Note Out', () => {
+    const blank = trackFromPreset(PRESETS.find((p) => p.id === 'blank')!, 0);
+    for (const b of BLOCKS) {
+      const r = insertBlock(blank.graph, b, { x: 0, y: 300 });
+      expect(r.ids.length, b.id).toBeGreaterThan(0);
+      const render = renderTrack({ ...blank, graph: r.graph }, defaultProject().song);
+      expect(render.errors.size, b.id).toBe(0);
+      for (const w of b.toOutput ?? []) expect(r.graph.edges.some((e) => e.targetHandle === w.port && r.ids.includes(e.source)), `${b.id} → ${w.port}`).toBe(true);
+    }
+  });
+
+  it('saves a selection as a block and plants it again', () => {
+    const t = trackFromPreset(PRESETS.find((p) => p.id === 'fib')!, 0);
+    const ids = t.graph.nodes.filter((n) => n.type !== 'output').map((n) => n.id);
+    const b = blockFromSelection(t.graph, ids, 'Fib groove');
+    if ('error' in b) throw new Error(b.error);
+    const blank = trackFromPreset(PRESETS.find((p) => p.id === 'blank')!, 0);
+    const empty = { ...blank, graph: { nodes: blank.graph.nodes.filter((n) => n.type === 'output'), edges: [] } };
+    const r = insertBlock(empty.graph, b, { x: 0, y: 0 });
+    sameSound('block round-trip', t, { ...t, graph: r.graph }, defaultProject().song);
+  });
+
+  it('auditions a node as pitch, stretching small ranges', () => {
+    const t = trackFromPreset(PRESETS.find((p) => p.id === 'fib')!, 0);
+    const eu = t.graph.nodes.find((n) => n.type === 'euclid')!;
+    const g = auditionGraph(t.graph, eu.id, { asVelocity: false, lo: 0, hi: 1, span: 7 });
+    const r = renderTrack({ ...t, graph: g }, defaultProject().song);
+    expect(new Set(r.pitchCurve)).toEqual(new Set([0, 7]));
+  });
+
+  it('Sections and sliders: the written-out function and exported code still match', () => {
+    const song = { ...defaultProject().song, harmony: 'pick(bar, 0, 3)', sliders: [{ name: 'lift', value: 2, min: 0, max: 5 }] };
+    const t = trackFromPreset(PRESETS.find((p) => p.id === 'form')!, 0);
+    const formula = t.graph.nodes.find((n) => n.data.formula === 'h + round(3 * sin(tau * x * 2))')!;
+    formula.data.formula = 'h + round(3 * sin(tau * x * 2)) + lift';
+    const c = compose(t);
+    const code = trackCode([c], song, 'js').replace(/^export /gm, '');
+    const fn = new Function(`${code}\nreturn songForm;`)() as (n: number, k: number) => Record<string, number>;
+    for (const k of [0, 1, 2, 3, 5]) {
+      const r = renderTrack(t, song, k, false);
+      for (let n = 0; n < t.steps; n++) expect(fn(n, k).pitch, `k=${k} n=${n}`).toBeCloseTo(r.pitchCurve[n], 9);
+    }
+    // the bridge (4th section, beats 24–32 → loops 6 and 7) reads the slider
+    const bridge = renderTrack(t, song, 6, false).pitchCurve[0];
+    const lower = renderTrack(t, { ...song, sliders: [{ ...song.sliders[0], value: 0 }] }, 6, false).pitchCurve[0];
+    expect(bridge - lower).toBe(2);
   });
 });

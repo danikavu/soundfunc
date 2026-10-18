@@ -20,6 +20,11 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   lock: <path d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z" />,
+  headphones: <path d="M4 15v-3a8 8 0 0 1 16 0v3M4 15h3v5H5a1 1 0 0 1-1-1zM20 15h-3v5h2a1 1 0 0 0 1-1z" />,
+  split: <path d="M12 4v6M12 10l-6 6M12 10l6 6M4 18h4M16 18h4" />,
+  merge: <path d="M6 4l6 7 6-7M12 11v9" />,
+  bookmark: <path d="M7 4h10v16l-5-4-5 4z" />,
+  sliders: <path d="M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4" />,
   unlock: <path d="M7 11V8a5 5 0 0 1 9.6-2M6 11h12v9H6z" />,
   trash: <path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" />,
   copy: <path d="M9 9h10v10H9zM5 15V5h10" />,

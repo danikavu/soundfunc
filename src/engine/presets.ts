@@ -8,7 +8,7 @@ type N = [id: string, type: string, x: number, y: number, data?: NodeData];
 type E = [source: string, sourceHandle: string, target: string, targetHandle: string];
 
 /** rough rendered height of a node card, so columns can stack without overlap */
-function nodeHeight(node: GNode): number {
+export function nodeHeight(node: GNode): number {
   const d = NODE_DEFS[node.type];
   // long formulas wrap onto several lines (~30 characters each)
   const formulaLines = node.type === 'expr' ? Math.ceil(String(node.data.formula ?? '').length / 30) - 1 : 0;
@@ -80,7 +80,7 @@ function graph(nodes: N[], edges: E[]): Graph {
 }
 
 /** compact graph builder: nodes by id, wires as 'src.handle>dst.handle' */
-function wire(nodes: Record<string, [type: string, data?: NodeData]>, wires: string[]): Graph {
+export function wire(nodes: Record<string, [type: string, data?: NodeData]>, wires: string[]): Graph {
   return graph(
     Object.entries(nodes).map(([id, [type, data]]): N => [id, type, 0, 0, { ...NODE_DEFS[type].defaults, ...data }]),
     wires.map((w): E => {
@@ -519,6 +519,32 @@ export const PRESETS: Preset[] = [
     },
   },
   {
+    id: 'form',
+    name: 'Song Form',
+    description: 'The Sections node: verse, verse, chorus, bridge — each section its own function, switched by time.',
+    formula: 'A 8 · A 8 · B 8 · C 8 beats',
+    track: {
+      waveform: 'pluck',
+      pitchMode: 'degree',
+      steps: 16,
+      stepBeats: 0.25,
+      octave: 4,
+      volume: 0.55,
+      send: 0.5,
+      graph: wire(
+        {
+          verse: ['expr', { formula: 'h + pick(n, 0, 2, 4, 2)' }],
+          chorus: ['expr', { formula: 'h + L + pick(n, 4, 2, 0, 2, 4, 5)' }],
+          bridge: ['expr', { formula: 'h + round(3 * sin(tau * x * 2))' }],
+          form: ['sections', { lengths: '8 8 8 8', unit: 'beats' }],
+          gate: ['expr', { formula: 'a == 2 ? 0.8 : 0.6 * euclid(n, 5, 8) + 0.2' }],
+          out: ['output'],
+        },
+        ['verse.out>form.A', 'verse.out>form.B', 'chorus.out>form.C', 'bridge.out>form.D', 'form.out>out.pitch', 'form.section>gate.a', 'gate.out>out.velocity'],
+      ),
+    },
+  },
+  {
     id: 'chordPad',
     name: 'Chord Pad',
     description: 'Holds the song’s current chord: pitch = h, chord = 4 stacks four scale-thirds (a 7th chord).',
@@ -831,7 +857,7 @@ export function defaultProject(): Project {
   tracks[1].pan = 0.3;
   return {
     name: 'Zen Garden',
-    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0' },
+    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', sliders: [] },
     tracks,
   };
 }

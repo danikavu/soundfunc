@@ -1493,3 +1493,108 @@ button:focus-visible {
 .import-sheet .tex .katex {
   font-size: 0.95em;
 }
+
+/* ---------- sliders, blocks, listening ---------- */
+
+.toolbar {
+  flex-wrap: wrap;
+}
+.nodes {
+  display: flex;
+  flex-direction: column;
+}
+.nodes > .nodes-canvas {
+  flex: 1;
+  min-height: 0;
+}
+.sliders-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--paper);
+}
+.eyebrow-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 500 9.5px/1 var(--sans);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.slider-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.slider-chip input[type='range'] {
+  width: 110px;
+}
+.slider-chip output {
+  font: 11px var(--mono);
+  color: var(--ink-3);
+  min-width: 34px;
+}
+.slider-name {
+  border: none;
+  background: var(--paper-2);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font: 12px var(--mono);
+  color: var(--accent);
+  cursor: text;
+}
+.slider-name-input {
+  width: 80px;
+  font: 12px var(--mono);
+}
+.slider-pop {
+  left: 0;
+  right: auto;
+  top: calc(100% + 6px);
+  width: 220px;
+}
+.palette-row {
+  display: flex;
+  align-items: flex-start;
+}
+.palette-row > button:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.palette .palette-del {
+  width: 26px;
+  flex: none;
+  opacity: 0;
+  margin-top: 4px;
+  padding: 0;
+  display: grid;
+}
+.palette-row:hover .palette-del {
+  opacity: 1;
+}
+.fnode .lock.listen.on {
+  color: var(--moss);
+  background: color-mix(in srgb, var(--moss) 18%, transparent);
+}
+.fnode.listening {
+  border-color: var(--moss);
+  box-shadow: var(--shadow), 0 0 0 3px color-mix(in srgb, var(--moss) 25%, transparent);
+}
+.btn.on {
+  border-color: var(--moss);
+  color: var(--moss);
+}
+.timeline {
+  display: block;
+  width: 100%;
+  height: 22px;
+  margin: 4px 0 6px;
+}
+.fnode-head .lock + .lock {
+  margin-left: 0;
+}

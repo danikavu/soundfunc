@@ -1,9 +1,11 @@
-import { createContext, memo, useContext } from 'react';
+import { createContext, memo, useContext, useMemo } from 'react';
 import { Handle, Position, useNodeConnections, type NodeProps } from '@xyflow/react';
-import { NODE_DEFS, type Category, type NodeData, type ParamDef } from '../engine/graph';
+import { NODE_DEFS, sectionLengths, type Category, type NodeData, type ParamDef } from '../engine/graph';
 import { useStore } from '../state/store';
 import { Icon, NumberField, TextField } from './ui';
-import { FormulaEditor } from './FormulaEditor';
+import { FormulaEditor, NODE_VARS } from './FormulaEditor';
+import { explodeFormula } from '../engine/graphEdit';
+import { toast } from './TopBar';
 
 export const CATEGORY_COLORS: Record<Category, string> = {
   source: '#6f8a63',
@@ -11,6 +13,7 @@ export const CATEGORY_COLORS: Record<Category, string> = {
   wave: '#5e8a86',
   series: '#b39561',
   rhythm: '#8a6a7e',
+  form: '#9c7a4a',
   output: '#c4583d',
 };
 
@@ -50,10 +53,15 @@ function Sparkline({ values, color, gates }: { values: number[]; color: string; 
 
 const fmt = (v: number) => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2));
 
+/** Formula nodes also know the song's sliders */
+function NodeFormula(props: { value: string; onValue: (v: string) => void; onFocus: () => void }) {
+  const sliders = useStore((s) => s.project.song.sliders);
+  const vars = useMemo(() => ({ ...NODE_VARS, ...Object.fromEntries(sliders.map((sl) => [sl.name, `slider, now ${sl.value}`])) }), [sliders]);
+  return <FormulaEditor {...props} vars={vars} sliders />;
+}
+
 function Param({ p, data, onChange, onFocus }: { p: ParamDef; data: NodeData; onChange: (patch: NodeData) => void; onFocus: () => void }) {
-  if (p.kind === 'formula') {
-    return <FormulaEditor value={String(data[p.key] ?? '')} onValue={(v) => onChange({ [p.key]: v })} onFocus={onFocus} />;
-  }
+  if (p.kind === 'formula') return <NodeFormula value={String(data[p.key] ?? '')} onValue={(v) => onChange({ [p.key]: v })} onFocus={onFocus} />;
   if (p.kind === 'text') {
     return (
       <label className="fnode-param">
@@ -101,6 +109,31 @@ function Param({ p, data, onChange, onFocus }: { p: ParamDef; data: NodeData; on
   );
 }
 
+/** the Sections node drawn as a timeline: one block per section, labelled with its input */
+function Timeline({ data }: { data: NodeData }) {
+  const lens = sectionLengths(data);
+  const total = lens.reduce((a, b) => a + b, 0);
+  if (!total) return null;
+  let x = 0;
+  return (
+    <svg className="timeline" viewBox="0 0 200 22" preserveAspectRatio="none">
+      {lens.map((l, i) => {
+        const w = (l / total) * 200;
+        const el = (
+          <g key={i}>
+            <rect x={x + 0.5} y={1} width={Math.max(1, w - 1)} height={20} rx={4} fill={CATEGORY_COLORS.form} opacity={0.12 + (i % 4) * 0.1} />
+            <text x={x + w / 2} y={14.5} textAnchor="middle" fontSize={9} fill="var(--ink-2)">
+              {'ABCD'[i % 4]}
+            </text>
+          </g>
+        );
+        x += w;
+        return el;
+      })}
+    </svg>
+  );
+}
+
 function InputPort({ id, label }: { id: string; label: string }) {
   const connected = useNodeConnections({ handleType: 'target', handleId: id }).length > 0;
   return (
@@ -116,6 +149,9 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
   const updateNodeData = useStore((s) => s.updateNodeData);
   const checkpoint = useStore((s) => s.checkpoint);
   const setLocked = useStore((s) => s.setLocked);
+  const setAudition = useStore((s) => s.setAudition);
+  const applyGraphEdit = useStore((s) => s.applyGraphEdit);
+  const listening = useStore((s) => s.audition?.nodeId === id);
   const def = NODE_DEFS[type];
   if (!def || !ctx) return null;
   const d = data as NodeData;
@@ -127,11 +163,33 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
   for (const v of trace) (lo = Math.min(lo, v)), (hi = Math.max(hi, v));
 
   return (
-    <div className={`fnode ${error ? 'err' : ''} ${d.locked ? 'locked' : ''}`} title={def.hint}>
+    <div className={`fnode ${error ? 'err' : ''} ${d.locked ? 'locked' : ''} ${listening ? 'listening' : ''}`} title={def.hint}>
       <div className="fnode-head">
         <span className="dot" style={{ background: color }} />
         <b>{def.label}</b>
         {trace.length > 0 && <span className="val">{lo === hi ? fmt(lo) : `${fmt(lo)} … ${fmt(hi)}`}</span>}
+        {type !== 'output' && (
+          <button
+            className={`lock nodrag listen ${listening ? 'on' : ''}`}
+            title={listening ? 'Listening — click or Esc to stop' : `Listen to this node alone (${def.category === 'rhythm' ? 'as velocity' : 'as pitch'})`}
+            aria-pressed={listening}
+            onClick={() => setAudition(listening ? null : { trackId: ctx.trackId, nodeId: id })}
+          >
+            <Icon name="headphones" size={12} />
+          </button>
+        )}
+        {type === 'expr' && (
+          <button
+            className="lock nodrag"
+            title="Explode: split the outermost operation into its own node (repeat to go deeper)"
+            onClick={() => {
+              const err = applyGraphEdit(ctx.trackId, (g) => explodeFormula(g, id));
+              if (err) toast(err);
+            }}
+          >
+            <Icon name="split" size={12} />
+          </button>
+        )}
         {def.params.length > 0 && (
           <button
             className={`lock nodrag ${d.locked ? 'on' : ''}`}
@@ -164,6 +222,7 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
             onChange={(e) => onChange({ value: Number(e.target.value) })}
           />
         )}
+        {type === 'sections' && <Timeline data={d} />}
         {def.params.map((p) => (
           <Param key={p.key} p={p} data={d} onChange={onChange} onFocus={checkpoint} />
         ))}

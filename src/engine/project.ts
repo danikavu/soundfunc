@@ -101,25 +101,38 @@ export interface Song {
   harmony: string;
   /** keep the progression when mutating the whole garden */
   harmonyLocked?: boolean;
+  /** named constants every formula can read, Desmos-style */
+  sliders: Slider[];
 }
 
-export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0' };
+export interface Slider {
+  name: string;
+  value: number;
+  min: number;
+  max: number;
+}
+
+export const sliderNames = (song: Song) => (song.sliders ?? []).map((s) => s.name);
+export const sliderValues = (song: Song): Record<string, number> => Object.fromEntries((song.sliders ?? []).map((s) => [s.name, s.value]));
+
+export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', sliders: [] };
 export const BEATS_PER_BAR = 4;
 
 const harmonyCache = new Map<string, Compiled | null>();
-function harmonyFn(src: string): Compiled | null {
-  if (!harmonyCache.has(src)) {
+function harmonyFn(src: string, sliders: readonly string[]): Compiled | null {
+  const key = `${src}|${sliders.join(',')}`;
+  if (!harmonyCache.has(key)) {
     if (harmonyCache.size > 64) harmonyCache.clear();
-    harmonyCache.set(src, tryCompile(src, ['bar', 'k', 'L']).fn);
+    harmonyCache.set(key, tryCompile(src, ['bar', 'k', 'L', ...sliders]).fn);
   }
-  return harmonyCache.get(src)!;
+  return harmonyCache.get(key)!;
 }
 
 /** The chord (scale degree) sounding at an absolute beat of the song. */
 export function harmonyAt(song: Song, beat: number): number {
-  const fn = harmonyFn(song.harmony ?? '0');
+  const fn = harmonyFn(song.harmony ?? '0', sliderNames(song));
   if (!fn) return 0;
-  const v = fn({ bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), k: 0, L: scaleLength(song) });
+  const v = fn({ ...sliderValues(song), bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), k: 0, L: scaleLength(song) });
   return Number.isFinite(v) ? Math.round(v) : 0;
 }
 
@@ -194,7 +207,8 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 export const curveRes = (track: Track) => (track.playMode === 'glide' ? 16 : Math.max(1, Math.min(16, Math.floor(1024 / track.steps))));
 
 export function renderTrack(track: Track, song: Song, loop = 0, withTraces = true): TrackRender {
-  const program = compileGraph(track.graph);
+  const program = compileGraph(track.graph, sliderNames(song));
+  const vars = sliderValues(song);
   const traces = withTraces ? new Map<string, number[]>() : undefined;
   const notes: Note[] = [];
   const pitchCurve: number[] = [];
@@ -208,7 +222,8 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
   /** clock for a (possibly fractional) step position u */
   const clock = (u: number) => {
     const t = u * track.stepBeats;
-    return { n: Math.floor(u), x: u / track.steps, t, k: loop, steps: track.steps, h: harmonyAt(song, loopBeat + t), bar: Math.floor((loopBeat + t) / BEATS_PER_BAR + 1e-9), L };
+    const beat = loopBeat + t;
+    return { n: Math.floor(u), x: u / track.steps, t, k: loop, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), L, beat, vars };
   };
 
   for (let n = 0; n < track.steps; n++) {

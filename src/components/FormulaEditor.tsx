@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { CONSTANTS, FUNCTIONS, parse, tryCompile } from '../engine/expr';
 import { toTex } from '../engine/symbolic';
 import { Tex, useKatex } from './tex';
+import { useStore } from '../state/store';
+import { toast } from './TopBar';
 
 export const NODE_VARS: Record<string, string> = {
   n: 'step 0, 1, 2…',
@@ -57,6 +59,8 @@ export function FormulaEditor({
   className = '',
   /** show typeset math while not editing */
   pretty = true,
+  /** Alt+S turns the number under the caret into a song slider */
+  sliders = false,
 }: {
   value: string;
   onValue: (v: string) => void;
@@ -64,6 +68,7 @@ export function FormulaEditor({
   onFocus?: () => void;
   className?: string;
   pretty?: boolean;
+  sliders?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   // the text belongs to the box while it is being edited (see TextField in ui.tsx)
@@ -133,6 +138,17 @@ export function FormulaEditor({
       if (e.key === 'ArrowUp') return e.preventDefault(), setMenu({ ...menu, hl: (menu.hl - 1 + menu.items.length) % menu.items.length });
       if (e.key === 'Tab' || e.key === 'Enter') return e.preventDefault(), accept(menu.items[menu.hl]);
       if (e.key === 'Escape') return e.preventDefault(), setMenu(null);
+    }
+    // Alt+S: this number becomes a named slider you can perform with
+    if (sliders && e.altKey && e.code === 'KeyS') {
+      const el = e.currentTarget;
+      const num = numberAt(draft, el.selectionStart);
+      e.preventDefault();
+      if (!num) return toast('Put the cursor on a number, then Alt+S makes it a slider');
+      const name = useStore.getState().addSlider(num.value);
+      replace(num.start, num.end, name, num.start + name.length);
+      toast(`“${name}” is now a slider — rename or play it in the Sliders bar`);
+      return;
     }
     // Alt+↑/↓ nudges the number under the caret — Shift ×10, Ctrl/⌘ ×0.1
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
@@ -207,7 +223,7 @@ export function FormulaEditor({
               <small>{s.doc}</small>
             </button>
           ))}
-          <div className="ac-hint">Tab to insert · Alt+↑↓ nudges numbers</div>
+          <div className="ac-hint">Tab to insert · Alt+↑↓ nudges numbers{sliders ? ' · Alt+S makes a slider' : ''}</div>
         </div>
       )}
       {error && <div className="fnode-error">{error}</div>}

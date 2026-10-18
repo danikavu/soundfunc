@@ -4,7 +4,7 @@
  * prints as SoundFunc formulas, LaTeX, JavaScript and Python.
  */
 import { compileAst, parse, type Ast, type BinOp } from './expr';
-import { NODE_DEFS, parseList, parsePattern, type GNode, type Graph } from './graph';
+import { NODE_DEFS, parseList, parsePattern, sectionLengths, type GNode, type Graph } from './graph';
 import { NOTE_NAMES, PITCH_MODES, SCALES } from './music';
 import { BEATS_PER_BAR, isDrum, scaleLength, voiceLabel, type Song, type Track } from './project';
 
@@ -152,11 +152,11 @@ function fold(ast: Ast): Ast {
 // ---------- graph → expressions ----------
 
 const PREFIX: Record<string, string> = {
-  expr: 'f', math: 'm', func: 'g', map: 'r', wave: 'w', series: 's', euclid: 'E', chance: 'C', pattern: 'P', list: 'v',
+  expr: 'f', math: 'm', func: 'g', map: 'r', wave: 'w', series: 's', euclid: 'E', chance: 'C', pattern: 'P', list: 'v', sections: 'S',
 };
 
 /** symbolic value of an unconnected input */
-function fallback(type: string, port: string, data: GNode['data']): Ast {
+export function fallback(type: string, port: string, data: GNode['data']): Ast {
   switch (`${type}.${port}`) {
     case 'wave.p':
     case 'func.x':
@@ -198,7 +198,8 @@ const SERIES_AST: Record<string, (x: Ast, p: number) => Ast> = {
   sierpinski: (x, p) => bin('==', call('band', x, num(p || 7)), num(0)),
 };
 
-function nodeAst(node: GNode, handle: string, ins: Ast[]): Ast {
+/** the expression a node computes for one of its outputs, given its inputs */
+export function nodeAst(node: GNode, handle: string, ins: Ast[]): Ast {
   const d = node.data;
   switch (node.type) {
     case 'step':
@@ -252,6 +253,14 @@ function nodeAst(node: GNode, handle: string, ins: Ast[]): Ast {
       const vals = parsePattern(String(d.pattern ?? ''));
       return vals.length ? call('pick', bin('+', ins[0], num(n(d.rotate))), ...vals.map((x) => num(Math.round(x * 1000) / 1000))) : num(0);
     }
+    case 'sections': {
+      // piecewise over the song: position p = beat mod total, then the first section whose end is past p
+      const lens = sectionLengths(d);
+      const total = lens.reduce((a, b) => a + b, 0);
+      if (!total) return handle === 'out' ? ins[0] : num(0);
+      const pos: Ast = bin('%', v('beat'), num(total));
+      return frontToBack(lens, pos, handle, ins);
+    }
     case 'list': {
       const vals = parseList(String(d.values ?? ''));
       return vals.length ? call('pick', call('floor', bin('/', ins[0], num(Math.max(1, n(d.every, 1))))), ...vals.map(num)) : num(0);
@@ -259,6 +268,16 @@ function nodeAst(node: GNode, handle: string, ins: Ast[]): Ast {
     default:
       return num(0);
   }
+}
+
+/** p < L₀ ? A : p < L₀+L₁ ? B : … — how a person would write the Sections node */
+function frontToBack(lens: number[], pos: Ast, handle: string, ins: Ast[]): Ast {
+  const starts = lens.map((_, i) => lens.slice(0, i).reduce((a, b) => a + b, 0));
+  const valueOf = (i: number): Ast =>
+    handle === 'section' ? num(i) : handle === 'local' ? bin('/', bin('-', pos, num(starts[i])), num(lens[i])) : ins[i % 4];
+  let out = valueOf(lens.length - 1);
+  for (let i = lens.length - 2; i >= 0; i--) out = { k: 'cond', c: bin('<', pos, num(starts[i] + lens[i])), a: valueOf(i), b: out };
+  return out;
 }
 
 export interface Binding {
@@ -699,6 +718,11 @@ function harmonyAst(song: Song): Ast {
   }
 }
 
+/** beat = k · patternBeats + t */
+function beatAst(track: Track): Ast {
+  return simplify(bin('+', bin('*', num(track.steps * track.stepBeats), v('k')), v('t')));
+}
+
 /** bar = ⌊(k · patternBeats + t) / 4⌋ */
 function barAst(track: Track): Ast {
   const len = track.steps * track.stepBeats;
@@ -726,8 +750,10 @@ export function trackTex(c: Composed, song: Song): { label: string; tex: string 
   if (vars.has('steps')) defs.push(`N = ${track.steps}`);
   if (vars.has('L')) defs.push(`L = ${scaleLength(song)}`);
   if (vars.has('h') || vars.has('bar')) defs.push(`\\mathrm{bar} = ${toTex(barAst(track))}`);
+  if (vars.has('beat')) defs.push(`\\mathit{beat} = ${toTex(beatAst(track))}`);
+  for (const sl of song.sliders ?? []) if (vars.has(sl.name)) defs.push(`${texName(sl.name)} = ${fmtNum(sl.value)}\\ \\text{(slider)}`);
   if (vars.has('h')) defs.push(`h = ${toTex(harmonyAst(song))}`);
-  if (defs.length) lines.push({ label: 'clock & harmony', tex: defs.join(',\\quad ') });
+  if (defs.length) lines.push({ label: 'clock, harmony & sliders', tex: defs.join(',\\quad ') });
   lines.push({ label: 'n runs over', tex: `n \\in \\{0, 1, \\dots, ${track.steps - 1}\\},\\quad k = \\text{loop count}` });
   if (!isDrum(track.waveform) && track.pitchMode === 'degree') {
     const steps = (SCALES[song.scale] ?? SCALES.major).steps;
@@ -775,6 +801,11 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
           `SONG = {"bpm": ${song.bpm}, "root": ${song.root}, "scale": [${scale.steps.join(', ')}]}  # root ${NOTE_NAMES[song.root]}`,
           'PHI = (1 + math.sqrt(5)) / 2',
         ];
+  const sliders = (song.sliders ?? []).filter((sl) => cs.some((c) => c.math.vars.has(sl.name) || c.math.bindings.some((b) => varsOf(b.ast).has(sl.name))) || (anyHarmony && varsOf(harmony).has(sl.name)));
+  if (sliders.length) {
+    const cm = lang === 'js' ? '//' : '#';
+    body.push(`\n${lang === 'js' ? '\n' : ''}${cm} sliders — change these to change the music\n${sliders.map((sl) => `${lang === 'js' ? 'export const ' : ''}${sl.name} = ${fmtNum(sl.value)}${lang === 'js' ? ';' : ''}  ${cm} ${fmtNum(sl.min)} … ${fmtNum(sl.max)}`).join('\n')}`);
+  }
   if (anyHarmony) {
     body.push(
       lang === 'js'
@@ -798,7 +829,8 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
     const end = lang === 'js' ? ';' : '';
     if (vars.has('steps') || vars.has('x')) clock.push(`${pre}steps = ${track.steps}${end}`);
     if (vars.has('x')) clock.push(`${pre}x = n / steps${end}`);
-    if (vars.has('t') || vars.has('bar') || vars.has('h')) clock.push(`${pre}t = n * ${track.stepBeats}${end}`);
+    if (vars.has('t') || vars.has('bar') || vars.has('h') || vars.has('beat')) clock.push(`${pre}t = n * ${track.stepBeats}${end}`);
+    if (vars.has('beat')) clock.push(`${pre}beat = ${toCode(beatAst(track), lang)}${end}`);
     if (vars.has('bar') || vars.has('h')) {
       functionsOf(barAst(track), fns);
       clock.push(`${pre}bar = ${toCode(barAst(track), lang)}${end}`);

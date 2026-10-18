@@ -1,9 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { GEdge, GNode, NodeData } from '../engine/graph';
+import type { GEdge, GNode, Graph, NodeData } from '../engine/graph';
+import type { EditResult } from '../engine/graphEdit';
 import { defaultProject, KITS, PRESETS, trackFromPreset, trackFromTemplate, uid } from '../engine/presets';
 import { mutateHarmony, mutateTrack } from '../engine/mutate';
-import { normalizeProject, type Project, type Song, type Track } from '../engine/project';
+import { normalizeProject, type Project, type Slider, type Song, type Track } from '../engine/project';
+import { CONSTANTS, FUNCTIONS, renameVariable } from '../engine/expr';
+import { ctxVars } from '../engine/graph';
 
 const HISTORY_LIMIT = 80;
 
@@ -30,6 +33,18 @@ interface State {
   addTrack: (presetId: string) => void;
   /** add a ready-made track (e.g. an imported function) and select it */
   plantTrack: (track: Track) => void;
+  /** run a structural edit (explode, collapse, insert…) on a track's graph; returns an error message or null */
+  applyGraphEdit: (trackId: string, edit: (g: Graph) => EditResult) => string | null;
+  /** a node being listened to on its own (not saved) */
+  audition: { trackId: string; nodeId: string } | null;
+  setAudition: (a: { trackId: string; nodeId: string } | null) => void;
+  /** add a slider for `value`; returns its name */
+  addSlider: (value: number, name?: string) => string;
+  updateSlider: (name: string, patch: Partial<Slider>) => void;
+  /** rename everywhere it is used; false if the name is taken or invalid */
+  renameSlider: (from: string, to: string) => boolean;
+  /** remove, writing its current value back into every formula */
+  removeSlider: (name: string) => void;
   /** the "paste a function" sheet */
   showImport: boolean;
   setShowImport: (open: boolean) => void;
@@ -107,6 +122,42 @@ export const useStore = create<State>()(
         plantTrack: (track) => {
           commit((p) => ({ ...p, tracks: [...p.tracks, track] }));
           set({ selectedTrackId: track.id });
+        },
+        applyGraphEdit: (trackId, edit) => {
+          const t = get().project.tracks.find((x) => x.id === trackId);
+          if (!t) return 'No track';
+          const r = edit(t.graph);
+          if ('error' in r) return r.error;
+          commit(mapTrack(trackId, (x) => ({ ...x, graph: r.graph })));
+          // let the editor bring the new nodes into view
+          window.dispatchEvent(new CustomEvent('sf-fit'));
+          return null;
+        },
+        audition: null,
+        setAudition: (audition) => set({ audition }),
+        addSlider: (value, name) => {
+          const taken = new Set(get().project.song.sliders.map((s) => s.name));
+          let n = name;
+          for (let i = 1; !n || !validSliderName(n) || taken.has(n); i++) n = `s${i}`;
+          const span = Math.max(1, Math.abs(value) * 2);
+          const slider: Slider = value >= 0 && value <= 1 ? { name: n, value, min: 0, max: 1 } : { name: n, value, min: Math.min(0, value - span), max: value + span };
+          commit((p) => ({ ...p, song: { ...p.song, sliders: [...p.song.sliders, slider] } }));
+          return n;
+        },
+        updateSlider: (name, patch) =>
+          commit((p) => ({ ...p, song: { ...p.song, sliders: p.song.sliders.map((s) => (s.name === name ? { ...s, ...patch } : s)) } }), false),
+        renameSlider: (from, to) => {
+          const p0 = get().project;
+          if (from === to) return true;
+          if (!validSliderName(to) || p0.song.sliders.some((s) => s.name === to)) return false;
+          commit((p) => rewriteFormulas({ ...p, song: { ...p.song, sliders: p.song.sliders.map((s) => (s.name === from ? { ...s, name: to } : s)) } }, (f) => renameVariable(f, from, to)));
+          return true;
+        },
+        removeSlider: (name) => {
+          const s = get().project.song.sliders.find((x) => x.name === name);
+          if (!s) return;
+          const literal = s.value < 0 ? `(${s.value})` : String(s.value);
+          commit((p) => rewriteFormulas({ ...p, song: { ...p.song, sliders: p.song.sliders.filter((x) => x.name !== name) } }, (f) => renameVariable(f, name, literal)));
         },
         showImport: false,
         setShowImport: (showImport) => set({ showImport }),
@@ -209,6 +260,21 @@ export const useStore = create<State>()(
     },
   ),
 );
+
+const RESERVED = new Set<string>([...ctxVars, 'a', 'b', 'c', 'p', ...Object.keys(CONSTANTS), ...Object.keys(FUNCTIONS)]);
+export const validSliderName = (n: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(n) && !RESERVED.has(n);
+
+/** apply a rewrite to every formula in the project: Formula nodes and the harmony */
+function rewriteFormulas(p: Project, fn: (src: string) => string): Project {
+  return {
+    ...p,
+    song: { ...p.song, harmony: fn(p.song.harmony) },
+    tracks: p.tracks.map((t) => ({
+      ...t,
+      graph: { ...t.graph, nodes: t.graph.nodes.map((n) => (n.type === 'expr' ? { ...n, data: { ...n.data, formula: fn(String(n.data.formula ?? '')) } } : n)) },
+    })),
+  };
+}
 
 export function useSelectedTrack(): Track | null {
   return useStore((s) => s.project.tracks.find((t) => t.id === s.selectedTrackId) ?? s.project.tracks[0] ?? null);

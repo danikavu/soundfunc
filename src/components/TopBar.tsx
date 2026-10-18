@@ -150,7 +150,7 @@ export function TopBar() {
               spellCheck={false}
               onFocus={checkpoint}
               onValue={(harmony) => setSong({ harmony }, false)}
-              style={tryCompile(song.harmony, ['bar', 'k', 'L']).error ? { borderBottomColor: 'var(--accent)' } : undefined}
+              style={tryCompile(song.harmony, ['bar', 'k', 'L', ...song.sliders.map((x) => x.name)]).error ? { borderBottomColor: 'var(--accent)' } : undefined}
               title="The chord (scale degree) as a function of bar. Tracks read it as h."
             />
             <button

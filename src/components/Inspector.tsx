@@ -356,6 +356,12 @@ function GuideTab() {
         melodic contour, chord-tone fit, rhythmic density and distance from the original. The 調和 ↔ 実験 dial trades consonance for novelty. Lock a node
         (hover its header) to protect it.
       </p>
+      <div className="eyebrow">Building & experimenting</div>
+      <p style={{ margin: 0 }}>
+        <b>Explode</b> (✂ on a Formula) splits its outermost operation into a node — repeat to go deeper. Select nodes and <b>Collapse</b> to merge them back
+        into one formula. <b>Save as block</b> keeps selected nodes for any track; blocks live in Add node. <b>🎧</b> listens to one node alone (Esc stops).
+        <b> Sliders</b> are named constants for every formula: Alt+S on a number in a formula makes one. <b>Sections</b> plays A, B, C… in turn.
+      </p>
       <div className="eyebrow">Pattern notation</div>
       <p style={{ margin: 0 }}>
         <code>X</code> accent · <code>x</code> hit · <code>o</code> ghost · <code>1–9</code> velocity · <code>.</code> rest · <code>|</code> and spaces are
@@ -371,6 +377,7 @@ function GuideTab() {
         <dt><code>h</code></dt><dd>current chord of the song’s Harmony, as a scale degree</dd>
         <dt><code>bar</code></dt><dd>bar number since the song began</dd>
         <dt><code>L</code></dt><dd>degrees per octave (7, or 5 for pentatonic)</dd>
+        <dt><code>beat</code></dt><dd>beats since the song began</dd>
         <dt><code>a b c</code></dt><dd>Formula node inputs</dd>
         {Object.keys(CONSTANTS).map((c) => (
           <Fragment key={c}><dt><code>{c}</code></dt><dd>{CONSTANTS[c].toFixed(4)}</dd></Fragment>
