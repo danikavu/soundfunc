@@ -389,6 +389,44 @@ export const PRESETS: Preset[] = [
     },
   },
   {
+    id: 'desmos',
+    name: 'Graphed Arpeggios',
+    description:
+      'A y = f(x) melody written for a graphing calculator: x is time in beats, y is pitch in octaves. VI–VII–V–i minor arpeggios, octave-drop bass, and a falling e^(−12·frac 4x) hook on every note.',
+    formula: 'y = ⌊(12d + 2)/7⌋/12 + e^(−12 frac 4x)/6',
+    track: {
+      waveform: 'triangle',
+      pitchMode: 'semitone',
+      playMode: 'glide',
+      quantize: false,
+      glide: 0.004,
+      steps: 32,
+      stepBeats: 0.25,
+      octave: 4,
+      attack: 0.004,
+      release: 0.06,
+      volume: 0.7,
+      send: 0.5,
+      graph: wire(
+        {
+          // the formula as written, with x → t (beats); y is in octaves
+          y: [
+            'expr',
+            {
+              formula:
+                'floor((12 * ((3*floor(t/2) + 2*(floor(4t) % 4) + (floor(4t) % 8 == 4) + 5) % 7) + 2) / 7) / 12 - (floor(4t) % 8 == 0) + (floor(t/2) == 2) * (floor(4t) % 4 == 1) / 12 + exp(-12 * fract(4t)) / 6',
+            },
+          ],
+          semitones: ['math', { op: 'mul', b: 12 }],
+          // re-articulate each note so the hooks are heard as separate notes
+          gate: ['expr', { formula: 'fract(4t) < 0.85 ? 0.8 : 0' }],
+          out: ['output'],
+        },
+        ['y.out>semitones.a', 'semitones.out>out.pitch', 'gate.out>out.velocity'],
+      ),
+    },
+  },
+  {
     id: 'lorenzGlide',
     name: 'Lorenz Glide',
     description: 'A strange attractor sliding between scale notes with portamento.',
