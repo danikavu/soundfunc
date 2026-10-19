@@ -6,7 +6,7 @@ import { useStore } from '../state/store';
 import { togglePlay } from '../state/transport';
 import { GardenMenu } from './GardenMenu';
 import { StepPicker } from './StepPicker';
-import { FIXED_LENGTHS, shortBeats, stepLabel } from '../engine/steps';
+import { FIXED_LENGTHS, MAX_STEPS, shortBeats, stepLabel } from '../engine/steps';
 import { Dropdown } from './Dropdown';
 import { isDrum } from '../engine/project';
 import { useSelectedTrack } from '../state/store';
@@ -102,6 +102,36 @@ function FileMenu() {
   );
 }
 
+/** The song's length: what the Score shows and MIDI exports, and what “Song” tracks follow. */
+function SongLengthField() {
+  const lengthBeats = useStore((s) => s.project.song.lengthBeats);
+  const setSongLength = useStore((s) => s.setSongLength);
+  const following = useStore((s) => s.project.tracks.filter((t) => t.lengthMode === 'song').length);
+  const longest = useStore((s) => Math.max(0, ...s.project.tracks.map((t) => t.steps * t.stepBeats)));
+  return (
+    <div className="field-inline w-song" title="The song’s length — for every track. The Score, the Function view and MIDI export use it; tracks whose loop is “song length” follow it">
+      <span>Length</span>
+      <Dropdown
+        compact
+        label="Song length"
+        value={<b>{lengthBeats} beats</b>}
+        groups={[
+          {
+            title: `Song length${following ? ` — ${following} track${following > 1 ? 's' : ''} follow it` : ''}`,
+            items: FIXED_LENGTHS.map((L) => ({
+              key: `S${L}`,
+              label: `${L} beats`,
+              hint: `${L / 4} bar${L === 4 ? '' : 's'}${longest > L + 1e-9 ? ` · a ${Number(longest.toFixed(2))}-beat track still plays in full` : ''}`,
+              selected: lengthBeats === L,
+              onSelect: () => setSongLength(L),
+            })),
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
 /** a field that keeps its place in the bar when it has nothing to show */
 function Placeholder({ label, width, title }: { label: string; width: string; title: string }) {
   return (
@@ -123,6 +153,7 @@ function GridField() {
   const setStepBeatsAll = useStore((s) => s.setStepBeatsAll);
   const setLengthAll = useStore((s) => s.setLengthAll);
   const trackCount = useStore((s) => s.project.tracks.length);
+  const songLength = useStore((s) => s.project.song.lengthBeats);
   if (!track) {
     return (
       <>
@@ -145,11 +176,11 @@ function GridField() {
             className="input num"
             integer
             min={1}
-            max={256}
+            max={MAX_STEPS}
             value={track.steps}
             onValue={(steps) => setGrid(track.id, { steps })}
             aria-label="Steps"
-            title={track.lengthMode === 'fixed' ? `Steps — divides the ${track.lengthBeats}-beat loop evenly` : 'Steps'}
+            title={track.lengthMode !== 'free' ? `Steps — divides the ${track.lengthBeats}-beat loop evenly` : 'Steps'}
           />
           <span className="muted grid-times">×</span>
           <StepPicker
@@ -167,13 +198,21 @@ function GridField() {
           />
         </div>
       </div>
-      <div className="field-inline w-length" title={track.lengthMode === 'fixed' ? `${track.lengthBeats} beats` : `free — ${loopBeats} beats`}>
-        <span>Length</span>
+      <div
+        className="field-inline w-length"
+        title={track.lengthMode === 'song' ? `follows the global Length — ${track.lengthBeats} beats` : track.lengthMode === 'fixed' ? `${track.lengthBeats} beats` : `free — ${loopBeats} beats`}
+      >
+        <span>Loop</span>
         <Dropdown
           compact
           label="Loop length"
           value={
-            track.lengthMode === 'fixed' ? (
+            track.lengthMode === 'song' ? (
+              <>
+                <b>song</b>
+                <small>{track.lengthBeats} beats</small>
+              </>
+            ) : track.lengthMode === 'fixed' ? (
               <>
                 <b>{track.lengthBeats} beats</b>
                 <small>{track.lengthBeats / 4} bar{track.lengthBeats === 4 ? '' : 's'}</small>
@@ -186,11 +225,23 @@ function GridField() {
             )
           }          groups={[
             {
+              title: 'Song',
+              items: [
+                {
+                  key: 'song',
+                  label: `Song length`,
+                  hint: `${songLength} beats now — follows the global Length`,
+                  selected: track.lengthMode === 'song',
+                  onSelect: () => setGrid(track.id, { lengthMode: 'song' }),
+                },
+              ],
+            },
+            {
               title: 'Fixed — always lands on the bar',
               items: FIXED_LENGTHS.map((L) => ({
                 key: `L${L}`,
                 label: `${L} beats`,
-                hint: `${L / 4} bar${L === 4 ? '' : 's'} · ${Math.max(1, Math.min(256, Math.round(L / track.stepBeats)))} steps`,
+                hint: `${L / 4} bar${L === 4 ? '' : 's'} · ${Math.max(1, Math.min(MAX_STEPS, Math.round(L / track.stepBeats)))} steps`,
                 selected: track.lengthMode === 'fixed' && track.lengthBeats === L,
                 onSelect: () => setGrid(track.id, { lengthMode: 'fixed', lengthBeats: L }),
               })),
@@ -213,11 +264,13 @@ function GridField() {
               <button
                 className="btn small ghost step-all"
                 onClick={() => {
-                  setLengthAll(track.lengthMode === 'fixed' ? { lengthMode: 'fixed', lengthBeats: track.lengthBeats } : { lengthMode: 'free' });
-                  toast(`Every track is now ${track.lengthMode === 'fixed' ? `${track.lengthBeats} beats long` : 'free'} — ⌘Z to undo`);
+                  setLengthAll(track.lengthMode === 'free' ? { lengthMode: 'free' } : { lengthMode: track.lengthMode, lengthBeats: track.lengthBeats });
+                  toast(
+                    `Every track ${track.lengthMode === 'song' ? 'now follows the song' : track.lengthMode === 'fixed' ? `is now ${track.lengthBeats} beats long` : 'is now free'} — ⌘Z to undo`,
+                  );
                 }}
               >
-                {track.lengthMode === 'fixed' ? `Make every track ${track.lengthBeats} beats` : 'Make every track free'}
+                {track.lengthMode === 'song' ? 'Make every track follow the global Length' : track.lengthMode === 'fixed' ? `Make every track ${track.lengthBeats} beats` : 'Make every track free'}
               </button>
             ) : undefined
           }
@@ -259,7 +312,7 @@ export function TopBar() {
           <span>Tempo</span>
           <NumberField className="input num" min={20} max={300} value={song.bpm} onValue={(bpm) => setSong({ bpm })} />
         </label>
-        <GridField />
+        <SongLengthField />
         <label className="field-inline">
           <span>Key</span>
           <select className="select" value={song.root} onChange={(e) => setSong({ root: Number(e.target.value) })}>
@@ -317,6 +370,11 @@ export function TopBar() {
           <span>Space</span>
           <input type="range" min={0} max={1} step={0.01} value={song.reverb} onChange={(e) => setSong({ reverb: Number(e.target.value) })} />
         </label>
+      </div>
+
+      {/* everything above is the whole song; this panel is only the selected track */}
+      <div className="track-panel" aria-label="Selected track">
+        <GridField />
       </div>
 
       <div className="spacer" />

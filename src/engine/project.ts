@@ -1,6 +1,6 @@
 import { compileGraph, type Graph } from './graph';
 import { tryCompile, type Compiled } from './expr';
-import { nearestFixedLength, type LengthMode } from './steps';
+import { fixedLengthFor, nearestFixedLength, type LengthMode } from './steps';
 import { chordTones, DEFAULT_PITCH_RANGE, limitPitch, midiToDegree, midiToFreq, midiToName, NOTE_NAMES, SCALES, valueToMidi, valueToPitch, type PitchMode, type PitchRange } from './music';
 
 export type DrumVoice = 'kick' | 'snare' | 'hat' | 'openhat' | 'clap' | 'rim' | 'tom' | 'crash';
@@ -111,6 +111,8 @@ export interface Song {
   sliders: Slider[];
   /** where pitches may go: wrap by octaves (default), clamp, or off */
   pitchRange: PitchRange;
+  /** the song's loop, in beats (4/8/16/32/64): what the Score shows and MIDI exports; tracks set to “Song” follow it */
+  lengthBeats: number;
 }
 
 export interface Slider {
@@ -123,7 +125,7 @@ export interface Slider {
 export const sliderNames = (song: Song) => (song.sliders ?? []).map((s) => s.name);
 export const sliderValues = (song: Song): Record<string, number> => Object.fromEntries((song.sliders ?? []).map((s) => [s.name, s.value]));
 
-export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', sliders: [], pitchRange: DEFAULT_PITCH_RANGE };
+export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', sliders: [], pitchRange: DEFAULT_PITCH_RANGE, lengthBeats: 16 };
 export const BEATS_PER_BAR = 4;
 
 const harmonyCache = new Map<string, Compiled | null>();
@@ -154,9 +156,12 @@ export interface Project {
 
 /** Fill in fields added since a project was saved. */
 export function normalizeProject(p: Project): Project {
+  const song = { ...SONG_DEFAULTS, ...(p.song as Partial<Song>) };
+  // projects from before the song had a length: the length its tracks already had
+  if (!('lengthBeats' in (p.song ?? {}))) song.lengthBeats = fixedLengthFor(Math.max(1, ...p.tracks.map((t) => (t.steps ?? 16) * (t.stepBeats ?? 0.25))));
   return {
     name: p.name ?? 'Untitled',
-    song: { ...SONG_DEFAULTS, ...(p.song as Partial<Song>) },
+    song,
     tracks: p.tracks.map((t) => {
       const track = { ...TRACK_DEFAULTS, ...t };
       // projects from before fixed lengths: keep them free, remember the nearest fixed length
@@ -319,9 +324,12 @@ export function harmonyCycleBars(song: Song): number {
   return 16;
 }
 
-/** One full cycle of the song: the longest pattern, or the progression if that is longer. */
+/**
+ * One full cycle of the song: its length setting — or the longest track, if one runs
+ * longer. (The progression no longer stretches it: it repeats, or keeps going, inside.)
+ */
 export function songBeats(tracks: Track[], song: Song): number {
-  return Math.max(1, ...tracks.map(patternBeats), harmonyCycleBars(song) * BEATS_PER_BAR);
+  return Math.max(1, song.lengthBeats ?? 16, ...tracks.map(patternBeats));
 }
 
 export function patternBeats(track: Track): number {

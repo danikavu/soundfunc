@@ -2231,3 +2231,98 @@ button:focus-visible {
 .range-pop {
   z-index: 30;
 }
+
+.topbar .field-inline.w-song {
+  width: 96px;
+}
+
+/* ---------- room for the Song field ---------- */
+.grid-controls .input.num {
+  width: 36px;
+}
+@media (max-width: 1440px) {
+  .topbar {
+    gap: 12px;
+  }
+  .transport {
+    gap: 10px;
+  }
+}
+@media (max-width: 1340px) {
+  .topbar .field-inline.w-song {
+    width: 82px;
+  }
+  .topbar .field-inline.w-grid {
+    width: 150px;
+  }
+  .topbar .field-inline.w-length {
+    width: 94px;
+  }
+  .harmony .input {
+    width: 68px;
+  }
+  .project-name {
+    width: 84px;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .field-inline.w-grid {
+    width: 140px;
+  }
+  .harmony .input {
+    width: 56px;
+  }
+  .topbar {
+    gap: 10px;
+    padding: 0 14px;
+  }
+}
+
+/* compact fields: the value first; its detail only while there is room */
+.dropdown.compact .dropdown-value b {
+  max-width: none;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.dropdown.compact .dropdown-value small {
+  flex: 1 1 0;
+  min-width: 0;
+}
+@media (max-width: 1340px) {
+  .topbar .dropdown.compact .dropdown-value small {
+    display: none;
+  }
+}
+
+/* ---------- the selected track's own controls, apart from the song's ---------- */
+.track-panel {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 4px 12px 6px;
+  margin: 6px 0;
+  align-self: stretch;
+  border-radius: 12px;
+  background: var(--paper-2);
+  border: 1px solid var(--line-soft);
+}
+.track-panel .field-inline > span {
+  color: var(--ink-2);
+}
+@media (max-width: 1440px) {
+  .track-panel {
+    gap: 10px;
+    padding: 4px 10px 6px;
+  }
+}
+@media (max-width: 1340px) {
+  .track-panel {
+    gap: 8px;
+    padding: 4px 8px 6px;
+  }
+}
+@media (max-width: 1340px) {
+  .transport {
+    gap: 8px;
+  }
+}

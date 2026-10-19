@@ -9,7 +9,7 @@ import { compileGraph, euclid } from './graph';
 import { exportMidi, collectNotes } from './midi';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
 import { KITS, PRESETS, defaultProject, trackFromPreset, trackFromTemplate } from './presets';
-import { harmonyAt, normalizeProject, renderTrack, scaleLength, type Project, type Track } from './project';
+import { harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
 import { chordName, chordTones, limitPitch } from './music';
 import { mulberry32, mutateFormula, mutateTrack, musicalScore } from './mutate';
 import { parsePattern } from './graph';
@@ -699,8 +699,9 @@ describe('loop length: fixed or free', () => {
     const g = applyGrid(free, { lengthMode: 'fixed' });
     expect(g.steps * g.stepBeats).toBeCloseTo(8, 12);
   });
-  it('caps a fixed loop at 256 steps', () => {
-    expect(fixed(64, 1 / 16).steps).toBe(256);
+  it('fits 64 beats of 1/64 notes, and caps at 1024 steps', () => {
+    expect(fixed(64, 1 / 16)).toMatchObject({ steps: 1024, stepBeats: 1 / 16 });
+    expect(fixed(64, 1 / 32).steps).toBe(1024);
   });
   it('older projects open as free, with the nearest fixed length remembered', () => {
     const p = defaultProject();
@@ -773,5 +774,32 @@ describe('pitch range', () => {
     expect(limitPitch(130.5, { mode: 'wrap', low: 24, high: 96 })).toBeCloseTo(94.5);
     expect(limitPitch(30, { mode: 'wrap', low: 60, high: 64 })).toBe(60); // narrower than an octave: clamps
     expect(limitPitch(200, { mode: 'off', low: 0, high: 0 })).toBe(127);
+  });
+});
+
+describe('song length', () => {
+  it('sets the song loop — a progression that never repeats no longer stretches it to 64', () => {
+    const p = defaultProject();
+    expect(p.song.lengthBeats).toBe(8);
+    expect(songBeats(p.tracks, p.song)).toBe(8);
+    const golden = { ...p.song, harmony: 'floor(7 * fract(bar * phi))' };
+    expect(songBeats(p.tracks, golden)).toBe(8);
+    expect(songBeats(p.tracks, { ...golden, lengthBeats: 32 })).toBe(32);
+  });
+  it('a longer track still plays in full', () => {
+    const p = defaultProject();
+    const long = { ...p.tracks[0], steps: 64, stepBeats: 0.5 }; // 32 beats
+    expect(songBeats([long], { ...p.song, lengthBeats: 8 })).toBe(32);
+  });
+  it('tracks set to “Song” take the song’s length; fixed and free ones keep theirs', () => {
+    const g = { steps: 16, stepBeats: 0.25, lengthMode: 'song' as const, lengthBeats: 4 };
+    expect(applyGrid(g, {}, 16)).toMatchObject({ lengthBeats: 16, steps: 64 });
+    expect(applyGrid({ ...g, lengthMode: 'fixed' }, {}, 16)).toMatchObject({ lengthBeats: 4, steps: 16 });
+    expect(applyGrid({ ...g, lengthMode: 'free', steps: 21 }, {}, 16)).toMatchObject({ steps: 21 });
+  });
+  it('older projects get the length their tracks already had', () => {
+    const p = defaultProject();
+    const { lengthBeats, ...old } = p.song;
+    expect(normalizeProject({ ...p, song: old as Project['song'] }).song.lengthBeats).toBe(8);
   });
 });

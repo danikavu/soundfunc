@@ -2,10 +2,10 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { GEdge, GNode, Graph, NodeData } from '../engine/graph';
 import type { EditResult } from '../engine/graphEdit';
-import { applyGrid, gridOf, type Grid } from '../engine/steps';
+import { applyGrid, fixedLengthFor, gridOf, type Grid } from '../engine/steps';
 import { defaultProject, KITS, PRESETS, trackFromPreset, trackFromTemplate, uid } from '../engine/presets';
 import { mutateHarmony, mutateTrack } from '../engine/mutate';
-import { normalizeProject, type Project, type Slider, type Song, type Track } from '../engine/project';
+import { harmonyCycleBars, normalizeProject, type Project, type Slider, type Song, type Track } from '../engine/project';
 import { CONSTANTS, FUNCTIONS, renameVariable } from '../engine/expr';
 import { ctxVars } from '../engine/graph';
 
@@ -59,6 +59,8 @@ interface State {
   setStepBeatsAll: (stepBeats: number) => void;
   /** change a track's grid — steps, step length, fixed/free length — keeping a fixed loop exact */
   setGrid: (trackId: string, patch: Partial<Grid>) => void;
+  /** the song's length; every track set to follow it is re-gridded */
+  setSongLength: (lengthBeats: number) => void;
   /** the same loop length (or free) for every track */
   setLengthAll: (patch: Pick<Grid, 'lengthMode'> & Partial<Pick<Grid, 'lengthBeats'>>) => void;
   /** remove every track at once (one undo step) */
@@ -112,7 +114,8 @@ export const useStore = create<State>()(
         selectTrack: (id) => set({ selectedTrackId: id }),
         addTrack: (presetId) => {
           const preset = PRESETS.find((p) => p.id === presetId) ?? PRESETS[0];
-          const track = trackFromPreset(preset, get().project.tracks.length);
+          const made = trackFromPreset(preset, get().project.tracks.length);
+          const track = made.lengthMode === 'song' ? { ...made, ...applyGrid(gridOf(made), {}, get().project.song.lengthBeats) } : made;
           commit((p) => ({ ...p, tracks: [...p.tracks, track] }));
           set({ selectedTrackId: track.id });
         },
@@ -121,17 +124,20 @@ export const useStore = create<State>()(
           if (!kit) return;
           const start = layer ? get().project.tracks.length : 0;
           const tracks = kit.tracks.map((t, i) => trackFromTemplate(t, t.name, start + i));
+          const kitSong = { ...get().project.song, ...kit.song };
+          const cycle = harmonyCycleBars(kitSong);
+          const needs = Math.max(...tracks.map((t) => t.steps * t.stepBeats), cycle < 16 ? cycle * 4 : 0);
           commit((p) => ({
             ...p,
             name: layer ? p.name : kit.name,
-            song: { ...p.song, ...kit.song },
+            song: { ...p.song, ...kit.song, lengthBeats: layer ? Math.max(p.song.lengthBeats, fixedLengthFor(needs)) : fixedLengthFor(needs) },
             tracks: layer ? [...p.tracks, ...tracks] : tracks,
           }));
           if (!layer) set({ currentProjectId: null });
           set({ selectedTrackId: tracks[0]?.id ?? null });
         },
         plantTrack: (track) => {
-          commit((p) => ({ ...p, tracks: [...p.tracks, track] }));
+          commit((p) => ({ ...p, tracks: [...p.tracks, track.lengthMode === 'song' ? { ...track, ...applyGrid(gridOf(track), {}, p.song.lengthBeats) } : track] }));
           set({ selectedTrackId: track.id });
         },
         applyGraphEdit: (trackId, edit) => {
@@ -192,9 +198,17 @@ export const useStore = create<State>()(
           });
           set({ selectedTrackId: copy.id });
         },
-        setStepBeatsAll: (stepBeats) => commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, ...applyGrid(gridOf(t), { stepBeats }) })) })),
-        setGrid: (trackId, patch) => commit(mapTrack(trackId, (t) => ({ ...t, ...applyGrid(gridOf(t), patch) }))),
-        setLengthAll: (patch) => commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, ...applyGrid(gridOf(t), patch) })) })),
+        setStepBeatsAll: (stepBeats) =>
+          commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, ...applyGrid(gridOf(t), { stepBeats }, p.song.lengthBeats) })) })),
+        setGrid: (trackId, patch) => commit((p) => mapTrack(trackId, (t) => ({ ...t, ...applyGrid(gridOf(t), patch, p.song.lengthBeats) }))(p)),
+        setLengthAll: (patch) =>
+          commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, ...applyGrid(gridOf(t), patch, p.song.lengthBeats) })) })),
+        setSongLength: (lengthBeats) =>
+          commit((p) => ({
+            ...p,
+            song: { ...p.song, lengthBeats },
+            tracks: p.tracks.map((t) => (t.lengthMode === 'song' ? { ...t, ...applyGrid(gridOf(t), {}, lengthBeats) } : t)),
+          })),
         clearTracks: () => {
           commit((p) => ({ ...p, tracks: [] }));
           set({ selectedTrackId: null, audition: null });

@@ -697,7 +697,7 @@ export const PRESETS: Preset[] = [
       pitchMode: 'degree',
       steps: 16,
       stepBeats: 0.25,
-      lengthMode: 'fixed',
+      lengthMode: 'song',
       lengthBeats: 4,
       octave: 4,
       graph: graph(
@@ -902,7 +902,7 @@ export function defaultProject(): Project {
   tracks[1].pan = 0.3;
   return {
     name: 'Zen Garden',
-    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', sliders: [], pitchRange: { ...DEFAULT_PITCH_RANGE } },
+    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', sliders: [], pitchRange: { ...DEFAULT_PITCH_RANGE }, lengthBeats: 8 },
     tracks,
   };
 }
