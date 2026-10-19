@@ -15,6 +15,28 @@ const UNARY = new Set(['sin', 'cos', 'tan', 'abs', 'floor', 'round', 'ceil', 'fr
 const WAVE_SHAPES: Record<string, string> = { sine: 'sine', tri: 'triangle', saw: 'saw', sqr: 'square' };
 const SEQUENCES: Record<string, string> = { fib: 'fib', prime: 'prime', recaman: 'recaman', lorenz: 'lorenz', thue: 'thue', pidigit: 'pi' };
 const MATH_OPS: Record<string, string> = { '+': 'add', '-': 'sub', '*': 'mul', '/': 'div', '%': 'mod', '^': 'pow' };
+const COMPARE = new Set(['<', '<=', '>', '>=', '==', '!=', '&&', '||']);
+const INPUTS = ['a', 'b', 'c'];
+
+/** a leaf that can stay inside a formula as it is: a number, π, or a clock variable */
+const isLeaf = (a: Ast) => a.k === 'num' || a.k === 'const' || (a.k === 'var' && !INPUTS.includes(a.name));
+
+/** rough size of an expression, to decide which arguments are worth their own node */
+function size(a: Ast): number {
+  switch (a.k) {
+    case 'neg':
+    case 'not':
+      return 1 + size(a.a);
+    case 'bin':
+      return 1 + size(a.a) + size(a.b);
+    case 'cond':
+      return 1 + size(a.c) + size(a.a) + size(a.b);
+    case 'call':
+      return 1 + a.args.reduce((t, x) => t + size(x), 0);
+    default:
+      return 1;
+  }
+}
 
 const NODE_W = 250;
 
@@ -100,12 +122,32 @@ export function explodeFormula(graph: Graph, nodeId: string): EditResult {
     wire(source(sub), topId, port);
   };
 
+  if (ast.k === 'call' && (ast.fn === 'mod' || ast.fn === 'pow') && ast.args.length === 2) {
+    ast = { k: 'bin', op: ast.fn === 'mod' ? '%' : '^', a: ast.args[0], b: ast.args[1] };
+  }
+
   if (ast.k === 'bin' && MATH_OPS[ast.op]) {
     let { a, b } = ast;
     if (isNum(a) && !isNum(b) && (ast.op === '+' || ast.op === '*')) [a, b] = [b, a];
     make('math', { op: MATH_OPS[ast.op], b: isNum(b) ? b.v : 1 });
     feed(a, 'a');
     if (!isNum(b)) feed(b, 'b');
+  } else if (ast.k === 'bin' && COMPARE.has(ast.op)) {
+    // a < b, a == b, a && b … → Compare (constants on the right fold into its b)
+    const { a, b } = ast;
+    make('compare', { op: ast.op, b: isNum(b) ? b.v : 0 });
+    feed(a, 'a');
+    if (!isNum(b)) feed(b, 'b');
+  } else if (ast.k === 'not') {
+    // !x is "x = 0"
+    make('compare', { op: '==', b: 0 });
+    feed(ast.a, 'a');
+  } else if (ast.k === 'cond') {
+    // cond ? then : else → If / else (number branches fold into its settings)
+    make('switch', { then: isNum(ast.a) ? ast.a.v : 1, else: isNum(ast.b) ? ast.b.v : 0 });
+    feed(ast.c, 'cond');
+    if (!isNum(ast.a)) feed(ast.a, 'then');
+    if (!isNum(ast.b)) feed(ast.b, 'else');
   } else if (ast.k === 'neg') {
     make('math', { op: 'mul', b: -1 });
     feed(ast.a, 'a');
@@ -138,8 +180,22 @@ export function explodeFormula(graph: Graph, nodeId: string): EditResult {
     feed(ast.args[0], 'n', 'n');
   } else if (ast.k === 'num') {
     make('number', { value: ast.v, min: Math.min(-12, ast.v), max: Math.max(12, ast.v) });
+  } else if (ast.k === 'call' && ast.args.some((x) => !isLeaf(x) && x.k !== 'var')) {
+    // f(x + 1, 3) → f(a, 3) fed by a Formula for x + 1. Arguments that read the
+    // original a/b/c must come out (their letters are reused); then the biggest ones.
+    const args = ast.args;
+    const order = args
+      .map((x, i) => ({ i, x, reads: INPUTS.some((l) => usesVar(x, l)) }))
+      .filter((o) => !isLeaf(o.x))
+      .sort((p, q) => Number(q.reads) - Number(p.reads) || size(q.x) - size(p.x));
+    const chosen = order.slice(0, 3);
+    if (order.slice(3).some((o) => o.reads)) return { error: 'This call has more than three arguments using a, b, c — split it by hand.' };
+    const letter = new Map(chosen.sort((p, q) => p.i - q.i).map((o, j) => [o.i, INPUTS[j]]));
+    const inner: Ast = { k: 'call', fn: ast.fn, args: args.map((x, i) => (letter.has(i) ? { k: 'var', name: letter.get(i)! } : x)) };
+    make('expr', { formula: toSource(inner) });
+    for (const [i, l] of letter) feed(args[i], l);
   } else {
-    const why = ast.k === 'cond' ? 'Conditions (a ? b : c) stay as formulas for now.' : ast.k === 'var' ? 'It is a single variable already.' : 'This formula is already as simple as nodes get.';
+    const why = ast.k === 'var' ? 'It is a single variable already.' : 'This formula is already as simple as nodes get.';
     return { error: why };
   }
 

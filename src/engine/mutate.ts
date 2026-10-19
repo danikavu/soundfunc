@@ -332,6 +332,14 @@ export function mutateNodeData(node: GNode, chaos: number, rng: Rng, onPitchPath
     case 'expr':
       d.formula = mutateFormula(String(d.formula), chaos, rng, FORMULA_VARS, onPitchPath);
       break;
+    case 'compare':
+      if (p(0.05)) d.op = pick(rng, ['<', '<=', '>', '>=']);
+      if (p(0.3)) d.b = mutateNumber(Number(d.b ?? 0), chaos, rng);
+      break;
+    case 'switch':
+      if (p(0.3)) d.then = mutateNumber(Number(d.then ?? 1), chaos, rng);
+      if (p(0.3)) d.else = mutateNumber(Number(d.else ?? 0), chaos, rng);
+      break;
   }
   return d;
 }

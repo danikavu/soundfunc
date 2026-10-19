@@ -4,7 +4,7 @@
  * prints as SoundFunc formulas, LaTeX, JavaScript and Python.
  */
 import { compileAst, parse, type Ast, type BinOp } from './expr';
-import { NODE_DEFS, parseList, parsePattern, sectionLengths, type GNode, type Graph } from './graph';
+import { COMPARE_OPS, NODE_DEFS, parseList, parsePattern, sectionLengths, type GNode, type Graph } from './graph';
 import { NOTE_NAMES, PITCH_MODES, SCALES } from './music';
 import { BEATS_PER_BAR, isDrum, scaleLength, voiceLabel, type Song, type Track } from './project';
 
@@ -152,7 +152,7 @@ function fold(ast: Ast): Ast {
 // ---------- graph → expressions ----------
 
 const PREFIX: Record<string, string> = {
-  expr: 'f', math: 'm', func: 'g', map: 'r', wave: 'w', series: 's', euclid: 'E', chance: 'C', pattern: 'P', list: 'v', sections: 'S',
+  expr: 'f', math: 'm', func: 'g', compare: 'q', switch: 'i', map: 'r', wave: 'w', series: 's', euclid: 'E', chance: 'C', pattern: 'P', list: 'v', sections: 'S',
 };
 
 /** symbolic value of an unconnected input */
@@ -170,6 +170,12 @@ export function fallback(type: string, port: string, data: GNode['data']): Ast {
       return bin('+', v('n'), bin('*', v('k'), v('steps')));
     case 'math.b':
       return num(n(data.b, 1));
+    case 'compare.b':
+      return num(n(data.b, 0));
+    case 'switch.then':
+      return num(n(data.then, 1));
+    case 'switch.else':
+      return num(n(data.else, 0));
     case 'output.velocity':
       return num(0.8);
     case 'output.length':
@@ -230,6 +236,10 @@ export function nodeAst(node: GNode, handle: string, ins: Ast[]): Ast {
     }
     case 'func':
       return call(String(d.fn ?? 'abs'), ins[0]);
+    case 'compare':
+      return bin((COMPARE_OPS[String(d.op)] ? String(d.op) : '<') as BinOp, ins[0], ins[1]);
+    case 'switch':
+      return { k: 'cond', c: ins[0], a: ins[1], b: ins[2] };
     case 'map': {
       const a = n(d.inMin), b = n(d.inMax, 1), c = n(d.outMin), e = n(d.outMax, 1);
       let u: Ast = bin('/', bin('-', ins[0], num(a)), num(b - a));

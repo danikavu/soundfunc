@@ -6,7 +6,7 @@ import { useStore } from '../state/store';
 import { togglePlay } from '../state/transport';
 import { GardenMenu } from './GardenMenu';
 import { StepPicker } from './StepPicker';
-import { FIXED_LENGTHS, stepLabel } from '../engine/steps';
+import { FIXED_LENGTHS, shortBeats, stepLabel } from '../engine/steps';
 import { Dropdown } from './Dropdown';
 import { isDrum } from '../engine/project';
 import { useSelectedTrack } from '../state/store';
@@ -102,7 +102,20 @@ function FileMenu() {
   );
 }
 
-/** The selected track's grid — how many steps, and how long each one is. */
+/** a field that keeps its place in the bar when it has nothing to show */
+function Placeholder({ label, width, title }: { label: string; width: string; title: string }) {
+  return (
+    <div className={`field-inline ${width}`} title={title}>
+      <span>{label}</span>
+      <span className="field-placeholder">–</span>
+    </div>
+  );
+}
+
+/**
+ * The selected track's grid — steps × step length, loop length, octave. Every field
+ * has a fixed width, so changing tracks or values never shifts the rest of the bar.
+ */
 function GridField() {
   const track = useSelectedTrack();
   const updateTrack = useStore((s) => s.updateTrack);
@@ -110,10 +123,19 @@ function GridField() {
   const setStepBeatsAll = useStore((s) => s.setStepBeatsAll);
   const setLengthAll = useStore((s) => s.setLengthAll);
   const trackCount = useStore((s) => s.project.tracks.length);
-  if (!track) return null;
+  if (!track) {
+    return (
+      <>
+        <Placeholder label="Steps" width="w-grid" title="Select a track to set its steps" />
+        <Placeholder label="Length" width="w-length" title="Select a track to set its length" />
+        <Placeholder label="Octave" width="w-octave" title="Select a track to set its octave" />
+      </>
+    );
+  }
+  const loopBeats = track.steps * track.stepBeats;
   return (
     <>
-      <div className="field-inline grid-field">
+      <div className="field-inline grid-field w-grid">
         <span title={`Steps and step length of “${track.name}”`}>
           <i className="grid-dot" style={{ background: track.color }} />
           <span className="grid-name">{track.name}</span>
@@ -145,7 +167,7 @@ function GridField() {
           />
         </div>
       </div>
-      <div className="field-inline">
+      <div className="field-inline w-length" title={track.lengthMode === 'fixed' ? `${track.lengthBeats} beats` : `free — ${loopBeats} beats`}>
         <span>Length</span>
         <Dropdown
           compact
@@ -159,11 +181,10 @@ function GridField() {
             ) : (
               <>
                 <b>free</b>
-                <small>{Number((track.steps * track.stepBeats).toFixed(3))} beats</small>
+                <small>{shortBeats(loopBeats)}</small>
               </>
             )
-          }
-          groups={[
+          }          groups={[
             {
               title: 'Fixed — always lands on the bar',
               items: FIXED_LENGTHS.map((L) => ({
@@ -202,8 +223,10 @@ function GridField() {
           }
         />
       </div>
-      {!isDrum(track.waveform) && (
-        <label className="field-inline" title="Octave — where pitch 0 sits (4 = middle C’s octave)">
+      {isDrum(track.waveform) ? (
+        <Placeholder label="Octave" width="w-octave" title="Drums have no octave — their pitch input tunes the hit" />
+      ) : (
+        <label className="field-inline w-octave" title="Octave — where pitch 0 sits (4 = middle C’s octave)">
           <span>Octave</span>
           <NumberField className="input num grid-oct" integer min={0} max={8} value={track.octave} onValue={(octave) => updateTrack(track.id, { octave })} />
         </label>

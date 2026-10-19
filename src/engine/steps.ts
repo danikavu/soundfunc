@@ -77,10 +77,19 @@ export function stepLabel(beats: number): string {
   return `${Number(beats.toFixed(4))} beats`;
 }
 
+/** a length in beats for tight spaces: at most two decimals — "9.89 beats", "4 beats" */
+export const shortBeats = (beats: number) => `${Number(beats.toFixed(2))} beats`;
+
+/** the step length for tight spaces: its note name, or "0.41 b" */
+export const shortStepLabel = (beats: number) => {
+  const named = ALL_STEPS.find((x) => Math.abs(x.beats - beats) < 1e-9);
+  return named ? named.label : `${Number(beats.toFixed(2))} b`;
+};
+
 /** steps per 4-beat bar, for display */
 export const perBar = (beats: number) => {
   const v = 4 / beats;
-  return Math.abs(v - Math.round(v)) < 1e-6 ? String(Math.round(v)) : v.toFixed(2);
+  return Math.abs(v - Math.round(v)) < 1e-6 ? String(Math.round(v)) : v.toFixed(1);
 };
 
 /**

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { STEP_GROUPS, parseStepLength, perBar, stepLabel } from '../engine/steps';
+import { STEP_GROUPS, parseStepLength, perBar, shortStepLabel, stepLabel } from '../engine/steps';
 import { Dropdown } from './Dropdown';
 
 /** Step length: named note values in groups, or any length typed by hand. */
@@ -32,7 +32,7 @@ export function StepPicker({
       value={
         compact ? (
           <>
-            <b>{stepLabel(value)}</b>
+            <b title={stepLabel(value)}>{shortStepLabel(value)}</b>
             <small>{perBar(value)}/bar</small>
           </>
         ) : (

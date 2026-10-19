@@ -482,6 +482,48 @@ describe('graph editing keeps the music', () => {
     expect(exploded).toBeGreaterThan(50);
   });
 
+  it('conditions, comparisons, logic and any call explode into nodes', () => {
+    const blank = trackFromPreset(PRESETS.find((p) => p.id === 'blank')!, 0);
+    const f = blank.graph.nodes.find((n) => n.type === 'expr')!;
+    const cases: [string, string][] = [
+      ['n % 4 == 0 ? h + 2 : h - 1', 'switch'],
+      ['n > 3 && x < 0.5', 'compare'],
+      ['!(n % 3)', 'compare'],
+      ['smoothstep(0, 1, fract(t * 2)) * 4', 'math'],
+      ['rand(n + 16k, 3) * 7', 'math'],
+      ['floor(7 * noise(n * 0.3, 2))', 'func'],
+      ['pow(2, n % 4)', 'math'],
+    ];
+    for (const [formula, top] of cases) {
+      let graph = { ...blank.graph, nodes: blank.graph.nodes.map((n) => (n.id === f.id ? { ...n, data: { formula } } : n)) };
+      const original = { ...blank, graph };
+      const first = explodeFormula(graph, f.id);
+      if ('error' in first) throw new Error(`${formula}: ${first.error}`);
+      expect(first.graph.nodes.find((n) => n.id === first.focus)?.type, formula).toBe(top);
+      // keep exploding everything until nothing splits further — the sound never changes
+      graph = first.graph;
+      for (let round = 0; round < 12; round++) {
+        let changed = false;
+        for (const n of graph.nodes.filter((x) => x.type === 'expr')) {
+          const r = explodeFormula(graph, n.id);
+          if (!('error' in r)) (graph = r.graph), (changed = true);
+        }
+        if (!changed) break;
+      }
+      sameSound(formula, original, { ...blank, graph }, defaultProject().song);
+      // …and collapsing the whole tree back gives one formula that sounds the same
+      const ids = graph.nodes.filter((n) => n.type !== 'output' && n.type !== 'step').map((n) => n.id);
+      if (ids.length >= 2) {
+        const back = collapseNodes(graph, ids);
+        if ('error' in back) throw new Error(`${formula} collapse: ${back.error}`);
+        sameSound(`${formula} collapsed`, original, { ...blank, graph: back.graph }, defaultProject().song);
+      }
+    }
+    // a call whose arguments are already plain inputs has nothing left to split
+    const done = explodeFormula({ ...blank.graph, nodes: blank.graph.nodes.map((n) => (n.id === f.id ? { ...n, data: { formula: 'rand(a, 3)' } } : n)) }, f.id);
+    expect('error' in done).toBe(true);
+  });
+
   it('collapsing each branch into one formula changes nothing you hear', () => {
     for (const { label, track, song } of tracks()) {
       let graph = track.graph;

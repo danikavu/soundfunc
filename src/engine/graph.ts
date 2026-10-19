@@ -97,6 +97,18 @@ const MATH_OPS: Record<string, { label: string; fn: (a: number, b: number) => nu
   mix: { label: 'average', fn: (a, b) => (a + b) / 2 },
 };
 
+/** the operator symbols match the formula language, so explode/collapse can map them 1:1 */
+export const COMPARE_OPS: Record<string, { label: string; fn: (a: number, b: number) => number }> = {
+  '<': { label: 'a < b', fn: (a, b) => +(a < b) },
+  '<=': { label: 'a ≤ b', fn: (a, b) => +(a <= b) },
+  '>': { label: 'a > b', fn: (a, b) => +(a > b) },
+  '>=': { label: 'a ≥ b', fn: (a, b) => +(a >= b) },
+  '==': { label: 'a = b', fn: (a, b) => +(a === b) },
+  '!=': { label: 'a ≠ b', fn: (a, b) => +(a !== b) },
+  '&&': { label: 'a and b', fn: (a, b) => (a && b ? 1 : 0) },
+  '||': { label: 'a or b', fn: (a, b) => (a || b ? 1 : 0) },
+};
+
 const UNARY = ['sin', 'cos', 'tan', 'abs', 'floor', 'round', 'ceil', 'fract', 'sqrt', 'exp', 'log', 'sign', 'tanh'];
 
 const SERIES: Record<string, { label: string; fn: (n: number, p: number) => number }> = {
@@ -386,6 +398,44 @@ export const NODE_DEFS: Record<string, NodeDef> = {
       const p = num(d.p, 0.5), seed = num(d.seed);
       return (ins) => [FUNCTIONS.rand.fn(ins[0], seed) < p ? 1 : 0];
     },
+  },
+  compare: {
+    type: 'compare',
+    label: 'Compare',
+    category: 'math',
+    hint: '1 when the comparison holds, otherwise 0 — <, ≤, >, ≥, =, ≠, and, or',
+    defaults: { op: '<', b: 0 },
+    inputs: [
+      { id: 'a', label: 'a', fallback: 0 },
+      { id: 'b', label: 'b', fallback: (_c, d) => num(d.b, 0) },
+    ],
+    outputs: [{ id: 'out', label: '1 / 0' }],
+    params: [
+      { key: 'op', label: 'is', kind: 'select', options: Object.entries(COMPARE_OPS).map(([value, o]) => ({ value, label: o.label })) },
+      { key: 'b', label: 'b (if unlinked)', kind: 'number', step: 0.1 },
+    ],
+    build: (d) => {
+      const f = (COMPARE_OPS[String(d.op)] ?? COMPARE_OPS['<']).fn;
+      return (ins) => [f(ins[0], ins[1])];
+    },
+  },
+  switch: {
+    type: 'switch',
+    label: 'If / else',
+    category: 'form',
+    hint: 'cond ? then : else — any non-zero condition picks “then”',
+    defaults: { then: 1, else: 0 },
+    inputs: [
+      { id: 'cond', label: 'if', fallback: 0 },
+      { id: 'then', label: 'then', fallback: (_c, d) => num(d.then, 1) },
+      { id: 'else', label: 'else', fallback: (_c, d) => num(d.else, 0) },
+    ],
+    outputs: [{ id: 'out', label: 'out' }],
+    params: [
+      { key: 'then', label: 'then (if unlinked)', kind: 'number', step: 0.1 },
+      { key: 'else', label: 'else (if unlinked)', kind: 'number', step: 0.1 },
+    ],
+    build: () => (ins) => [ins[0] ? ins[1] : ins[2]],
   },
   sections: {
     type: 'sections',

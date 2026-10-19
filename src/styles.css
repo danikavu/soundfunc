@@ -2094,3 +2094,57 @@ button:focus-visible {
     width: 92px;
   }
 }
+
+/* ---------- a top bar that never shifts ---------- */
+/* each grid field has a fixed width; long values truncate, digits are fixed-width */
+.topbar .field-inline.w-grid {
+  width: 178px;
+}
+.topbar .field-inline.w-length {
+  width: 118px;
+}
+.topbar .field-inline.w-octave {
+  width: 46px;
+}
+.grid-field > span {
+  max-width: 100%;
+}
+.grid-controls .dropdown.compact {
+  flex: 1;
+  min-width: 0;
+}
+.dropdown.compact .dropdown-field {
+  min-width: 0;
+  width: 100%;
+}
+.dropdown.compact .dropdown-value {
+  overflow: hidden;
+}
+.dropdown.compact .dropdown-value b,
+.dropdown.compact .dropdown-value small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dropdown.compact .dropdown-value b {
+  flex: none;
+  max-width: 62%;
+}
+.topbar .input.num,
+.dropdown.compact .dropdown-value {
+  font-variant-numeric: tabular-nums;
+}
+.field-placeholder {
+  display: block;
+  padding: 3px 0;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+@media (max-width: 1340px) {
+  .topbar .field-inline.w-grid {
+    width: 166px;
+  }
+  .topbar .field-inline.w-length {
+    width: 106px;
+  }
+}
