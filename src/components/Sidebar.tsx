@@ -66,7 +66,7 @@ export function Sidebar() {
 
       <div className="eyebrow">Plant a function</div>
       {PRESETS.map((p) => (
-        <button key={p.id} className="preset" onClick={() => addTrack(p.id)} title={p.description}>
+        <button key={p.id} className="preset reveal" onClick={() => addTrack(p.id)} title={p.description}>
           <b>{p.name}</b>
           <code>{p.formula}</code>
         </button>

@@ -114,7 +114,12 @@ function SongLengthField() {
       <Dropdown
         compact
         label="Song length"
-        value={<b>{lengthBeats} beats</b>}
+        value={
+          <b>
+            {lengthBeats}
+            <span className="unit"> beats</span>
+          </b>
+        }
         groups={[
           {
             title: `Song length${following ? ` — ${following} track${following > 1 ? 's' : ''} follow it` : ''}`,
@@ -214,7 +219,10 @@ function GridField() {
               </>
             ) : track.lengthMode === 'fixed' ? (
               <>
-                <b>{track.lengthBeats} beats</b>
+                <b>
+                  {track.lengthBeats}
+                  <span className="unit"> beats</span>
+                </b>
                 <small>{track.lengthBeats / 4} bar{track.lengthBeats === 4 ? '' : 's'}</small>
               </>
             ) : (
@@ -308,26 +316,40 @@ export function TopBar() {
           <NumberField className="input num" min={20} max={300} value={song.bpm} onValue={(bpm) => setSong({ bpm })} />
         </label>
         <SongLengthField />
-        <label className="field-inline">
+        <div className="field-inline w-key">
           <span>Key</span>
-          <select className="select" value={song.root} onChange={(e) => setSong({ root: Number(e.target.value) })}>
-            {NOTE_NAMES.map((n, i) => (
-              <option key={n} value={i}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field-inline">
+          <Dropdown
+            compact
+            label="Key"
+            value={<b>{NOTE_NAMES[song.root]}</b>}
+            groups={[
+              {
+                title: 'Key — the root note',
+                items: NOTE_NAMES.map((n, i) => ({ key: n, label: n, selected: song.root === i, onSelect: () => setSong({ root: i }) })),
+              },
+            ]}
+          />
+        </div>
+        <div className="field-inline w-scale">
           <span>Scale</span>
-          <select className="select" value={song.scale} onChange={(e) => setSong({ scale: e.target.value })}>
-            {Object.entries(SCALES).map(([k, s]) => (
-              <option key={k} value={k}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <Dropdown
+            compact
+            label="Scale"
+            value={<b>{(SCALES[song.scale] ?? SCALES.major).label}</b>}
+            groups={[
+              {
+                title: 'Scale',
+                items: Object.entries(SCALES).map(([k, sc]) => ({
+                  key: k,
+                  label: sc.label,
+                  hint: `${sc.steps.length} notes`,
+                  selected: song.scale === k,
+                  onSelect: () => setSong({ scale: k }),
+                })),
+              },
+            ]}
+          />
+        </div>
         <div className="field-inline">
           <span title="The chord of each bar, as a function of bar">Harmony</span>
           <div className="harmony">
@@ -349,21 +371,32 @@ export function TopBar() {
             >
               <Icon name={song.harmonyLocked ? 'lock' : 'unlock'} size={12} />
             </button>
-            <select className="select" value="" onChange={(e) => e.target.value && setSong({ harmony: e.target.value })} title="Chord progressions" aria-label="Chord progressions">
-              <option value="" disabled>
-                Progressions
-              </option>
-              {PROGRESSIONS.map((p) => (
-                <option key={p.formula} value={p.formula}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+            <div className="w-prog">
+              <Dropdown
+                compact
+                label="Chord progressions"
+                value={<b title={PROGRESSIONS.find((p) => p.formula === song.harmony)?.label ?? 'custom progression'}>{PROGRESSIONS.find((p) => p.formula === song.harmony)?.label.split(/\s+/)[0] ?? 'custom'}</b>}
+                groups={[
+                  {
+                    title: 'Progressions',
+                    items: PROGRESSIONS.map((p) => ({
+                      key: p.formula,
+                      label: p.label,
+                      hint: p.formula,
+                      selected: p.formula === song.harmony,
+                      onSelect: () => setSong({ harmony: p.formula }),
+                    })),
+                  },
+                ]}
+              />
+            </div>
           </div>
         </div>
-        <label className="field-inline hide-narrow" style={{ width: 80 }}>
+        <label className="field-inline hide-narrow w-space">
           <span>Space</span>
-          <input type="range" min={0} max={1} step={0.01} value={song.reverb} onChange={(e) => setSong({ reverb: Number(e.target.value) })} />
+          <span className="space-slider">
+            <input type="range" min={0} max={1} step={0.01} value={song.reverb} onChange={(e) => setSong({ reverb: Number(e.target.value) })} aria-label="Space (reverb)" />
+          </span>
         </label>
       </div>
 

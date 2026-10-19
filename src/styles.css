@@ -2374,3 +2374,276 @@ button:focus-visible {
     gap: 8px;
   }
 }
+
+/* ---------- the top bar: one kind of control, no underlines, one line of labels ---------- */
+:root {
+  --ctl-h: 28px;
+}
+.transport,
+.track-panel {
+  align-items: flex-end;
+}
+.transport > .play {
+  align-self: center;
+}
+.topbar .field-inline > span:first-child {
+  line-height: 1;
+  margin-bottom: 4px;
+}
+/* number and text fields look like the dropdowns: a soft box */
+.topbar .input,
+.topbar .input.num {
+  height: var(--ctl-h);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 0 8px;
+  transition: border-color 0.25s var(--ease);
+}
+.topbar .input:hover,
+.topbar .input:focus {
+  border-color: var(--line);
+  border-bottom-color: var(--line);
+  outline: none;
+}
+.topbar .input.num {
+  -moz-appearance: textfield;
+}
+.topbar .input.num::-webkit-inner-spin-button,
+.topbar .input.num::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.topbar .field-inline > .input.num {
+  width: 52px;
+}
+.grid-controls .input.num {
+  width: 44px;
+}
+.input.num.grid-oct {
+  width: 40px;
+}
+.dropdown.compact .dropdown-field {
+  height: var(--ctl-h);
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--card);
+}
+.dropdown.compact .dropdown-chevron {
+  transform: translateY(-2px);
+}
+.dropdown.compact .dropdown-field.open .dropdown-chevron {
+  transform: translateY(-2px) rotate(180deg);
+}
+.field-placeholder {
+  height: var(--ctl-h);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px dashed var(--line-soft);
+  border-bottom: 1px dashed var(--line-soft);
+  border-radius: 8px;
+}
+/* the garden's name: plain text, a gentle hover instead of an underline */
+.topbar .project-name {
+  height: var(--ctl-h);
+  border: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0 8px;
+  margin-left: -8px;
+  background: transparent;
+}
+.topbar .project-name:hover,
+.topbar .project-name:focus {
+  border-color: var(--line-soft);
+  background: var(--card);
+}
+.harmony {
+  align-items: center;
+  gap: 4px;
+}
+.w-key {
+  width: 54px;
+}
+.w-scale {
+  width: 136px;
+}
+.w-prog {
+  width: 74px;
+}
+.w-space {
+  width: 76px;
+}
+.space-slider {
+  height: var(--ctl-h);
+  display: flex;
+  align-items: center;
+}
+@media (max-width: 1440px) {
+  .w-scale {
+    width: 120px;
+  }
+  .w-prog {
+    width: 64px;
+  }
+  .w-space {
+    width: 64px;
+  }
+}
+@media (max-width: 1340px) {
+  .w-scale {
+    width: 108px;
+  }
+  .w-prog {
+    width: 44px;
+  }
+  .w-prog .dropdown-value b {
+    display: none;
+  }
+}
+
+/* ---------- Plant a function: the formula appears on hover ---------- */
+.preset.reveal code {
+  display: block;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.3s var(--ease), opacity 0.25s var(--ease), margin 0.3s var(--ease);
+}
+.preset.reveal:hover code,
+.preset.reveal:focus-visible code {
+  max-height: 3.2em;
+  opacity: 1;
+  margin-top: 2px;
+}
+.preset.reveal {
+  padding: 6px 10px;
+}
+
+/* the track panel centres like the global group, so both rows of labels share one line */
+.track-panel {
+  align-self: center;
+  margin: 0;
+  padding: 5px 10px;
+}
+@media (max-width: 1340px) {
+  .track-panel {
+    padding: 5px 8px;
+  }
+  .topbar .field-inline > .input.num {
+    width: 44px;
+  }
+  .grid-controls .input.num {
+    width: 40px;
+  }
+  .input.num.grid-oct {
+    width: 36px;
+  }
+  .w-scale {
+    width: 100px;
+  }
+  .w-prog {
+    width: 40px;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .project-name {
+    width: 66px;
+  }
+  .w-scale {
+    width: 92px;
+  }
+  .harmony .input {
+    width: 46px;
+  }
+  .topbar .field-inline.w-grid {
+    width: 132px;
+  }
+  .topbar .field-inline.w-length {
+    width: 84px;
+  }
+  .topbar .field-inline.w-song {
+    width: 76px;
+  }
+}
+@media (max-width: 1500px) {
+  .topbar .field-inline > .input.num {
+    width: 46px;
+  }
+  .grid-controls .input.num {
+    width: 42px;
+  }
+  .input.num.grid-oct {
+    width: 38px;
+  }
+  .w-scale {
+    width: 112px;
+  }
+  .w-prog {
+    width: 58px;
+  }
+  .harmony .input {
+    width: 100px;
+  }
+  .topbar .project-name {
+    width: 124px;
+  }
+}
+@media (max-width: 1340px) {
+  .harmony .input {
+    width: 68px;
+  }
+  .topbar .project-name {
+    width: 100px;
+  }
+}
+/* narrower windows: these come last so they win over the 1500px sizes above */
+@media (max-width: 1340px) {
+  .topbar .field-inline > .input.num {
+    width: 42px;
+  }
+  .grid-controls .input.num {
+    width: 38px;
+  }
+  .input.num.grid-oct {
+    width: 34px;
+  }
+  .w-scale {
+    width: 98px;
+  }
+  .w-prog {
+    width: 40px;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .project-name {
+    width: 66px;
+  }
+  .w-scale {
+    width: 90px;
+  }
+  .harmony .input {
+    width: 46px;
+  }
+}
+/* tight spots: the progression box shows only its chevron; lengths drop the word "beats" */
+@media (max-width: 1500px) {
+  .w-prog {
+    width: 40px;
+  }
+  .w-prog .dropdown-value b {
+    display: none;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .dropdown .unit {
+    display: none;
+  }
+  .topbar .field-inline.w-song {
+    width: 58px;
+  }
+  .topbar .project-name {
+    width: 92px;
+  }
+}
