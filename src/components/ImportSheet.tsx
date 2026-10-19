@@ -8,6 +8,7 @@ import { useStore } from '../state/store';
 import { toast } from './TopBar';
 import { Icon, NumberField, Seg, TextField } from './ui';
 import { Tex, useKatex } from './tex';
+import { StepPicker } from './StepPicker';
 
 type XMeans = 'beats' | 'steps' | 'loop';
 type YMeans = 'octaves' | 'semitones' | 'degrees';
@@ -18,12 +19,6 @@ const EXAMPLES: { label: string; src: string }[] = [
   { label: 'Plain math', src: 'y = ⌊7·frac(x·φ)⌋/12 + 0.1 sin(2π·8x)' },
 ];
 
-const STEP_SIZES = [
-  { value: 0.125, label: '1/32' },
-  { value: 0.25, label: '1/16' },
-  { value: 0.5, label: '1/8' },
-  { value: 1, label: '1/4' },
-];
 
 /** Paste a function from a paper, a graphing calculator, or LaTeX — and plant it as a track. */
 export function ImportSheet() {
@@ -251,7 +246,7 @@ export function ImportSheet() {
                   </label>
                   <div className="field">
                     <span>Step</span>
-                    <Seg<number> value={stepBeats} onChange={setStepBeats} options={STEP_SIZES} />
+                    <StepPicker value={stepBeats} onChange={setStepBeats} />
                   </div>
                   <div className="field">
                     <span>Play as</span>

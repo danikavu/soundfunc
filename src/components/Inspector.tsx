@@ -10,18 +10,11 @@ import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, NumberField, Seg, Slider, TextField, getRender } from './ui';
 import { FormulaEditor } from './FormulaEditor';
+import { Dropdown } from './Dropdown';
+import { StepPicker } from './StepPicker';
 
 type Tab = 'sound' | 'notes' | 'guide';
 
-const STEP_LENGTHS = [
-  { value: 0.125, label: '1/32' },
-  { value: 0.25, label: '1/16' },
-  { value: 1 / 3, label: '1/8t' },
-  { value: 0.375, label: '3/32' },
-  { value: 0.5, label: '1/8' },
-  { value: 1, label: '1/4' },
-  { value: 2, label: '1/2' },
-];
 
 function TimbreEditor() {
   const track = useSelectedTrack()!;
@@ -67,13 +60,92 @@ function WaveGlyph({ formula, color }: { formula: string; color: string }) {
   );
 }
 
-/** Saved voices: the waveform, custom f(p) and envelope, reusable on any track. */
-function VoiceShelf() {
+const VOICE_HINTS: Record<string, string> = {
+  sine: 'pure tone, no overtones',
+  triangle: 'soft, flute-like',
+  square: 'hollow, woody, 8-bit',
+  sawtooth: 'bright and buzzy',
+  bell: 'FM metal, long ring',
+  pluck: 'koto — sharp attack, filter falls',
+  pad: 'three detuned saws, slow swell',
+  flute: 'shakuhachi — breath and vibrato',
+  reese: 'detuned saws beating, with a sub',
+  custom: 'your own f(p) — one cycle of the wave',
+  kick: 'sine sweep and click',
+  snare: 'tone and filtered noise',
+  hat: 'six metallic squares, short',
+  openhat: 'metallic, long',
+  clap: 'three quick noise bursts',
+  rim: 'short click',
+  tom: 'tuned sine sweep',
+  crash: 'long metallic wash',
+};
+const GLYPH_FORMULA: Partial<Record<Waveform, string>> = { sine: 'sin(tau*p)', triangle: 'tri(p)', square: 'sqr(p)', sawtooth: 'saw(p)' };
+
+/** One dropdown for the sound: melodic voices, drums, and voices you saved. */
+function VoicePicker() {
   const track = useSelectedTrack()!;
   const updateTrack = useStore((s) => s.updateTrack);
-  const { voices, saveVoice, deleteVoice } = useLibrary();
-  const [naming, setNaming] = useState<string | null>(null);
+  const { voices, deleteVoice } = useLibrary();
+  const up = (patch: Parameters<typeof updateTrack>[1]) => updateTrack(track.id, patch);
+  const glyph = (w: Waveform, timbre?: string) =>
+    w === 'custom' && timbre ? <WaveGlyph formula={timbre} color="currentColor" /> : GLYPH_FORMULA[w] ? <WaveGlyph formula={GLYPH_FORMULA[w]!} color="currentColor" /> : <span className={`voice-dot ${isDrum(w) ? 'drum' : ''}`} />;
+  const mine = voices.find((v) => wearsVoice(track, v));
+  return (
+    <Dropdown
+      label="Voice"
+      value={
+        <>
+          <span className="dropdown-glyph">{glyph(track.waveform, track.timbre)}</span>
+          <b>{mine ? mine.name : voiceLabel(track.waveform)}</b>
+          <small>{mine ? `my voice · ${voiceLabel(track.waveform)}` : VOICE_HINTS[track.waveform]}</small>
+        </>
+      }
+      groups={[
+        {
+          title: 'My voices',
+          items: voices.map((v) => ({
+            key: v.id,
+            label: v.name,
+            hint: `${voiceLabel(v.waveform)}${v.waveform === 'custom' ? ` · ${v.timbre}` : ''} · ${Math.round(v.attack * 1000)} ms in · ${v.release.toFixed(2)} s out`,
+            glyph: glyph(v.waveform, v.timbre),
+            selected: mine?.id === v.id,
+            onSelect: () => up({ waveform: v.waveform, timbre: v.timbre, attack: v.attack, release: v.release }),
+            onDelete: () => confirm(`Delete the voice “${v.name}”? Tracks using it keep their sound.`) && deleteVoice(v.id),
+          })),
+        },
+        {
+          title: 'Melodic',
+          items: (Object.keys(WAVEFORMS) as Waveform[]).map((w) => ({
+            key: w,
+            label: WAVEFORMS[w as keyof typeof WAVEFORMS],
+            hint: VOICE_HINTS[w],
+            glyph: glyph(w, w === 'custom' ? track.timbre : undefined),
+            selected: !mine && track.waveform === w,
+            onSelect: () => up({ waveform: w }),
+          })),
+        },
+        {
+          title: 'Drums',
+          items: (Object.keys(DRUMS) as Waveform[]).map((w) => ({
+            key: w,
+            label: voiceLabel(w),
+            hint: VOICE_HINTS[w],
+            glyph: glyph(w),
+            selected: !mine && track.waveform === w,
+            onSelect: () => up({ waveform: w }),
+          })),
+        },
+      ]}
+    />
+  );
+}
 
+/** Keep the current sound as a named voice. */
+function SaveVoice() {
+  const track = useSelectedTrack()!;
+  const { voices, saveVoice } = useLibrary();
+  const [naming, setNaming] = useState<string | null>(null);
   const suggest = () => {
     const preset = TIMBRE_PRESETS.find((p) => p.formula === track.timbre);
     const base = track.waveform === 'custom' ? (preset?.label ?? 'My wave') : voiceLabel(track.waveform);
@@ -87,65 +159,36 @@ function VoiceShelf() {
     const replacing = voices.some((v) => v.name === name);
     saveVoice(voiceOf(track, name));
     setNaming(null);
-    toast(`${replacing ? 'Updated' : 'Saved'} voice “${name}”`);
+    toast(`${replacing ? 'Updated' : 'Saved'} voice “${name}” — it is in the Voice menu, in every garden`);
   };
-
-  return (
-    <div className="field" style={{ marginTop: 10 }}>
-      <span>My voices</span>
-      <div className="voice-shelf">
-        {voices.map((v) => (
-          <button
-            key={v.id}
-            className={`voice-chip ${wearsVoice(track, v) ? 'on' : ''}`}
-            title={`${voiceLabel(v.waveform)}${v.waveform === 'custom' ? ` · f(p) = ${v.timbre}` : ''} · attack ${Math.round(v.attack * 1000)}ms · release ${v.release.toFixed(2)}s`}
-            onClick={() => updateTrack(track.id, { waveform: v.waveform, timbre: v.timbre, attack: v.attack, release: v.release })}
-          >
-            {v.waveform === 'custom' && <WaveGlyph formula={v.timbre} color="currentColor" />}
-            {v.name}
-            <span
-              className="x"
-              role="button"
-              aria-label={`Delete voice ${v.name}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (confirm(`Delete the voice “${v.name}”? Tracks using it keep their sound.`)) deleteVoice(v.id);
-              }}
-            >
-              <Icon name="close" size={9} />
-            </span>
-          </button>
-        ))}
-        {voices.length === 0 && naming === null && <span className="muted" style={{ fontSize: 11 }}>Save a voice to reuse it on any track, in any garden.</span>}
+  if (naming === null)
+    return (
+      <div className="row" style={{ marginTop: 8 }}>
+        <button className="btn small ghost" onClick={() => setNaming(suggest())} title="Keep this sound — waveform, custom f(p), attack, release">
+          <Icon name="bookmark" size={11} /> Save voice
+        </button>
       </div>
-      {naming === null ? (
-        <div className="row" style={{ marginTop: 6 }}>
-          <button className="btn small" onClick={() => setNaming(suggest())}>
-            <Icon name="plus" size={11} /> Save voice
-          </button>
-        </div>
-      ) : (
-        <div className="save-voice">
-          <input
-            className="input"
-            autoFocus
-            value={naming}
-            onChange={(e) => setNaming(e.target.value)}
-            onFocus={(e) => e.target.select()}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') save();
-              if (e.key === 'Escape') setNaming(null);
-            }}
-            aria-label="Voice name"
-          />
-          <button className="btn small primary" onClick={save}>
-            Save
-          </button>
-          <button className="btn small ghost" onClick={() => setNaming(null)}>
-            Cancel
-          </button>
-        </div>
-      )}
+    );
+  return (
+    <div className="save-voice">
+      <input
+        className="input"
+        autoFocus
+        value={naming}
+        onChange={(e) => setNaming(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') save();
+          if (e.key === 'Escape') setNaming(null);
+        }}
+        aria-label="Voice name"
+      />
+      <button className="btn small primary" onClick={save}>
+        Save
+      </button>
+      <button className="btn small ghost" onClick={() => setNaming(null)}>
+        Cancel
+      </button>
     </div>
   );
 }
@@ -177,17 +220,9 @@ function SoundTab() {
       </div>
 
       <div className="eyebrow">Voice</div>
-      <Seg<Waveform>
-        value={track.waveform}
-        onChange={(waveform) => up({ waveform })}
-        options={Object.entries(WAVEFORMS).map(([value, label]) => ({ value: value as Waveform, label }))}
-      />
-      <div className="field" style={{ marginTop: 10 }}>
-        <span>Drums</span>
-        <Seg<Waveform> value={track.waveform} onChange={(waveform) => up({ waveform })} options={Object.entries(DRUMS).map(([value, d]) => ({ value: value as Waveform, label: d.label }))} />
-      </div>
+      <VoicePicker />
       {track.waveform === 'custom' && <TimbreEditor />}
-      <VoiceShelf />
+      <SaveVoice />
 
       {!drum && (
         <>
@@ -247,7 +282,7 @@ function SoundTab() {
       </div>
       <div className="field" style={{ marginTop: 12 }}>
         <span>Step length</span>
-        <Seg<number> value={track.stepBeats} onChange={(stepBeats) => up({ stepBeats })} options={STEP_LENGTHS} />
+        <StepPicker value={track.stepBeats} onChange={(stepBeats) => up({ stepBeats })} />
       </div>
       {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} />}
       {drum ? (

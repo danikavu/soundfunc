@@ -38,6 +38,38 @@ function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number,
   g.roundRect(x, y, w, h, r);
 }
 
+/**
+ * A thin ink line with a soft glow in the track's colour: the halo is one blurred,
+ * translucent pass under the line. Points come in as one continuous run.
+ */
+function glowLine(g: CanvasRenderingContext2D, pts: [number, number][], ink: string, color: string, opts: { width: number; glow: number; alpha?: number }) {
+  if (pts.length < 2) return;
+  const trace = () => {
+    g.beginPath();
+    g.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+  };
+  g.lineJoin = 'round';
+  g.lineCap = 'round';
+  if (opts.glow > 0) {
+    g.save();
+    trace();
+    g.strokeStyle = color;
+    g.globalAlpha = 0.32 * opts.glow;
+    g.lineWidth = opts.width + 2.6;
+    g.shadowColor = color;
+    g.shadowBlur = 9 * opts.glow;
+    g.stroke();
+    g.restore();
+  }
+  trace();
+  g.strokeStyle = ink;
+  g.globalAlpha = opts.alpha ?? 1;
+  g.lineWidth = opts.width;
+  g.stroke();
+  g.globalAlpha = 1;
+}
+
 interface ScoreItem {
   track: Track;
   notes: Note[];
@@ -339,19 +371,20 @@ export function Visualizer() {
         for (const { track, notes, glide } of melodic) {
           const isSel = track.id === selected?.id;
           if (glide.length) {
-            // a glide track is one brush stroke; thickness follows velocity
-            g.strokeStyle = track.color;
-            g.lineCap = 'round';
-            for (let i = 1; i < glide.length; i++) {
-              const [b0, m0, v0] = glide[i - 1], [b1, m1, v1] = glide[i];
-              if (v0 < 0.01 || v1 < 0.01 || !visible(b0, b1)) continue;
-              g.globalAlpha = isSel ? 0.85 : 0.35;
-              g.lineWidth = 1 + v1 * (isSel ? 4 : 2.5);
-              g.beginPath();
-              g.moveTo(bx(b0), my(m0) + rowH / 2);
-              g.lineTo(bx(b1), my(m1) + rowH / 2);
-              g.stroke();
+            // a glide track is one fine, glowing line per sounding stretch
+            let run: [number, number][] = [];
+            const flush = () => {
+              glowLine(g, run, track.color, track.color, { width: isSel ? 1.3 : 0.9, glow: isSel ? 1 : 0.45, alpha: isSel ? 0.95 : 0.5 });
+              run = [];
+            };
+            for (const [b, m, v] of glide) {
+              if (v < 0.01 || !visible(b, b)) {
+                flush();
+                continue;
+              }
+              run.push([bx(b), my(m) + rowH / 2]);
             }
+            flush();
             continue;
           }
           for (const note of notes) {
@@ -480,17 +513,25 @@ export function Visualizer() {
         const i0 = Math.max(1, Math.floor(vw.start / dt)), i1 = Math.min(N, Math.ceil((vw.start + vw.span) / dt) + 2);
         // when zoomed far out, draw at most ~2 segments per pixel
         const stride = Math.max(1, Math.floor((i1 - i0) / (iw * 2)));
-        for (let i = i0; i < i1; i += stride) {
-          const j = Math.max(0, i - stride);
-          const silent = fnFull.vel[i] < 0.01 && fnFull.vel[j] < 0.01;
-          g.strokeStyle = silent ? P.ink3 : P.ink;
-          g.globalAlpha = silent ? 0.35 : 1;
-          g.lineWidth = glide && !silent ? 1.2 + fnFull.vel[i] * 2.4 : 1.8;
-          g.beginPath();
-          g.moveTo(sx(j * dt), sy(fnFull.raw[j]));
-          g.lineTo(sx(i * dt), sy(fnFull.raw[i]));
-          g.stroke();
+        // one path per stretch: sounding stretches glow, silent ones are a faint hairline
+        let run: [number, number][] = [];
+        let runSilent: boolean | null = null;
+        const flush = () => {
+          if (runSilent) glowLine(g, run, P.ink3, selected.color, { width: 0.8, glow: 0, alpha: 0.4 });
+          else glowLine(g, run, P.ink, selected.color, { width: 1.1, glow: 1 });
+        };
+        for (let i = Math.max(0, i0 - stride); i < i1; i += stride) {
+          const silent = fnFull.vel[i] < 0.01;
+          const pt: [number, number] = [sx(i * dt), sy(fnFull.raw[i])];
+          if (runSilent !== null && silent !== runSilent) {
+            run.push(pt); // join the stretches
+            flush();
+            run = [];
+          }
+          runSilent = silent;
+          run.push(pt);
         }
+        flush();
         g.globalAlpha = 1;
 
         // velocity: a continuous wash in glide mode, reeds per step in notes mode

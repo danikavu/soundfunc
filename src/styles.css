@@ -1800,3 +1800,172 @@ button:focus-visible {
   padding: 3px 8px;
   color: var(--ink-2);
 }
+
+/* ---------- dropdowns (voice, step length) ---------- */
+
+.dropdown {
+  position: relative;
+}
+.dropdown-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line-soft);
+  background: var(--card);
+  border-radius: 10px;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: border-color 0.25s var(--ease), background 0.25s var(--ease);
+}
+.dropdown-field:hover,
+.dropdown-field.open {
+  border-color: var(--line);
+}
+.dropdown-value {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.dropdown-value b {
+  font: 400 14px/1.2 var(--serif);
+  white-space: nowrap;
+}
+.dropdown-value small {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dropdown-value .dropdown-glyph {
+  align-self: center;
+}
+.dropdown-chevron {
+  color: var(--ink-3);
+  font-size: 14px;
+  line-height: 1;
+  transform: translateY(-3px);
+  transition: transform 0.25s var(--ease);
+}
+.dropdown-field.open .dropdown-chevron {
+  transform: translateY(-3px) rotate(180deg);
+}
+.dropdown-pop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+  animation: rise 0.18s var(--ease);
+  scrollbar-width: thin;
+}
+.dropdown-pop h4 {
+  margin: 8px 8px 2px;
+  font: 500 9.5px/1 var(--sans);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.dropdown-row {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+.dropdown-row > button:first-child {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 5px 8px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.dropdown-row.hl {
+  background: var(--paper-2);
+}
+.dropdown-row.on .dropdown-text {
+  color: var(--accent);
+}
+.dropdown-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  min-width: 0;
+}
+.dropdown-text small {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dropdown-glyph {
+  width: 26px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+.dropdown-del {
+  width: 22px !important;
+  height: 22px !important;
+  opacity: 0;
+  margin-right: 4px;
+}
+.dropdown-row:hover .dropdown-del {
+  opacity: 1;
+}
+.dropdown-footer {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 4px;
+  padding: 8px 8px 4px;
+}
+.voice-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+.voice-dot.drum {
+  width: 9px;
+  height: 9px;
+  opacity: 0.35;
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 3px currentColor;
+}
+.step-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.step-custom .input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+.step-custom .input.bad {
+  border-bottom-color: var(--accent);
+}
+
+.dropdown-label {
+  white-space: nowrap;
+  flex: none;
+}
