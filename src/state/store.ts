@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { GEdge, GNode, Graph, NodeData } from '../engine/graph';
 import type { EditResult } from '../engine/graphEdit';
+import { applyGrid, gridOf, type Grid } from '../engine/steps';
 import { defaultProject, KITS, PRESETS, trackFromPreset, trackFromTemplate, uid } from '../engine/presets';
 import { mutateHarmony, mutateTrack } from '../engine/mutate';
 import { normalizeProject, type Project, type Slider, type Song, type Track } from '../engine/project';
@@ -54,6 +55,12 @@ interface State {
   addKitTracks: (kitId: string, trackIndexes: number[], adoptSong?: boolean) => void;
   duplicateTrack: (id: string) => void;
   removeTrack: (id: string) => void;
+  /** give every track the same step length (one undo step) */
+  setStepBeatsAll: (stepBeats: number) => void;
+  /** change a track's grid — steps, step length, fixed/free length — keeping a fixed loop exact */
+  setGrid: (trackId: string, patch: Partial<Grid>) => void;
+  /** the same loop length (or free) for every track */
+  setLengthAll: (patch: Pick<Grid, 'lengthMode'> & Partial<Pick<Grid, 'lengthBeats'>>) => void;
   /** remove every track at once (one undo step) */
   clearTracks: () => void;
   setGraph: (trackId: string, nodes: GNode[], edges: GEdge[], record?: boolean) => void;
@@ -185,6 +192,9 @@ export const useStore = create<State>()(
           });
           set({ selectedTrackId: copy.id });
         },
+        setStepBeatsAll: (stepBeats) => commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, ...applyGrid(gridOf(t), { stepBeats }) })) })),
+        setGrid: (trackId, patch) => commit(mapTrack(trackId, (t) => ({ ...t, ...applyGrid(gridOf(t), patch) }))),
+        setLengthAll: (patch) => commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, ...applyGrid(gridOf(t), patch) })) })),
         clearTracks: () => {
           commit((p) => ({ ...p, tracks: [] }));
           set({ selectedTrackId: null, audition: null });

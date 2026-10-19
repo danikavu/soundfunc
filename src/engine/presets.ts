@@ -1,5 +1,6 @@
 import { NODE_DEFS, type GEdge, type GNode, type Graph, type NodeData } from './graph';
 import type { PitchMode } from './music';
+import { nearestFixedLength } from './steps';
 import { TRACK_DEFAULTS, type DrumVoice, type Project, type Song, type Track, type Waveform } from './project';
 
 export const TRACK_COLORS = ['#c4583d', '#6f8a63', '#4a5d7e', '#b39561', '#8a6a7e', '#5e8a86', '#6f6a62'];
@@ -696,6 +697,8 @@ export const PRESETS: Preset[] = [
       pitchMode: 'degree',
       steps: 16,
       stepBeats: 0.25,
+      lengthMode: 'fixed',
+      lengthBeats: 4,
       octave: 4,
       graph: graph(
         [
@@ -875,8 +878,11 @@ let counter = 0;
 export const uid = (prefix = 'id') => `${prefix}_${Date.now().toString(36)}${(counter++).toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 
 export function trackFromTemplate(template: Template, name: string, index: number): Track {
+  const steps = template.steps ?? TRACK_DEFAULTS.steps;
+  const stepBeats = template.stepBeats ?? TRACK_DEFAULTS.stepBeats;
   return {
     ...TRACK_DEFAULTS,
+    lengthBeats: nearestFixedLength(steps * stepBeats),
     name,
     color: TRACK_COLORS[index % TRACK_COLORS.length],
     ...template,

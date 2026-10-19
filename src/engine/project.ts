@@ -1,5 +1,6 @@
 import { compileGraph, type Graph } from './graph';
 import { tryCompile, type Compiled } from './expr';
+import { nearestFixedLength, type LengthMode } from './steps';
 import { chordTones, midiToDegree, midiToFreq, midiToName, NOTE_NAMES, SCALES, valueToMidi, valueToPitch, type PitchMode } from './music';
 
 export type DrumVoice = 'kick' | 'snare' | 'hat' | 'openhat' | 'clap' | 'rim' | 'tom' | 'crash';
@@ -47,6 +48,9 @@ export interface Track {
   steps: number;
   /** step length in beats (0.25 = sixteenth) */
   stepBeats: number;
+  /** fixed: the loop is exactly lengthBeats (4/8/16/32/64); free: steps × stepBeats */
+  lengthMode: LengthMode;
+  lengthBeats: number;
   octave: number;
   pitchMode: PitchMode;
   waveform: Waveform;
@@ -73,6 +77,8 @@ export interface Track {
 export const TRACK_DEFAULTS: Omit<Track, 'id' | 'name' | 'color' | 'graph'> = {
   steps: 16,
   stepBeats: 0.25,
+  lengthMode: 'free',
+  lengthBeats: 4,
   octave: 4,
   pitchMode: 'degree',
   waveform: 'sine',
@@ -149,7 +155,12 @@ export function normalizeProject(p: Project): Project {
   return {
     name: p.name ?? 'Untitled',
     song: { ...SONG_DEFAULTS, ...(p.song as Partial<Song>) },
-    tracks: p.tracks.map((t) => ({ ...TRACK_DEFAULTS, ...t })),
+    tracks: p.tracks.map((t) => {
+      const track = { ...TRACK_DEFAULTS, ...t };
+      // projects from before fixed lengths: keep them free, remember the nearest fixed length
+      if (!('lengthBeats' in t)) track.lengthBeats = nearestFixedLength(track.steps * track.stepBeats);
+      return track;
+    }),
   };
 }
 

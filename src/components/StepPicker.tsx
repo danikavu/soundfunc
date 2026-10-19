@@ -3,7 +3,19 @@ import { STEP_GROUPS, parseStepLength, perBar, stepLabel } from '../engine/steps
 import { Dropdown } from './Dropdown';
 
 /** Step length: named note values in groups, or any length typed by hand. */
-export function StepPicker({ value, onChange }: { value: number; onChange: (beats: number) => void }) {
+export function StepPicker({
+  value,
+  onChange,
+  compact = false,
+  onApplyAll,
+}: {
+  value: number;
+  onChange: (beats: number) => void;
+  /** a slim field for the top bar */
+  compact?: boolean;
+  /** offer "use for every track" in the menu */
+  onApplyAll?: () => void;
+}) {
   const [custom, setCustom] = useState('');
   const [bad, setBad] = useState(false);
   const apply = () => {
@@ -16,13 +28,21 @@ export function StepPicker({ value, onChange }: { value: number; onChange: (beat
   return (
     <Dropdown
       label="Step length"
+      compact={compact}
       value={
-        <>
-          <b>{stepLabel(value)}</b>
-          <small>
-            {perBar(value)} per bar · {Number(value.toFixed(4))} beat{value === 1 ? '' : 's'}
-          </small>
-        </>
+        compact ? (
+          <>
+            <b>{stepLabel(value)}</b>
+            <small>{perBar(value)}/bar</small>
+          </>
+        ) : (
+          <>
+            <b>{stepLabel(value)}</b>
+            <small>
+              {perBar(value)} per bar · {Number(value.toFixed(4))} beat{value === 1 ? '' : 's'}
+            </small>
+          </>
+        )
       }
       groups={STEP_GROUPS.map((g) => ({
         title: g.title,
@@ -35,6 +55,7 @@ export function StepPicker({ value, onChange }: { value: number; onChange: (beat
         })),
       }))}
       footer={
+        <>
         <label className="step-custom" onMouseDown={(e) => e.stopPropagation()}>
           <span>Custom</span>
           <input
@@ -56,6 +77,12 @@ export function StepPicker({ value, onChange }: { value: number; onChange: (beat
             Set
           </button>
         </label>
+        {onApplyAll && (
+          <button className="btn small ghost step-all" onClick={onApplyAll} title="Give every track this step length">
+            Use {stepLabel(value)} for every track
+          </button>
+        )}
+        </>
       }
     />
   );

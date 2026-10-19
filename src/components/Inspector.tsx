@@ -8,10 +8,10 @@ import { useLibrary, voiceOf, wearsVoice } from '../state/library';
 import { toast } from './TopBar';
 import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
-import { Icon, NumberField, Seg, Slider, TextField, getRender } from './ui';
+import { Icon, Seg, Slider, TextField, getRender } from './ui';
 import { FormulaEditor } from './FormulaEditor';
 import { Dropdown } from './Dropdown';
-import { StepPicker } from './StepPicker';
+import { stepLabel } from '../engine/steps';
 
 type Tab = 'sound' | 'notes' | 'guide';
 
@@ -268,22 +268,11 @@ function SoundTab() {
       )}
 
       <div className="eyebrow">Pattern</div>
-      <div className="grid2">
-        <label className="field">
-          <span>Steps</span>
-          <NumberField className="input" integer min={1} max={256} value={track.steps} onValue={(steps) => up({ steps })} />
-        </label>
-        {!drum && (
-          <label className="field">
-            <span>Octave</span>
-            <NumberField className="input" integer min={0} max={8} value={track.octave} onValue={(octave) => up({ octave })} />
-          </label>
-        )}
-      </div>
-      <div className="field" style={{ marginTop: 12 }}>
-        <span>Step length</span>
-        <StepPicker value={track.stepBeats} onChange={(stepBeats) => up({ stepBeats })} />
-      </div>
+      <p className="muted" style={{ fontSize: 11, margin: '0 0 8px' }}>
+        {track.steps} steps of {stepLabel(track.stepBeats)} ={' '}
+        {track.lengthMode === 'fixed' ? `${track.lengthBeats} beats (fixed)` : `${Number((track.steps * track.stepBeats).toFixed(3))} beats (free)`}
+        {drum ? '' : `, octave ${track.octave}`} — set in the top bar.
+      </p>
       {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} />}
       {drum ? (
         <p className="muted" style={{ fontSize: 11 }}>

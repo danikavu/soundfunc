@@ -5,6 +5,11 @@ import { tryCompile } from '../engine/expr';
 import { useStore } from '../state/store';
 import { togglePlay } from '../state/transport';
 import { GardenMenu } from './GardenMenu';
+import { StepPicker } from './StepPicker';
+import { FIXED_LENGTHS, stepLabel } from '../engine/steps';
+import { Dropdown } from './Dropdown';
+import { isDrum } from '../engine/project';
+import { useSelectedTrack } from '../state/store';
 import { Enso, Icon, NumberField, TextField, download, fileSafe, isProject } from './ui';
 
 export function toast(msg: string) {
@@ -97,6 +102,116 @@ function FileMenu() {
   );
 }
 
+/** The selected track's grid — how many steps, and how long each one is. */
+function GridField() {
+  const track = useSelectedTrack();
+  const updateTrack = useStore((s) => s.updateTrack);
+  const setGrid = useStore((s) => s.setGrid);
+  const setStepBeatsAll = useStore((s) => s.setStepBeatsAll);
+  const setLengthAll = useStore((s) => s.setLengthAll);
+  const trackCount = useStore((s) => s.project.tracks.length);
+  if (!track) return null;
+  return (
+    <>
+      <div className="field-inline grid-field">
+        <span title={`Steps and step length of “${track.name}”`}>
+          <i className="grid-dot" style={{ background: track.color }} />
+          <span className="grid-name">{track.name}</span>
+        </span>
+        <div className="grid-controls">
+          <NumberField
+            className="input num"
+            integer
+            min={1}
+            max={256}
+            value={track.steps}
+            onValue={(steps) => setGrid(track.id, { steps })}
+            aria-label="Steps"
+            title={track.lengthMode === 'fixed' ? `Steps — divides the ${track.lengthBeats}-beat loop evenly` : 'Steps'}
+          />
+          <span className="muted grid-times">×</span>
+          <StepPicker
+            compact
+            value={track.stepBeats}
+            onChange={(stepBeats) => setGrid(track.id, { stepBeats })}
+            onApplyAll={
+              trackCount > 1
+                ? () => {
+                    setStepBeatsAll(track.stepBeats);
+                    toast(`Every track now steps in ${stepLabel(track.stepBeats)} — ⌘Z to undo`);
+                  }
+                : undefined
+            }
+          />
+        </div>
+      </div>
+      <div className="field-inline">
+        <span>Length</span>
+        <Dropdown
+          compact
+          label="Loop length"
+          value={
+            track.lengthMode === 'fixed' ? (
+              <>
+                <b>{track.lengthBeats} beats</b>
+                <small>{track.lengthBeats / 4} bar{track.lengthBeats === 4 ? '' : 's'}</small>
+              </>
+            ) : (
+              <>
+                <b>free</b>
+                <small>{Number((track.steps * track.stepBeats).toFixed(3))} beats</small>
+              </>
+            )
+          }
+          groups={[
+            {
+              title: 'Fixed — always lands on the bar',
+              items: FIXED_LENGTHS.map((L) => ({
+                key: `L${L}`,
+                label: `${L} beats`,
+                hint: `${L / 4} bar${L === 4 ? '' : 's'} · ${Math.max(1, Math.min(256, Math.round(L / track.stepBeats)))} steps`,
+                selected: track.lengthMode === 'fixed' && track.lengthBeats === L,
+                onSelect: () => setGrid(track.id, { lengthMode: 'fixed', lengthBeats: L }),
+              })),
+            },
+            {
+              title: 'Free — experimental',
+              items: [
+                {
+                  key: 'free',
+                  label: 'Free',
+                  hint: 'steps × step length, whatever that adds up to',
+                  selected: track.lengthMode === 'free',
+                  onSelect: () => setGrid(track.id, { lengthMode: 'free' }),
+                },
+              ],
+            },
+          ]}
+          footer={
+            trackCount > 1 ? (
+              <button
+                className="btn small ghost step-all"
+                onClick={() => {
+                  setLengthAll(track.lengthMode === 'fixed' ? { lengthMode: 'fixed', lengthBeats: track.lengthBeats } : { lengthMode: 'free' });
+                  toast(`Every track is now ${track.lengthMode === 'fixed' ? `${track.lengthBeats} beats long` : 'free'} — ⌘Z to undo`);
+                }}
+              >
+                {track.lengthMode === 'fixed' ? `Make every track ${track.lengthBeats} beats` : 'Make every track free'}
+              </button>
+            ) : undefined
+          }
+        />
+      </div>
+      {!isDrum(track.waveform) && (
+        <label className="field-inline" title="Octave — where pitch 0 sits (4 = middle C’s octave)">
+          <span>Octave</span>
+          <NumberField className="input num grid-oct" integer min={0} max={8} value={track.octave} onValue={(octave) => updateTrack(track.id, { octave })} />
+        </label>
+      )}
+    </>
+  );
+}
+
 export function TopBar() {
   const { project, setSong, setProjectName, playing, theme, toggleTheme, undo, redo, past, future, checkpoint } = useStore();
   const { song } = project;
@@ -105,7 +220,7 @@ export function TopBar() {
     <header className="topbar">
       <div className="brand">
         <Enso />
-        <span>SoundFunc</span>
+        <span className="brand-name">SoundFunc</span>
         <small className="hide-narrow">音 · 数</small>
       </div>
       <div className="row hide-narrow" style={{ gap: 2 }}>
@@ -121,6 +236,7 @@ export function TopBar() {
           <span>Tempo</span>
           <NumberField className="input num" min={20} max={300} value={song.bpm} onValue={(bpm) => setSong({ bpm })} />
         </label>
+        <GridField />
         <label className="field-inline">
           <span>Key</span>
           <select className="select" value={song.root} onChange={(e) => setSong({ root: Number(e.target.value) })}>
@@ -142,7 +258,7 @@ export function TopBar() {
           </select>
         </label>
         <div className="field-inline">
-          <span>Harmony · chord of bar</span>
+          <span title="The chord of each bar, as a function of bar">Harmony</span>
           <div className="harmony">
             <TextField
               className="input"

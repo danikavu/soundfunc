@@ -17,6 +17,7 @@ import { timbreHarmonics } from './timbre';
 import { importMath } from './importMath';
 import { auditionGraph, blockFromSelection, collapseNodes, explodeFormula, insertBlock } from './graphEdit';
 import { BLOCKS } from './blocks';
+import { applyGrid } from './steps';
 import { cleanProject, projectKey, voiceOf, wearsVoice } from '../state/library';
 
 const ev = (s: string, scope = {}) => compile(s).fn(scope);
@@ -631,5 +632,39 @@ OTHERWISE:
 
   it('reports a function defined in terms of itself', () => {
     expect(() => importMath('y(x) = g(x)\ng(x) = 1 + g(x)')).toThrow(/itself/);
+  });
+});
+
+describe('loop length: fixed or free', () => {
+  const fixed = (lengthBeats: number, stepBeats = 0.25) => applyGrid({ steps: 16, stepBeats: 0.25, lengthMode: 'fixed', lengthBeats }, { stepBeats });
+  it('divides a fixed length into whole steps', () => {
+    expect(fixed(8, 0.25)).toMatchObject({ steps: 32, stepBeats: 0.25 });
+    expect(fixed(4, 1 / 3)).toMatchObject({ steps: 12 });
+    expect(fixed(16, 0.2)).toMatchObject({ steps: 80 });
+  });
+  it('nudges an irrational step so the loop still lands on the beat', () => {
+    const g = fixed(4, (Math.sqrt(5) - 1) / 4); // φ⁻¹/2 ≈ 0.309 beat
+    expect(g.steps).toBe(13);
+    expect(g.steps * g.stepBeats).toBeCloseTo(4, 12);
+  });
+  it('a typed step count divides the length evenly', () => {
+    const g = applyGrid({ steps: 16, stepBeats: 0.25, lengthMode: 'fixed', lengthBeats: 4 }, { steps: 12 });
+    expect(g.stepBeats).toBeCloseTo(1 / 3, 12);
+  });
+  it('switching to fixed snaps the loop; free leaves it alone', () => {
+    const free = { steps: 21, stepBeats: 0.375, lengthMode: 'free' as const, lengthBeats: 8 };
+    expect(applyGrid(free, { stepBeats: (Math.sqrt(5) - 1) / 2 }).steps).toBe(21); // 12.98 beats, as asked
+    const g = applyGrid(free, { lengthMode: 'fixed' });
+    expect(g.steps * g.stepBeats).toBeCloseTo(8, 12);
+  });
+  it('caps a fixed loop at 256 steps', () => {
+    expect(fixed(64, 1 / 16).steps).toBe(256);
+  });
+  it('older projects open as free, with the nearest fixed length remembered', () => {
+    const p = defaultProject();
+    const old = { ...p, tracks: p.tracks.map(({ lengthMode, lengthBeats, ...t }) => t as Track) };
+    const n = normalizeProject(old);
+    expect(n.tracks.every((t) => t.lengthMode === 'free')).toBe(true);
+    expect(n.tracks[0].lengthBeats).toBe(8);
   });
 });

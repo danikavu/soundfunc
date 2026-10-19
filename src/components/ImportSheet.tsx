@@ -9,6 +9,7 @@ import { toast } from './TopBar';
 import { Icon, NumberField, Seg, TextField } from './ui';
 import { Tex, useKatex } from './tex';
 import { StepPicker } from './StepPicker';
+import { FIXED_LENGTHS, nearestFixedLength } from '../engine/steps';
 
 type XMeans = 'beats' | 'steps' | 'loop';
 type YMeans = 'octaves' | 'semitones' | 'degrees';
@@ -115,6 +116,9 @@ export function ImportSheet() {
       graph,
       steps,
       stepBeats,
+      ...((FIXED_LENGTHS as readonly number[]).includes(length)
+        ? { lengthMode: 'fixed' as const, lengthBeats: length, stepBeats: length / steps }
+        : { lengthMode: 'free' as const, lengthBeats: nearestFixedLength(length) }),
       octave: 4,
       pitchMode: yMeans === 'degrees' ? 'degree' : 'semitone',
       playMode: glide ? 'glide' : 'notes',

@@ -728,8 +728,8 @@ export function Visualizer() {
       <div className="viz-legend">
         <h2>{mode === 'score' ? 'The Garden' : mode === 'function' ? selected?.name ?? '—' : 'Ripple'}</h2>
         <span className="muted">
-          {mode === 'score' && `${score.total} beats · ${midiToName(score.lo + 2)}–${midiToName(score.hi - 2)}${score.drums.length ? ` · ${score.drums.length} drum lanes` : ''}`}
-          {mode === 'function' && `y = f(x) over the whole ${score.total}-beat loop · drag across it to hear it`}
+          {mode === 'score' && `${Number(score.total.toFixed(3))} beats · ${midiToName(score.lo + 2)}–${midiToName(score.hi - 2)}${score.drums.length ? ` · ${score.drums.length} drum lanes` : ''}`}
+          {mode === 'function' && `y = f(x) over the whole ${Number(score.total.toFixed(3))}-beat loop · drag across it to hear it`}
           {mode === 'ripple' && (playing ? 'live waveform' : 'press space to listen')}
         </span>
       </div>

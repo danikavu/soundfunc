@@ -20,7 +20,7 @@ export interface DropdownGroup {
  * A quiet field that opens a grouped list: arrow keys move, Enter picks, Esc closes.
  * `footer` is for anything extra under the list (a custom value, a hint).
  */
-export function Dropdown({ value, groups, footer, label }: { value: ReactNode; groups: DropdownGroup[]; footer?: ReactNode; label: string }) {
+export function Dropdown({ value, groups, footer, label, compact = false }: { value: ReactNode; groups: DropdownGroup[]; footer?: ReactNode; label: string; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [hl, setHl] = useState(-1);
   const ref = useRef<HTMLDivElement>(null);
@@ -47,7 +47,7 @@ export function Dropdown({ value, groups, footer, label }: { value: ReactNode; g
 
   let i = 0;
   return (
-    <div className="dropdown" ref={ref}>
+    <div className={`dropdown ${compact ? 'compact' : ''}`} ref={ref}>
       <button
         className={`dropdown-field ${open ? 'open' : ''}`}
         aria-haspopup="listbox"
