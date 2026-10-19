@@ -1598,3 +1598,205 @@ button:focus-visible {
 .fnode-head .lock + .lock {
   margin-left: 0;
 }
+
+/* ---------- rhythm kits ---------- */
+
+.kit-trigger {
+  margin-top: 22px !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: calc(100% + 12px);
+  margin: 0 -6px;
+  padding: 10px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--card);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.25s var(--ease), background 0.25s var(--ease);
+}
+.kit-trigger:hover,
+.kit-trigger.open {
+  border-color: var(--line);
+  background: var(--paper-2);
+}
+.kit-trigger b {
+  display: block;
+  font-weight: 400;
+  font-size: 14px;
+}
+.kit-trigger small {
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+.kit-chevron {
+  font: 300 20px/1 var(--serif);
+  color: var(--ink-3);
+  transition: transform 0.25s var(--ease);
+}
+.kit-trigger.open .kit-chevron {
+  transform: translateX(3px);
+  color: var(--ink);
+}
+.kit-pop {
+  position: fixed;
+  z-index: 70;
+  display: grid;
+  grid-template-columns: 190px 340px;
+  max-height: calc(100vh - 24px);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow), 0 24px 60px -24px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  animation: rise 0.22s var(--ease);
+}
+.kit-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  border-right: 1px solid var(--line-soft);
+  overflow-y: auto;
+}
+.kit-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.kit-list button.on {
+  background: var(--paper-2);
+}
+.kit-list .serif {
+  display: block;
+  font-size: 13.5px;
+}
+.kit-list small {
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+.kit-detail {
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+.kit-detail h3 {
+  margin: 0;
+  font-weight: 400;
+  font-size: 19px;
+}
+.kit-detail > .muted {
+  font-size: 11.5px;
+  margin: 6px 0 4px;
+}
+.kit-meta {
+  font: 11px var(--mono);
+  color: var(--ink-3);
+  margin: 0 0 12px;
+}
+.kit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.kit-tracks-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font: 500 9.5px/1.3 var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.kit-tracks-head label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  cursor: pointer;
+}
+.kit-tracks-head input {
+  accent-color: var(--ink);
+}
+.kit-tracks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.kit-tracks li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--line-soft);
+}
+.kit-tracks .stone.drum {
+  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+}
+.kit-track-name {
+  font-size: 12.5px;
+  min-width: 0;
+}
+.kit-track-name small {
+  display: block;
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.sheet-head > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.sheet-head > .icon-btn {
+  flex: none;
+}
+
+.viz-zoom {
+  position: absolute;
+  right: 12px;
+  top: 46px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  font-size: 11px;
+}
+.viz-zoom .muted {
+  padding: 0 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.viz-zoom .icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.track-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: -4px -8px 8px;
+}
+.track-tools .btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  color: var(--ink-2);
+}

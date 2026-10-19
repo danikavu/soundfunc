@@ -427,6 +427,45 @@ export const PRESETS: Preset[] = [
     },
   },
   {
+    id: 'zap',
+    name: 'Kick, Zap & Hook',
+    description:
+      'A three-case piecewise function in x (beats), y (octaves): a falling kick on each beat, a 1.6-octave zap on every third 16th, and an octave-down hook between. Repeats every 84 sixteenths.',
+    formula: 'y = −2 + 3e^(−20 frac x) | 3/5 + round(12(⌊4x⌋ mod 7)/7)/12 − 8/5 frac 4x | −1 + e^(−12 frac 4x)/6',
+    track: {
+      waveform: 'triangle',
+      pitchMode: 'semitone',
+      playMode: 'glide',
+      quantize: false,
+      glide: 0.003,
+      // ⌊4x⌋ mod 3, ⌊4x⌋ mod 7 and the beat line up again after lcm(3, 7, 4) = 84 sixteenths
+      steps: 84,
+      stepBeats: 0.25,
+      octave: 4,
+      attack: 0.003,
+      release: 0.05,
+      volume: 0.7,
+      send: 0.35,
+      graph: wire(
+        {
+          // y in octaves, exactly as written; the first case that holds wins
+          y: [
+            'expr',
+            {
+              formula:
+                'fract(t) < 0.25 ? -2 + 3 * exp(-20 * fract(t)) : floor(4t) % 3 == 0 ? 3/5 + round(12 * (floor(4t) % 7) / 7) / 12 - 8/5 * fract(4t) : -1 + exp(-12 * fract(4t)) / 6',
+            },
+          ],
+          semitones: ['math', { op: 'mul', b: 12 }],
+          // where no case holds, the function is undefined: silence
+          gate: ['expr', { formula: '0.8 * (fract(t) < 0.25 || floor(4t) % 3 == 0 || fract(4t) < 0.8)' }],
+          out: ['output'],
+        },
+        ['y.out>semitones.a', 'semitones.out>out.pitch', 'gate.out>out.velocity'],
+      ),
+    },
+  },
+  {
     id: 'lorenzGlide',
     name: 'Lorenz Glide',
     description: 'A strange attractor sliding between scale notes with portamento.',

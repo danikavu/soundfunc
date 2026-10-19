@@ -37,6 +37,8 @@ export function ImportSheet() {
   const [stepBeats, setStepBeats] = useState(0.25);
   const [glide, setGlide] = useState(true);
   const [articulate, setArticulate] = useState(true);
+  const [modReading, setModReading] = useState<'sum' | 'term'>('sum');
+  const [xStart, setXStart] = useState(0);
   const katex = useKatex(open);
 
   useEffect(() => {
@@ -49,18 +51,17 @@ export function ImportSheet() {
   const parsed = useMemo((): { ok: Imported | null; error: string | null } => {
     if (!src.trim()) return { ok: null, error: null };
     try {
-      return { ok: importMath(src), error: null };
+      return { ok: importMath(src, { modReading }), error: null };
     } catch (e) {
       return { ok: null, error: e instanceof ImportError || e instanceof Error ? e.message : String(e) };
     }
-  }, [src]);
+  }, [src, modReading]);
 
-  /** x in the source → SoundFunc time */
+  /** x in the source → SoundFunc time (shifted so the track starts at x = xStart) */
   const timeAst = (): Ast => {
     const t: Ast = { k: 'var', name: 't' };
-    if (xMeans === 'steps') return { k: 'bin', op: '/', a: t, b: { k: 'num', v: stepBeats } };
-    if (xMeans === 'loop') return { k: 'var', name: 'x' };
-    return t;
+    const base: Ast = xMeans === 'steps' ? { k: 'bin', op: '/', a: t, b: { k: 'num', v: stepBeats } } : xMeans === 'loop' ? { k: 'var', name: 'x' } : t;
+    return xStart ? { k: 'bin', op: '+', a: base, b: { k: 'num', v: xStart } } : base;
   };
   const toSf = (a: Ast) => simplify(substitute(a, { t: timeAst() }));
 
@@ -74,7 +75,7 @@ export function ImportSheet() {
     let lo = Infinity, hi = -Infinity;
     for (let i = 0; i < N; i++) {
       const beats = (i / N) * length;
-      const x = xMeans === 'beats' ? beats : xMeans === 'steps' ? beats / stepBeats : i / N;
+      const x = xStart + (xMeans === 'beats' ? beats : xMeans === 'steps' ? beats / stepBeats : i / N);
       const y = g({ t: x }) ? v({ t: x }) : NaN;
       if (Number.isFinite(y)) {
         pts.push(y);
@@ -84,7 +85,7 @@ export function ImportSheet() {
     if (!Number.isFinite(lo)) return { pts, lo: -1, hi: 1, silent: true };
     if (hi - lo < 1e-9) (lo -= 1), (hi += 1);
     return { pts, lo, hi, silent: false };
-  }, [parsed.ok, length, xMeans, stepBeats]);
+  }, [parsed.ok, length, xMeans, stepBeats, xStart]);
 
   if (!open) return null;
 
@@ -151,7 +152,8 @@ export function ImportSheet() {
               Paste a function
             </div>
             <p className="muted" style={{ margin: '6px 0 0', fontSize: 12 }}>
-              LaTeX (Desmos: select an expression, ⌘C), <code className="mono">\begin{'{cases}'}</code>, or plain math with ⌊ ⌋, mod, frac, ≥ — y as a function of x.
+              LaTeX (Desmos: select an expression, ⌘C), <code className="mono">\begin{'{cases}'}</code>, plain math with ⌊ ⌋, mod, frac, ≥ — or several lines: helper
+              definitions like <code className="mono">g(x) = …</code> and <code className="mono">IF … : / ELSE IF / OTHERWISE</code> blocks. y as a function of x.
             </p>
           </div>
           <button className="icon-btn" onClick={() => setOpen(false)} title="Close (Esc)">
@@ -227,7 +229,22 @@ export function ImportSheet() {
                     ]}
                   />
                 </div>
+                <div className="field">
+                  <span>“mod” in a sum reads as</span>
+                  <Seg<'sum' | 'term'>
+                    value={modReading}
+                    onChange={setModReading}
+                    options={[
+                      { value: 'sum', label: 'a + b mod n = (a + b) mod n' },
+                      { value: 'term', label: 'a + (b mod n)' },
+                    ]}
+                  />
+                </div>
                 <div className="row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <label className="field" style={{ width: 90 }} title="Where the track begins along x — for functions that start at negative x">
+                    <span>x starts at</span>
+                    <NumberField className="input" value={xStart} onValue={setXStart} />
+                  </label>
                   <label className="field" style={{ width: 90 }}>
                     <span>Length (beats)</span>
                     <NumberField className="input" min={0.25} max={256} value={length} onValue={setLength} />

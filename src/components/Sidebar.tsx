@@ -1,27 +1,39 @@
-import { KITS, PRESETS } from '../engine/presets';
+import { PRESETS } from '../engine/presets';
+import { KitPicker } from './KitPicker';
 import { audibleTracks, voiceLabel } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon } from './ui';
 import { toast } from './TopBar';
 
 export function Sidebar() {
-  const { project, selectTrack, updateTrack, addTrack, addKit, removeTrack } = useStore();
+  const { project, selectTrack, updateTrack, addTrack, removeTrack } = useStore();
   const selected = useSelectedTrack();
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
 
   return (
     <aside className="panel">
-      <div className="eyebrow">
-        Tracks
-        <span className="eyebrow-actions">
+      <div className="eyebrow">Tracks</div>
+      <div className="track-tools">
+          {project.tracks.length > 0 && (
+            <button
+              className="btn small ghost"
+              onClick={() => {
+                const n = project.tracks.length;
+                useStore.getState().clearTracks();
+                toast(`Cleared ${n} track${n > 1 ? 's' : ''} — ⌘Z brings them back`);
+              }}
+              title="Remove every track (⌘Z to undo)"
+            >
+              <Icon name="trash" size={11} /> Clear
+            </button>
+          )}
           <button className="btn small ghost" onClick={() => addTrack('blank')} title="A clock, one formula and Note Out">
             <Icon name="plus" size={11} /> Empty
           </button>
           <button className="btn small ghost" onClick={() => useStore.getState().setShowImport(true)} title="Paste LaTeX, Desmos or plain math">
             <span className="serif">ƒ</span> Paste function
           </button>
-        </span>
-      </div>
+        </div>
       {project.tracks.map((t) => (
         <div
           key={t.id}
@@ -50,24 +62,7 @@ export function Sidebar() {
       ))}
       {project.tracks.length === 0 && <p className="muted serif">An empty garden. Plant something below.</p>}
 
-      <div className="eyebrow">Rhythm kits</div>
-      {KITS.map((k) => (
-        <button
-          key={k.id}
-          className="preset"
-          onClick={(e) => {
-            addKit(k.id, e.shiftKey);
-            toast(e.shiftKey ? `Layered ${k.name}` : `Planted ${k.name} — ⌘Z to bring your garden back`);
-          }}
-          title={`${k.description}\n\nClick to replace the garden · ⇧-click to layer on top`}
-        >
-          <b>{k.name}</b>
-          <code>
-            {k.song?.bpm ? `${k.song.bpm} bpm · ` : ''}
-            {k.tracks.length} tracks
-          </code>
-        </button>
-      ))}
+      <KitPicker />
 
       <div className="eyebrow">Plant a function</div>
       {PRESETS.map((p) => (

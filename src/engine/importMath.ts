@@ -4,8 +4,8 @@
  * syntax tree. Piecewise functions keep their undefined regions, which become
  * silence (a velocity gate) instead of sound.
  */
-import { FUNCTIONS, type Ast, type BinOp } from './expr';
-import { simplify, toSource } from './symbolic';
+import { compileAst, FUNCTIONS, type Ast, type BinOp } from './expr';
+import { simplify, substitute, toSource } from './symbolic';
 
 const UNDEF: Ast = { k: 'var', name: '__undefined' };
 
@@ -60,6 +60,7 @@ const CMD_ALIASES: Record<string, Tok> = {
 
 function tokenize(input: string): Tok[] {
   let s = input
+    .replace(/\b(AND|OR|IF|ELSE|OTHERWISE|WHEN)\b/g, (m) => m.toLowerCase())
     .replace(/\$+/g, ' ')
     .replace(/[−–]/g, '-')
     .replace(/[·×∙]/g, '*')
@@ -158,7 +159,19 @@ export interface ImportOptions {
   /** what the source calls its time variable (default x) */
   timeVar?: string;
   /** SoundFunc variable to put in its place */
-  timeAs?: 't' | 'n' | 'x';
+  timeAs?: string;
+  /**
+   * How "a + b mod n" is read. 'sum' (default): mod applies to the whole sum before
+   * it, (a + b) mod n — how it is usually meant on paper. 'term': like ×, a + (b mod n).
+   */
+  modReading?: 'sum' | 'term';
+}
+
+/** internal: helper functions defined in the same text, e.g. g(x) = … */
+interface ReadContext {
+  warnings: Set<string>;
+  userNames: Set<string>;
+  callUser: (name: string, args: Ast[]) => Ast | null;
 }
 
 export interface Imported {
@@ -171,11 +184,12 @@ export interface Imported {
   warnings: string[];
 }
 
-export function importMath(src: string, opts: ImportOptions = {}): Imported {
+function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
   const timeVar = opts.timeVar ?? 'x';
   const timeAs = opts.timeAs ?? 't';
+  const modSum = (opts.modReading ?? 'sum') === 'sum';
   const toks = tokenize(src);
-  const warnings = new Set<string>();
+  const warnings = ctx.warnings;
   let k = 0;
   const peek = (o = 0) => toks[k + o];
   const is = (t: Tok['t'], v?: string, o = 0) => {
@@ -253,15 +267,26 @@ export function importMath(src: string, opts: ImportOptions = {}): Imported {
   }
   function add(): Ast {
     let l = mul();
-    while (sym('+') || sym('-')) {
-      const op = (toks[k++] as { v: string }).v as BinOp;
-      l = bin(op, l, mul());
+    for (;;) {
+      if (sym('+') || sym('-')) {
+        const op = (toks[k++] as { v: string }).v as BinOp;
+        l = bin(op, l, mul());
+      } else if (modSum && infixMod()) {
+        // "a + b mod n" → (a + b) mod n: mod takes everything before it in this group
+        k++;
+        warnings.add(MOD_SUM_NOTE);
+        l = bin('%', l, mul());
+      } else return l;
     }
-    return l;
+  }
+  /** "mod" used as an operator (a mod n), not the function mod(a, n) */
+  function infixMod(): boolean {
+    return is('word', 'mod') && !callsWithComma(1);
   }
   function startsAtom(): boolean {
     const x = peek();
     if (!x || stopped()) return false;
+    if (infixMod()) return false;
     if (x.t === 'num' || x.t === 'word') return true;
     if (x.t === 'cmd') return !x.v.startsWith('end:');
     if (x.t === 'sym') return ['(', '[', '{', '\\{'].includes(x.v) || (x.v === '|' && !stops[stops.length - 1].includes('|'));
@@ -273,10 +298,10 @@ export function importMath(src: string, opts: ImportOptions = {}): Imported {
       if (sym('*') || sym('/')) {
         const op = (toks[k++] as { v: string }).v as BinOp;
         l = bin(op, l, unary());
-      } else if (is('word', 'mod') && !callsWithComma(1)) {
-        // infix "a mod b": usual multiplicative precedence — say so, it's ambiguous on paper
+      } else if (!modSum && infixMod()) {
+        // infix "a mod b" with the precedence of ×
         k++;
-        warnings.add('Infix “mod” was read with normal precedence (like ×). If you meant the whole sum mod n, write mod(a, n).');
+        warnings.add(MOD_TERM_NOTE);
         l = bin('%', l, unary());
       } else if (startsAtom()) {
         l = bin('*', l, power()); // implicit multiplication: 2x, 3⌊x/2⌋, (a)(b)
@@ -350,6 +375,8 @@ export function importMath(src: string, opts: ImportOptions = {}): Imported {
   }
   function fn(name: string): Ast {
     const a = args();
+    const user = ctx.callUser(name, a);
+    if (user) return user;
     switch (name) {
       case 'mod':
         if (a.length !== 2) throw new ImportError('mod needs two arguments: mod(a, n)');
@@ -430,6 +457,7 @@ export function importMath(src: string, opts: ImportOptions = {}): Imported {
         return piecewise('\\}');
       }
       if (x.v === '|') {
+        warnings.add('|…| was read as an absolute value. If you meant to round down, write ⌊…⌋ or floor(…) — for example |4x| and ⌊4x⌋ differ between steps.');
         k++;
         stops.push(['|']);
         const e = expr();
@@ -493,8 +521,8 @@ export function importMath(src: string, opts: ImportOptions = {}): Imported {
       if (w === 'pi' || w === 'tau' || w === 'phi') return { k: 'const', name: w };
       if (w === 'e' && sym('^')) return { k: 'const', name: 'e' };
       if (w === 'e') return { k: 'const', name: 'e' };
-      if (w === timeVar) return { k: 'var', name: timeAs };
-      if (w.length > 1 || FUNCTION_NAMES.has(w)) {
+      if (w === timeVar && !sym('(')) return { k: 'var', name: timeAs };
+      if (w.length > 1 || FUNCTION_NAMES.has(w) || (ctx.userNames.has(w) && sym('('))) {
         // e.g. "floor(x/2)", "frac 4x", "\operatorname{mod}(a, b)"
         return fn(w);
       }
@@ -521,7 +549,21 @@ export function importMath(src: string, opts: ImportOptions = {}): Imported {
   if (!toks.length) throw new ImportError('Paste a function first');
   const ast = expr();
   if (k < toks.length) throw new ImportError(`Couldn't read past “${(toks[k] as { v: unknown }).v}”`);
+  return ast;
+}
 
+const MOD_SUM_NOTE = 'Infix “mod” was read as applying to everything before it in its group: a + b mod n = (a + b) mod n. Switch “mod reads” if you meant a + (b mod n).';
+const MOD_TERM_NOTE = 'Infix “mod” was read with the precedence of ×: a + b mod n = a + (b mod n). Switch “mod reads” if you meant the whole sum.';
+
+const noUser: ReadContext['callUser'] = () => null;
+
+export function importMath(src: string, opts: ImportOptions = {}): Imported {
+  const warnings = new Set<string>();
+  const ast = looksStructured(src) ? readProgram(src, opts, warnings) : readExpr(src, opts, { warnings, userNames: new Set(), callUser: noUser });
+  return finish(ast, warnings);
+}
+
+function finish(ast: Ast, warnings: Set<string>): Imported {
   const value = simplify(replaceUndef(ast));
   const gate = simplify(definedness(ast));
   return {
@@ -582,4 +624,164 @@ const isOne = (a: Ast) => a.k === 'num' && a.v === 1;
 export function importToSource(src: string, opts?: ImportOptions): { value: string; gate: string | null; warnings: string[] } {
   const r = importMath(src, opts);
   return { value: toSource(r.value), gate: r.gate ? toSource(r.gate) : null, warnings: r.warnings };
+}
+
+// ---------- structured text: definitions and IF / ELSE IF / OTHERWISE blocks ----------
+
+const DEF_RE = /^([A-Za-z][A-Za-z0-9_]*)\s*(?:\(\s*([A-Za-z][A-Za-z0-9_]*)\s*\))?\s*=(?!=)\s*(.*)$/;
+const IF_RE = /^(?:else\s+if|elif|if|when)\b\s*(.*?)\s*:?\s*$/i;
+const ELSE_RE = /^(?:otherwise|else)\b\s*:?\s*(.*)$/i;
+
+/** text written as several lines: definitions like g(x) = …, or IF … : blocks */
+export function looksStructured(src: string): boolean {
+  const lines = src.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2 && !/^if\b/i.test(lines[0] ?? '')) return false;
+  return lines.some((l) => IF_RE.test(l) && /^(if|else|elif|when)\b/i.test(l)) || lines.filter((l) => DEF_RE.test(l) && !/^(if|else)\b/i.test(l)).length > 1;
+}
+
+interface Line {
+  indent: number;
+  text: string;
+}
+
+interface Definition {
+  name: string;
+  param: string | null;
+  lines: Line[];
+  ast?: Ast;
+  reading?: boolean;
+}
+
+function readProgram(src: string, opts: ImportOptions, warnings: Set<string>): Ast {
+  const lines: Line[] = src
+    .replace(/\t/g, '  ')
+    .split('\n')
+    .map((raw) => ({ indent: raw.length - raw.trimStart().length, text: raw.trim().replace(/[;,]$/, '') }))
+    .filter((l) => l.text && !/^(#|\/\/|%)/.test(l.text));
+
+  // split into definitions: a name at the outermost indent, then everything indented under it
+  const top = Math.min(...lines.map((l) => l.indent));
+  const defs = new Map<string, Definition>();
+  const order: Definition[] = [];
+  let current: Definition | null = null;
+  for (const l of lines) {
+    const m = l.indent === top && !/^(if|else|elif|otherwise|when)\b/i.test(l.text) ? DEF_RE.exec(l.text) : null;
+    if (m && !/^(if|else|elif|otherwise|when)$/i.test(m[1])) {
+      current = { name: m[1], param: m[2] ?? null, lines: m[3] ? [{ indent: l.indent + 2, text: m[3] }] : [] };
+      defs.set(current.name, current);
+      order.push(current);
+    } else {
+      if (!current) {
+        current = { name: 'y', param: 'x', lines: [] };
+        defs.set('y', current);
+        order.push(current);
+      }
+      current.lines.push(l);
+    }
+  }
+
+  const userNames = new Set([...defs.values()].filter((d) => d.param).map((d) => d.name));
+  const ctx: ReadContext = {
+    warnings,
+    userNames,
+    callUser: (name, args) => {
+      const d = defs.get(name);
+      if (!d || !d.param) return null;
+      if (d.reading) throw new ImportError(`“${name}” is defined in terms of itself`);
+      if (!d.ast) {
+        d.reading = true;
+        // read the body with its parameter as a placeholder, then substitute the argument
+        d.ast = readBlock(d.lines, { ...opts, timeVar: d.param, timeAs: '__arg' }, ctx, d.name);
+        d.reading = false;
+      }
+      const arg = args[0] ?? { k: 'num', v: 0 };
+      // a helper that is just a built-in under its usual name (frac(x) = x − ⌊x⌋) stays readable as that built-in
+      const builtin = FN_MAP[name] ?? name;
+      if (FUNCTIONS[builtin] && sameAsBuiltin(d.ast, builtin)) return { k: 'call', fn: builtin, args: [arg] };
+      return substitute(d.ast, { __arg: arg });
+    },
+  };
+
+  // the function to play: y, or f, or the last definition nobody else calls
+  const main = defs.get('y') ?? defs.get('f') ?? order[order.length - 1];
+  if (!main) throw new ImportError('Nothing to read');
+  if (main.param && main.param !== (opts.timeVar ?? 'x')) warnings.add(`The main function takes “${main.param}”, read as time.`);
+  return readBlock(main.lines, { ...opts, timeVar: main.param ?? opts.timeVar ?? 'x' }, ctx, main.name);
+}
+
+/** a run of lines at one indent: IF / ELSE IF / OTHERWISE cases, or one expression */
+function readBlock(lines: Line[], opts: ImportOptions, ctx: ReadContext, name: string): Ast {
+  if (!lines.length) throw new ImportError(`“${name}” has no body`);
+  const base = Math.min(...lines.map((l) => l.indent));
+  const rows: { c: Ast | null; v: Ast }[] = [];
+  let i = 0;
+  const childrenOf = (at: number): Line[] => {
+    const kids: Line[] = [];
+    for (let j = at + 1; j < lines.length && lines[j].indent > base; j++) kids.push(lines[j]);
+    return kids;
+  };
+  const body = (inline: string, at: number): { ast: Ast; used: number } => {
+    const kids = childrenOf(at);
+    if (inline) return { ast: readExpr(stripAssign(inline, name), opts, ctx), used: kids.length };
+    if (!kids.length) throw new ImportError(`Line “${lines[at].text}” needs something under it`);
+    return { ast: readBlock(kids, opts, ctx, name), used: kids.length };
+  };
+  while (i < lines.length) {
+    const l = lines[i];
+    const isIf = /^(if|else\s+if|elif|when)\b/i.test(l.text);
+    const isElse = !isIf && /^(otherwise|else)\b/i.test(l.text);
+    if (isIf) {
+      // "IF cond: value" or "IF cond:" with the value indented below
+      const text = l.text.replace(/^(?:else\s+if|elif|if|when)\b\s*/i, '');
+      const colon = topLevelColon(text);
+      const cond = readExpr(colon < 0 ? text : text.slice(0, colon), opts, ctx);
+      const { ast, used } = body(colon < 0 ? '' : text.slice(colon + 1).trim(), i);
+      rows.push({ c: cond, v: ast });
+      i += 1 + used;
+    } else if (isElse) {
+      const inline = ELSE_RE.exec(l.text)![1].trim();
+      const { ast, used } = body(inline, i);
+      rows.push({ c: null, v: ast });
+      i += 1 + used;
+    } else {
+      // a plain line: the value (any indented lines under it continue the expression)
+      const kids = childrenOf(i);
+      rows.push({ c: null, v: readExpr(stripAssign([l.text, ...kids.map((k) => k.text)].join(' '), name), opts, ctx) });
+      i += 1 + kids.length;
+    }
+  }
+  // fold: first true case wins; no OTHERWISE leaves the rest undefined (silence)
+  let out: Ast = UNDEF;
+  for (let j = rows.length - 1; j >= 0; j--) out = rows[j].c ? { k: 'cond', c: rows[j].c!, a: rows[j].v, b: out } : rows[j].v;
+  return out;
+}
+
+/** does a one-argument definition agree with the built-in of that name everywhere we look? */
+function sameAsBuiltin(body: Ast, builtin: string): boolean {
+  const f = FUNCTIONS[builtin].fn;
+  const mine = compileAst(replaceUndef(body));
+  for (let i = 0; i < 40; i++) {
+    const x = (i - 20) * 0.731 + 0.123;
+    const a = f(x), b = mine({ __arg: x });
+    if (!(Math.abs(a - b) < 1e-9)) return false;
+  }
+  return true;
+}
+
+/** "y = …" or "g(x) = …" inside a block → just the expression */
+function stripAssign(text: string, name: string): string {
+  const m = /^([A-Za-z][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*=(?!=)\s*(.*)$/.exec(text);
+  return m && (m[1] === name || m[1] === 'y') ? m[2] : text;
+}
+
+/** the colon that ends "IF cond:", ignoring any inside brackets (Desmos {c: v}) */
+function topLevelColon(text: string): number {
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if ('([{'.includes(c)) depth++;
+    else if (')]}'.includes(c)) depth--;
+    else if (c === ':' && depth === 0) return i;
+  }
+  return -1;
 }

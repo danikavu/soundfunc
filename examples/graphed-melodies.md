@@ -30,3 +30,69 @@ be sure of its fraction bars.
 -2 + \frac{\lfloor (12\operatorname{mod}(3\lfloor x/2\rfloor + 5, 7) + 2)/7 \rfloor}{12} + \begin{cases} 2.5e^{-22\operatorname{frac}(x)} & \text{if } \operatorname{frac}(x) < \frac14 \\ (\operatorname{mod}(\lfloor 4x\rfloor, 8) = 7) + 0.22e^{-14\operatorname{frac}(4x)} & \text{if } \operatorname{frac}(4x) < 0.72 \end{cases} & \text{otherwise}
 \end{cases}
 ```
+
+
+## Bitmask melody (structured text)
+
+Paste into **Paste function** as it is — definitions, nested `IF / ELSE IF / OTHERWISE`
+blocks and the helper `g(x)` are all understood. Set **x starts at** −8 and **Length** 16: the
+function plays different phrases for x < −4, −4 ≤ x < 0 and x ≥ 0.
+
+### As written
+
+```
+frac(x) = x − ⌊x⌋
+
+y(x) =
+IF x < 4 AND frac(4x) < 0.8 AND ⌊42184 / 2^(|4x| mod 16)⌋ mod 2 = 1:
+  y = (⌊(191514120807·(x < −4) + 81214171410·(⌊x/4⌋ − 1) + 121519201714·(x ≥ 0))/(100^6 − ⌊(3|4x| mod 15 + 1)/3⌋)⌋ mod 100)/12 + e^(−12·frac(4x))/6
+OTHERWISE:
+  y = −2 + ⌊(12(3⌊x/2⌋ + 5 mod 7) + 2)/7⌋/12 + g(x)
+
+g(x) =
+IF x ≥ 4:
+  IF frac(x) < 1/2:
+    3e^(−30·frac(x))
+  OTHERWISE:
+    e^(12·frac(x) − 12) + tri(24x)/24
+OTHERWISE:
+  IF frac(x) < 1/4:
+    2.5e^(−22·frac(x))
+  ELSE IF frac(4x) < 0.72:
+    (⌊4x⌋ mod 2) + 0.22e^(−14·frac(4x))
+```
+
+Read literally, the melody line is always the same note: `100^6 − ⌊…⌋` is about 10¹², so the
+division rounds to 0. `|4x|` (absolute value) also changes *within* each 16th, scrambling the
+`42184` rhythm mask.
+
+### Probably intended
+
+Three symbols that likely got lost in transcription — `⌊4x⌋` instead of `|4x|`, `= −1`
+instead of `− 1` (so each 12-digit number is one phrase of semitone pairs), and the digit-pair
+exponent `100^(5 − i)`:
+
+```
+frac(x) = x − ⌊x⌋
+
+y(x) =
+IF x < 4 AND frac(4x) < 0.8 AND ⌊42184 / 2^(⌊4x⌋ mod 16)⌋ mod 2 = 1:
+  y = (⌊(191514120807·(x < −4) + 81214171410·(⌊x/4⌋ = −1) + 121519201714·(x ≥ 0))/100^(5 − ⌊(3⌊4x⌋ mod 15 + 1)/3⌋)⌋ mod 100)/12 + e^(−12·frac(4x))/6
+OTHERWISE:
+  y = −2 + ⌊(12(3⌊x/2⌋ + 5 mod 7) + 2)/7⌋/12 + g(x)
+
+g(x) =
+IF x ≥ 4:
+  IF frac(x) < 1/2:
+    3e^(−30·frac(x))
+  OTHERWISE:
+    e^(12·frac(x) − 12) + tri(24x)/24
+OTHERWISE:
+  IF frac(x) < 1/4:
+    2.5e^(−22·frac(x))
+  ELSE IF frac(4x) < 0.72:
+    (⌊4x⌋ mod 2) + 0.22e^(−14·frac(4x))
+```
+
+This plays phrases like 15 8 19 12 / 14 8 12 14 / 20 15 19 12 (semitones above the root)
+on the syncopated rhythm 42184 = 1010010011001000₂.

@@ -50,8 +50,12 @@ interface State {
   setShowImport: (open: boolean) => void;
   /** plant a multi-track kit (and its tempo/key); replaces the current tracks unless layering */
   addKit: (kitId: string, layer?: boolean) => void;
+  /** add some of a kit's tracks (e.g. just its drums) to the current garden */
+  addKitTracks: (kitId: string, trackIndexes: number[], adoptSong?: boolean) => void;
   duplicateTrack: (id: string) => void;
   removeTrack: (id: string) => void;
+  /** remove every track at once (one undo step) */
+  clearTracks: () => void;
   setGraph: (trackId: string, nodes: GNode[], edges: GEdge[], record?: boolean) => void;
   updateNodeData: (trackId: string, nodeId: string, patch: NodeData) => void;
   /** lock / unlock nodes against the randomizer (one undo step) */
@@ -161,6 +165,14 @@ export const useStore = create<State>()(
         },
         showImport: false,
         setShowImport: (showImport) => set({ showImport }),
+        addKitTracks: (kitId, trackIndexes, adoptSong = false) => {
+          const kit = KITS.find((k) => k.id === kitId);
+          if (!kit || !trackIndexes.length) return;
+          const start = get().project.tracks.length;
+          const tracks = trackIndexes.map((i, j) => trackFromTemplate(kit.tracks[i], kit.tracks[i].name, start + j));
+          commit((p) => ({ ...p, song: adoptSong ? { ...p.song, ...kit.song } : p.song, tracks: [...p.tracks, ...tracks] }));
+          set({ selectedTrackId: tracks[0].id });
+        },
         duplicateTrack: (id) => {
           const src = get().project.tracks.find((t) => t.id === id);
           if (!src) return;
@@ -172,6 +184,10 @@ export const useStore = create<State>()(
             return { ...p, tracks };
           });
           set({ selectedTrackId: copy.id });
+        },
+        clearTracks: () => {
+          commit((p) => ({ ...p, tracks: [] }));
+          set({ selectedTrackId: null, audition: null });
         },
         removeTrack: (id) => {
           commit((p) => ({ ...p, tracks: p.tracks.filter((t) => t.id !== id) }));

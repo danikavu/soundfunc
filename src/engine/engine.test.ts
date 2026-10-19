@@ -553,3 +553,83 @@ describe('graph editing keeps the music', () => {
     expect(bridge - lower).toBe(2);
   });
 });
+
+describe('the Kick, Zap & Hook preset', () => {
+  it('is exactly what the LaTeX importer reads from the original', () => {
+    const latex =
+      'y = \\begin{cases} -2 + 3e^{-20\\operatorname{frac}(x)} & \\text{if } \\operatorname{frac}(x) < \\frac{1}{4} \\\\ \\frac{3}{5} + \\frac{\\operatorname{round}\\left(\\frac{12(\\lfloor 4x \\rfloor \\bmod 7)}{7}\\right)}{12} - \\frac{8}{5}\\operatorname{frac}(4x) & \\text{if } \\lfloor 4x \\rfloor \\bmod 3 = 0 \\\\ -1 + \\frac{e^{-12\\operatorname{frac}(4x)}}{6} & \\text{if } \\operatorname{frac}(4x) < 0.8 \\end{cases}';
+    const imported = importMath(latex);
+    const preset = trackFromPreset(PRESETS.find((p) => p.id === 'zap')!, 0);
+    const y = compile(String(preset.graph.nodes.find((n) => n.id === 'y')!.data.formula), ['t']).fn;
+    const gate = compile(String(preset.graph.nodes.find((n) => n.id === 'gate')!.data.formula), ['t']).fn;
+    const iv = compileAst(imported.value), ig = compileAst(imported.gate!);
+    for (let i = 0; i < 84 * 8; i++) {
+      const t = i / 32 + 0.003;
+      expect(Boolean(gate({ t })), `gate t=${t}`).toBe(Boolean(ig({ t })));
+      if (ig({ t })) expect(y({ t }), `y t=${t}`).toBeCloseTo(iv({ t }), 9);
+    }
+  });
+});
+
+describe('importing structured functions (definitions, IF / ELSE IF / OTHERWISE)', () => {
+  const program = `frac(x) = x − ⌊x⌋
+
+y(x) =
+IF x < 4 AND frac(4x) < 0.8 AND ⌊42184 / 2^(⌊4x⌋ mod 16)⌋ mod 2 = 1:
+  y = ⌊12·frac(x/3)⌋/12 + e^(−12·frac(4x))/6
+OTHERWISE:
+  y = −2 + ⌊(12(3⌊x/2⌋ + 5 mod 7) + 2)/7⌋/12 + g(x)
+
+g(x) =
+IF x ≥ 4:
+  IF frac(x) < 1/2:
+    3e^(−30·frac(x))
+  OTHERWISE:
+    e^(12·frac(x) − 12)
+OTHERWISE:
+  IF frac(x) < 1/4:
+    2.5e^(−22·frac(x))
+  ELSE IF frac(4x) < 0.72:
+    (⌊4x⌋ mod 2) + 0.22e^(−14·frac(4x))`;
+
+  const fr = (v: number) => v - Math.floor(v);
+  const mod = (a: number, b: number) => ((a % b) + b) % b;
+  const g = (x: number): number | null =>
+    x >= 4 ? (fr(x) < 0.5 ? 3 * Math.exp(-30 * fr(x)) : Math.exp(12 * fr(x) - 12)) : fr(x) < 0.25 ? 2.5 * Math.exp(-22 * fr(x)) : fr(4 * x) < 0.72 ? mod(Math.floor(4 * x), 2) + 0.22 * Math.exp(-14 * fr(4 * x)) : null;
+  const y = (x: number): number | null => {
+    if (x < 4 && fr(4 * x) < 0.8 && mod(Math.floor(42184 / 2 ** mod(Math.floor(4 * x), 16)), 2) === 1) return Math.floor(12 * fr(x / 3)) / 12 + Math.exp(-12 * fr(4 * x)) / 6;
+    const gv = g(x);
+    return gv === null ? null : -2 + Math.floor((12 * mod(3 * Math.floor(x / 2) + 5, 7) + 2) / 7) / 12 + gv;
+  };
+
+  it('reads definitions, nested blocks, helper functions and AND', () => {
+    const r = importMath(program);
+    const v = compileAst(r.value), gt = compileAst(r.gate!);
+    let silent = 0;
+    for (let i = 0; i < 1600; i++) {
+      const x = -8 + i * 0.01 + 0.0007;
+      const want = y(x);
+      expect(Boolean(gt({ t: x })), `defined at x=${x}`).toBe(want !== null);
+      if (want === null) silent++;
+      else expect(v({ t: x }), `y(${x})`).toBeCloseTo(want, 9);
+    }
+    expect(silent).toBeGreaterThan(0); // g has no final OTHERWISE → gaps
+  });
+
+  it('reads "a + b mod n" both ways', () => {
+    const sum = compileAst(importMath('3 + 5 mod 7').value)({});
+    const term = compileAst(importMath('3 + 5 mod 7', { modReading: 'term' }).value)({});
+    expect(sum).toBe(1); // (3 + 5) mod 7
+    expect(term).toBe(8); // 3 + (5 mod 7)
+  });
+
+  it('accepts lower-case keywords, inline IF values and ELSE', () => {
+    const r = importMath('y =\nif x < 1: 2\nelse if x < 2 or x > 5: 3\nelse:\n  4');
+    const v = compileAst(r.value);
+    expect([0.5, 1.5, 6, 3].map((t) => v({ t }))).toEqual([2, 3, 3, 4]);
+  });
+
+  it('reports a function defined in terms of itself', () => {
+    expect(() => importMath('y(x) = g(x)\ng(x) = 1 + g(x)')).toThrow(/itself/);
+  });
+});
