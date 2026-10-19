@@ -10,7 +10,7 @@ import { FIXED_LENGTHS, MAX_STEPS, shortBeats, stepLabel } from '../engine/steps
 import { Dropdown } from './Dropdown';
 import { isDrum } from '../engine/project';
 import { useSelectedTrack } from '../state/store';
-import { Enso, Icon, NumberField, TextField, download, fileSafe, isProject } from './ui';
+import { Icon, NumberField, TextField, download, fileSafe, isProject } from './ui';
 
 export function toast(msg: string) {
   window.dispatchEvent(new CustomEvent('sf-toast', { detail: msg }));
@@ -294,13 +294,8 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <div className="brand">
-        <Enso />
-        <span className="brand-name">SoundFunc</span>
-        <small className="hide-narrow">音 · 数</small>
-      </div>
-      <div className="row hide-narrow" style={{ gap: 2 }}>
-        <TextField className="project-name" value={project.name} onValue={setProjectName} aria-label="Project name" />
+      <div className="row garden-title" style={{ gap: 2 }}>
+        <TextField className="project-name" value={project.name} onValue={setProjectName} aria-label="Garden name" title="The garden’s name — click to rename" />
         <GardenMenu />
       </div>
 
