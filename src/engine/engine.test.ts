@@ -10,7 +10,7 @@ import { exportMidi, collectNotes } from './midi';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
 import { KITS, PRESETS, defaultProject, trackFromPreset, trackFromTemplate } from './presets';
 import { harmonyAt, normalizeProject, renderTrack, scaleLength, type Project, type Track } from './project';
-import { chordName, chordTones } from './music';
+import { chordName, chordTones, limitPitch } from './music';
 import { mulberry32, mutateFormula, mutateTrack, musicalScore } from './mutate';
 import { parsePattern } from './graph';
 import { timbreHarmonics } from './timbre';
@@ -708,5 +708,70 @@ describe('loop length: fixed or free', () => {
     const n = normalizeProject(old);
     expect(n.tracks.every((t) => t.lengthMode === 'free')).toBe(true);
     expect(n.tracks[0].lengthBeats).toBe(8);
+  });
+});
+
+describe('negative octaves', () => {
+  it('play lower, stay inside MIDI, and still export', () => {
+    const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+    // raw octave behaviour, with the pitch range switched off
+    const song = { ...defaultProject().song, pitchRange: { mode: 'off' as const, low: 24, high: 96 } };
+    const at = (octave: number) => renderTrack({ ...t, octave }, song).notes.map((n) => n.midi);
+    const four = at(4), minusOne = at(-1), minusFour = at(-4);
+    four.forEach((m, i) => expect(minusOne[i]).toBe(Math.max(0, m - 60)));
+    expect(Math.min(...minusFour)).toBe(0); // below MIDI note 0 they sit on it
+    expect(minusFour.every((m) => m >= 0 && m <= 127)).toBe(true);
+    const bytes = exportMidi({ ...defaultProject(), tracks: [{ ...t, octave: -2 }] });
+    expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('MThd');
+  });
+});
+
+describe('pitch range', () => {
+  const extreme = () => {
+    const blank = trackFromPreset(PRESETS.find((p) => p.id === 'blank')!, 0);
+    const f = blank.graph.nodes.find((n) => n.type === 'expr')!;
+    // wildly out-of-range values, like a formula gone astray
+    f.data.formula = 'pick(n, -8373, 0, 4000, 2, -50, 61)';
+    return blank;
+  };
+  const base = defaultProject().song;
+
+  it('is on by default — wrap into C1–C7 — and fills in for older projects', () => {
+    expect(base.pitchRange).toEqual({ mode: 'wrap', low: 24, high: 96 });
+    const { pitchRange, ...old } = base;
+    expect(normalizeProject({ ...defaultProject(), song: old as Project['song'] }).song.pitchRange.mode).toBe('wrap');
+  });
+
+  it('wrap keeps every note in range and keeps its note name', () => {
+    const t = extreme();
+    const off = renderTrack(t, { ...base, root: 0, scale: 'major', pitchRange: { mode: 'off', low: 24, high: 96 } }).notes;
+    const wrapped = renderTrack(t, { ...base, root: 0, scale: 'major' }).notes;
+    for (const n of wrapped) {
+      expect(n.midi).toBeGreaterThanOrEqual(24);
+      expect(n.midi).toBeLessThanOrEqual(96);
+    }
+    // the note name (pitch class) of an in-range note never changes
+    expect(wrapped[1].midi).toBe(off[1].midi);
+    // the unclamped value of −8373 degrees is some real note; wrapping keeps it
+    const raw = valueToMidi(-8373, 'degree', 0, 'major', 4, false);
+    expect(wrapped[0].midi % 12).toBe(((raw % 12) + 12) % 12);
+    // without a range, the extremes all pile up on the edges of MIDI
+    expect(off.filter((n) => n.midi === 0 || n.midi === 127).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('clamp pins notes to the edges; glide curves follow the range too', () => {
+    const t = extreme();
+    const clamped = renderTrack(t, { ...base, pitchRange: { mode: 'clamp', low: 48, high: 72 } }).notes.map((n) => n.midi);
+    expect(Math.min(...clamped)).toBe(48);
+    expect(Math.max(...clamped)).toBe(72);
+    const glide = renderTrack({ ...t, playMode: 'glide', quantize: false }, base).curve.midi;
+    expect(glide.every((m) => m >= 24 && m <= 96)).toBe(true);
+  });
+
+  it('limitPitch handles the edges and narrow ranges', () => {
+    expect(limitPitch(-8000, { mode: 'wrap', low: 24, high: 96 })).toBeGreaterThanOrEqual(24);
+    expect(limitPitch(130.5, { mode: 'wrap', low: 24, high: 96 })).toBeCloseTo(94.5);
+    expect(limitPitch(30, { mode: 'wrap', low: 60, high: 64 })).toBe(60); // narrower than an octave: clamps
+    expect(limitPitch(200, { mode: 'off', low: 0, high: 0 })).toBe(127);
   });
 });

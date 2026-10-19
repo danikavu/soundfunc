@@ -53,6 +53,8 @@ export function valueToMidi(
   root: number,
   scaleKey: string,
   octave: number,
+  /** false: leave the result outside 0…127 so a pitch range can fold it back by octaves */
+  clampToMidi = true,
 ): number {
   const scale = (SCALES[scaleKey] ?? SCALES.major).steps;
   let midi: number;
@@ -64,7 +66,7 @@ export function valueToMidi(
     // -1..1 maps to ± one octave worth of scale degrees
     midi = degreeToMidi(value * scale.length, root, scale, octave);
   }
-  return Math.max(0, Math.min(127, midi));
+  return clampToMidi ? Math.max(0, Math.min(127, midi)) : midi;
 }
 
 /**
@@ -78,8 +80,9 @@ export function valueToPitch(
   scaleKey: string,
   octave: number,
   quantize: boolean,
+  clampToMidi = true,
 ): number {
-  if (quantize) return valueToMidi(value, mode, root, scaleKey, octave);
+  if (quantize) return valueToMidi(value, mode, root, scaleKey, octave, clampToMidi);
   const scale = (SCALES[scaleKey] ?? SCALES.major).steps;
   let midi: number;
   if (mode === 'semitone') {
@@ -91,7 +94,45 @@ export function valueToPitch(
     const b = degreeToMidi(lo + 1, root, scale, octave);
     midi = a + (b - a) * (d - lo);
   }
-  return Math.max(0, Math.min(127, midi));
+  return clampToMidi ? Math.max(0, Math.min(127, midi)) : midi;
+}
+
+// ---------- pitch range ----------
+
+export type RangeMode = 'wrap' | 'clamp' | 'off';
+
+export interface PitchRange {
+  mode: RangeMode;
+  /** lowest and highest MIDI note */
+  low: number;
+  high: number;
+}
+
+export const DEFAULT_PITCH_RANGE: PitchRange = { mode: 'wrap', low: 24, high: 96 };
+
+export const RANGE_PRESETS: { label: string; low: number; high: number }[] = [
+  { label: 'Comfortable', low: 24, high: 96 },
+  { label: 'Piano', low: 21, high: 108 },
+  { label: 'Bass', low: 24, high: 60 },
+  { label: 'Voice', low: 48, high: 84 },
+  { label: 'Bright', low: 60, high: 96 },
+];
+
+/**
+ * Keep a pitch inside the range: 'wrap' moves it by whole octaves (it keeps its
+ * note name), 'clamp' pins it to the nearest edge. Always ends inside MIDI 0…127.
+ */
+export function limitPitch(midi: number, range: PitchRange | undefined): number {
+  let m = midi;
+  if (range && range.mode !== 'off' && range.high > range.low) {
+    const { low, high } = range;
+    if (range.mode === 'clamp' || high - low < 12) m = Math.min(high, Math.max(low, m));
+    else {
+      if (m < low) m += 12 * Math.ceil((low - m) / 12);
+      if (m > high) m -= 12 * Math.ceil((m - high) / 12);
+    }
+  }
+  return Math.max(0, Math.min(127, m));
 }
 
 export function midiToFreq(midi: number): number {

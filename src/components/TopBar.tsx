@@ -226,9 +226,9 @@ function GridField() {
       {isDrum(track.waveform) ? (
         <Placeholder label="Octave" width="w-octave" title="Drums have no octave — their pitch input tunes the hit" />
       ) : (
-        <label className="field-inline w-octave" title="Octave — where pitch 0 sits (4 = middle C’s octave)">
+        <label className="field-inline w-octave" title="Octave — where pitch 0 sits: 4 is middle C’s octave, −1 the lowest MIDI octave (−4…9; notes beyond MIDI’s range stay at its edge)">
           <span>Octave</span>
-          <NumberField className="input num grid-oct" integer min={0} max={8} value={track.octave} onValue={(octave) => updateTrack(track.id, { octave })} />
+          <NumberField className="input num grid-oct" integer min={-4} max={9} value={track.octave} onValue={(octave) => updateTrack(track.id, { octave })} />
         </label>
       )}
     </>

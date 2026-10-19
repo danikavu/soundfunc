@@ -1,6 +1,6 @@
 import { NODE_DEFS, type GEdge, type GNode, type Graph, type NodeData } from './graph';
-import type { PitchMode } from './music';
 import { nearestFixedLength } from './steps';
+import { DEFAULT_PITCH_RANGE, type PitchMode } from './music';
 import { TRACK_DEFAULTS, type DrumVoice, type Project, type Song, type Track, type Waveform } from './project';
 
 export const TRACK_COLORS = ['#c4583d', '#6f8a63', '#4a5d7e', '#b39561', '#8a6a7e', '#5e8a86', '#6f6a62'];
@@ -902,7 +902,7 @@ export function defaultProject(): Project {
   tracks[1].pan = 0.3;
   return {
     name: 'Zen Garden',
-    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', sliders: [] },
+    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', sliders: [], pitchRange: { ...DEFAULT_PITCH_RANGE } },
     tracks,
   };
 }

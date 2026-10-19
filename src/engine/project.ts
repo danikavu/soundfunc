@@ -1,7 +1,7 @@
 import { compileGraph, type Graph } from './graph';
 import { tryCompile, type Compiled } from './expr';
 import { nearestFixedLength, type LengthMode } from './steps';
-import { chordTones, midiToDegree, midiToFreq, midiToName, NOTE_NAMES, SCALES, valueToMidi, valueToPitch, type PitchMode } from './music';
+import { chordTones, DEFAULT_PITCH_RANGE, limitPitch, midiToDegree, midiToFreq, midiToName, NOTE_NAMES, SCALES, valueToMidi, valueToPitch, type PitchMode, type PitchRange } from './music';
 
 export type DrumVoice = 'kick' | 'snare' | 'hat' | 'openhat' | 'clap' | 'rim' | 'tom' | 'crash';
 export type Waveform = 'sine' | 'triangle' | 'square' | 'sawtooth' | 'bell' | 'pluck' | 'pad' | 'flute' | 'reese' | 'custom' | DrumVoice;
@@ -109,6 +109,8 @@ export interface Song {
   harmonyLocked?: boolean;
   /** named constants every formula can read, Desmos-style */
   sliders: Slider[];
+  /** where pitches may go: wrap by octaves (default), clamp, or off */
+  pitchRange: PitchRange;
 }
 
 export interface Slider {
@@ -121,7 +123,7 @@ export interface Slider {
 export const sliderNames = (song: Song) => (song.sliders ?? []).map((s) => s.name);
 export const sliderValues = (song: Song): Record<string, number> => Object.fromEntries((song.sliders ?? []).map((s) => [s.name, s.value]));
 
-export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', sliders: [] };
+export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', sliders: [], pitchRange: DEFAULT_PITCH_RANGE };
 export const BEATS_PER_BAR = 4;
 
 const harmonyCache = new Map<string, Compiled | null>();
@@ -249,13 +251,14 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
     velocityCurve.push(vel);
     if (vel < 0.01 || glide) continue;
 
-    const rootMidi = drum ? drum.gm : valueToMidi(out.pitch, track.pitchMode, song.root, song.scale, track.octave);
+    const range = song.pitchRange ?? DEFAULT_PITCH_RANGE;
+    const rootMidi = drum ? drum.gm : limitPitch(valueToMidi(out.pitch, track.pitchMode, song.root, song.scale, track.octave, false), range);
     // chords: stack scale degrees on top of the pitch
     const size = drum ? 1 : clamp(Math.round(out.chord), 1, 8);
     const scale = (SCALES[song.scale] ?? SCALES.major).steps;
     const tones =
       size > 1
-        ? chordTones(midiToDegree(rootMidi, song.root, scale, track.octave), size, out.stack, out.inversion, song.root, song.scale, track.octave)
+        ? chordTones(midiToDegree(rootMidi, song.root, scale, track.octave), size, out.stack, out.inversion, song.root, song.scale, track.octave).map((m) => limitPitch(m, range))
         : [rootMidi];
     const strum = clamp(out.strum, -0.5, 0.5);
     const tune = drum ? clamp(out.pitch, -24, 24) : 0;
@@ -295,7 +298,9 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
       curve.raw.push(out.pitch);
       curve.velocity.push(clamp(out.velocity, 0, 1));
       curve.midi.push(
-        drum ? drum.gm + clamp(out.pitch, -24, 24) : valueToPitch(out.pitch, track.pitchMode, song.root, song.scale, track.octave, !glide || track.quantize),
+        drum
+          ? drum.gm + clamp(out.pitch, -24, 24)
+          : limitPitch(valueToPitch(out.pitch, track.pitchMode, song.root, song.scale, track.octave, !glide || track.quantize, false), song.pitchRange ?? DEFAULT_PITCH_RANGE),
       );
     }
   }

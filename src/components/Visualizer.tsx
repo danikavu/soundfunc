@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { engine } from '../engine/audio';
-import { SCALES, chordName, midiToName, valueToPitch } from '../engine/music';
-import { BEATS_PER_BAR, audibleTracks, harmonyAt, isDrum, patternBeats, renderTrack, songBeats, voiceLabel, type Note, type Track } from '../engine/project';
+import { SCALES, chordName, limitPitch, midiToName, valueToPitch } from '../engine/music';
+import { BEATS_PER_BAR, audibleTracks, harmonyAt, isDrum, patternBeats, renderTrack, scaleLength, songBeats, voiceLabel, type Note, type Track } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Seg, getRender } from './ui';
+import { RangeControl } from './RangeControl';
 
 type Mode = 'score' | 'function' | 'ripple';
 
@@ -200,15 +201,31 @@ export function Visualizer() {
   }, []);
 
   // y-range of the Function plot (raw values), shared with scrubbing
+  // y-range of the Function plot (raw values). With a pitch range on, the plot
+  // stays within the values that range allows, so a stray −8373 can't flatten it.
   const fnRange = useMemo(() => {
-    if (!fnFull) return { lo: -1, hi: 1 };
+    const out = { lo: -1, hi: 1, edges: null as null | { lo: number; hi: number }, outside: 0 };
+    if (!fnFull || !selected) return out;
     let lo = Infinity, hi = -Infinity;
     for (const v of fnFull.raw) (lo = Math.min(lo, v)), (hi = Math.max(hi, v));
     if (!isFinite(lo) || !isFinite(hi)) (lo = -1), (hi = 1);
+    const range = project.song.pitchRange;
+    if (range && range.mode !== 'off' && !isDrum(selected.waveform)) {
+      // the raw values that land on the range's edges, for this track's pitch mapping
+      const base = 12 * (selected.octave + 1) + project.song.root;
+      const L = scaleLength(project.song);
+      const toRaw = (m: number) => (selected.pitchMode === 'semitone' ? m - base : selected.pitchMode === 'degree' ? ((m - base) * L) / 12 : (m - base) / 12);
+      const eLo = toRaw(range.low), eHi = toRaw(range.high);
+      out.edges = { lo: eLo, hi: eHi };
+      out.outside = fnFull.raw.filter((v, i) => fnFull.vel[i] >= 0.01 && (v < eLo - 1e-9 || v > eHi + 1e-9)).length / Math.max(1, fnFull.vel.filter((v) => v >= 0.01).length);
+      lo = Math.max(lo, eLo);
+      hi = Math.min(hi, eHi);
+      if (lo > hi) (lo = eLo), (hi = eHi);
+    }
     if (hi - lo < 1e-6) (lo -= 1), (hi += 1);
     const span = hi - lo;
-    return { lo: lo - span * 0.08, hi: hi + span * 0.08 };
-  }, [fnFull]);
+    return { ...out, lo: lo - span * 0.08, hi: hi + span * 0.08 };
+  }, [fnFull, selected, project.song]);
 
   // ⌘/Ctrl + scroll (or a trackpad pinch) zooms around the pointer; scrolling pans while zoomed
   useEffect(() => {
@@ -450,7 +467,8 @@ export function Visualizer() {
         const velH = Math.min(34, (H - padT - padB) * 0.2);
         const ch = H - padT - padB - velH - 12;
         const sx = (beat: number) => padL + ((beat - vw.start) / vw.span) * iw;
-        const sy = (v: number) => padT + (1 - (v - lo) / (hi - lo)) * ch;
+        // values beyond the plot (outside the pitch range) ride along its edge
+        const sy = (v: number) => padT + (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * ch;
         const vBase = H - padB;
 
         // axes: raw value on the left, the note it becomes on the right, x along the bottom
@@ -468,7 +486,8 @@ export function Visualizer() {
           g.textAlign = 'right';
           g.fillText(v.toFixed(1), padL - 8, y + 3);
           if (!isDrum(selected.waveform)) {
-            const m = valueToPitch(v, selected.pitchMode, project.song.root, project.song.scale, selected.octave, !glide || selected.quantize);
+            // the note you will hear at this height — after the pitch range
+            const m = limitPitch(valueToPitch(v, selected.pitchMode, project.song.root, project.song.scale, selected.octave, !glide || selected.quantize, false), project.song.pitchRange);
             const name = midiToName(Math.round(m));
             g.textAlign = 'left';
             if (name !== lastNote) g.fillText(name, W - padR + 8, y + 3);
@@ -485,6 +504,20 @@ export function Visualizer() {
           g.setLineDash([]);
         }
         timeAxis(sx, padT + ch + 3, padL, W - padR);
+        if (fnRange.edges) {
+          g.strokeStyle = P.accent;
+          g.globalAlpha = 0.35;
+          g.setLineDash([4, 4]);
+          for (const e of [fnRange.edges.lo, fnRange.edges.hi]) {
+            if (e < lo || e > hi) continue;
+            g.beginPath();
+            g.moveTo(padL, sy(e));
+            g.lineTo(W - padR, sy(e));
+            g.stroke();
+          }
+          g.setLineDash([]);
+          g.globalAlpha = 1;
+        }
         g.fillStyle = P.ink3;
         g.textAlign = 'left';
         g.fillText('y', padL - 30, padT - 14);
@@ -729,10 +762,16 @@ export function Visualizer() {
         <h2>{mode === 'score' ? 'The Garden' : mode === 'function' ? selected?.name ?? '—' : 'Ripple'}</h2>
         <span className="muted">
           {mode === 'score' && `${Number(score.total.toFixed(3))} beats · ${midiToName(score.lo + 2)}–${midiToName(score.hi - 2)}${score.drums.length ? ` · ${score.drums.length} drum lanes` : ''}`}
-          {mode === 'function' && `y = f(x) over the whole ${Number(score.total.toFixed(3))}-beat loop · drag across it to hear it`}
+          {mode === 'function' &&
+            `y = f(x) · ${Number(score.total.toFixed(3))} beats · drag to hear it${
+              fnRange.outside > 0
+                ? ` · ${Math.max(1, Math.round(fnRange.outside * 100))}% ${project.song.pitchRange.mode === 'wrap' ? 'wrapped' : 'clamped'} into ${midiToName(project.song.pitchRange.low)}–${midiToName(project.song.pitchRange.high)}`
+                : ''
+            }`}
           {mode === 'ripple' && (playing ? 'live waveform' : 'press space to listen')}
         </span>
       </div>
+      {mode !== 'ripple' && <RangeControl />}
       {mode !== 'ripple' && (
         <div className="viz-zoom">
           {view().zoomed && (
