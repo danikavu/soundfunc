@@ -7,6 +7,7 @@ import { FormulaEditor, NODE_VARS } from './FormulaEditor';
 import { explodeFormula } from '../engine/graphEdit';
 import { toast } from './TopBar';
 import { docFor } from '../engine/nodeDocs';
+import type { Slider } from '../engine/project';
 
 export const CATEGORY_COLORS: Record<Category, string> = {
   source: '#6f8a63',
@@ -54,11 +55,14 @@ function Sparkline({ values, color, gates }: { values: number[]; color: string; 
 
 const fmt = (v: number) => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2));
 
-/** Formula nodes also know the song's sliders */
+const NO_SLIDERS: Slider[] = [];
+
+/** Formula nodes also know their track's sliders */
 function NodeFormula(props: { value: string; onValue: (v: string) => void; onFocus: () => void }) {
-  const sliders = useStore((s) => s.project.song.sliders);
+  const trackId = useContext(GraphContext)?.trackId ?? '';
+  const sliders = useStore((s) => s.project.tracks.find((t) => t.id === trackId)?.sliders ?? NO_SLIDERS);
   const vars = useMemo(() => ({ ...NODE_VARS, ...Object.fromEntries(sliders.map((sl) => [sl.name, `slider, now ${sl.value}`])) }), [sliders]);
-  return <FormulaEditor {...props} vars={vars} sliders />;
+  return <FormulaEditor {...props} vars={vars} sliders={trackId || undefined} />;
 }
 
 function Param({ p, data, onChange, onFocus, doc }: { p: ParamDef; data: NodeData; onChange: (patch: NodeData) => void; onFocus: () => void; doc?: string }) {

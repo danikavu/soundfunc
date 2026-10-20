@@ -19,7 +19,7 @@ import { importMath } from './importMath';
 import { auditionGraph, blockFromSelection, collapseNodes, explodeFormula, insertBlock } from './graphEdit';
 import { BLOCKS } from './blocks';
 import { applyGrid } from './steps';
-import { cleanProject, projectKey, voiceOf, wearsVoice } from '../state/library';
+import { cleanProject, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
 
 const ev = (s: string, scope = {}) => compile(s).fn(scope);
 
@@ -299,7 +299,7 @@ describe('symbolic: the written-out function equals the graph', () => {
   const scopeFor = (track: Track, song: Project['song'], n: number, k: number) => {
     const t = n * track.stepBeats;
     const beat = k * track.steps * track.stepBeats + t;
-    return { ...Object.fromEntries((song.sliders ?? []).map((s) => [s.name, s.value])), n, x: n / track.steps, t, k, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / 4 + 1e-9), L: scaleLength(song), beat } as Record<string, number>;
+    return { ...Object.fromEntries((track.sliders ?? []).map((s) => [s.name, s.value])), n, x: n / track.steps, t, k, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / 4 + 1e-9), L: scaleLength(song), beat } as Record<string, number>;
   };
 
   it('symbolic expressions reproduce every preset and kit track', () => {
@@ -386,6 +386,41 @@ describe('library', () => {
     expect(v).toMatchObject({ name: 'Folded', waveform: 'custom', timbre: t.timbre });
     expect(wearsVoice(t, v)).toBe(true);
     expect(wearsVoice({ ...t, timbre: 'sin(tau*p)' }, v)).toBe(false);
+  });
+  it('saved functions keep every node, value and the track’s sliders', () => {
+    const song = defaultProject().song;
+    const t = trackFromPreset(PRESETS.find((x) => x.id === 'desmos')!, 0);
+    const expr = t.graph.nodes.find((n) => n.type === 'expr');
+    expect(expr).toBeTruthy();
+    expr!.data = { ...expr!.data, formula: `${expr!.data.formula} + depth/12` };
+    t.sliders = [{ name: 'depth', value: 3, min: 0, max: 8 }];
+    const fn = functionOf(t, 'Mine');
+    expect(fn.track.sliders.map((s) => s.name)).toEqual(['depth']);
+    expect(fn.track.graph.nodes).toHaveLength(t.graph.nodes.length);
+    expect(fn.track).not.toHaveProperty('id');
+
+    // through a file and back, it plays exactly the same notes
+    const [back] = readFunctionFile(JSON.stringify(functionFile([fn])));
+    const planted = trackFromTemplate(structuredClone(back.track), back.name, 0);
+    const notes = (tr: Track) => renderTrack(tr, song).pitchCurve;
+    expect(notes(t).length).toBeGreaterThan(0);
+    expect(notes(planted)).toEqual(notes(t));
+    expect(notes(planted)).not.toEqual(notes({ ...t, sliders: [{ ...t.sliders[0], value: 0 }] }));
+    // files from before tracks owned their sliders still bring them
+    const { sliders: _s, ...legacyTrack } = fn.track;
+    const [old] = readFunctionFile(JSON.stringify(functionFile([{ ...fn, track: legacyTrack as typeof fn.track, sliders: fn.track.sliders }])));
+    expect(old.track.sliders).toEqual(fn.track.sliders);
+    expect(() => readFunctionFile('{"kind":"soundfunc-project"}')).toThrow(/functions file/);
+    expect(() => readFunctionFile('not json')).toThrow(/JSON/);
+  });
+  it('importing functions numbers names that are taken', () => {
+    useLibrary.setState({ functions: [] });
+    const fn = functionOf(defaultProject().tracks[0], 'Pond');
+    useLibrary.getState().saveFunction(fn);
+    expect(useLibrary.getState().importFunctions([fn, fn])).toBe(2);
+    expect(useLibrary.getState().functions.map((f) => f.name)).toEqual(['Pond', 'Pond 2', 'Pond 3']);
+    useLibrary.getState().saveFunction({ ...fn, id: 'other' });
+    expect(useLibrary.getState().functions.filter((f) => f.name === 'Pond')).toHaveLength(1);
   });
 });
 
@@ -580,8 +615,9 @@ describe('graph editing keeps the music', () => {
   });
 
   it('Sections and sliders: the written-out function and exported code still match', () => {
-    const song = { ...defaultProject().song, harmony: 'pick(bar, 0, 3)', sliders: [{ name: 'lift', value: 2, min: 0, max: 5 }] };
+    const song = { ...defaultProject().song, harmony: 'pick(bar, 0, 3)' };
     const t = trackFromPreset(PRESETS.find((p) => p.id === 'form')!, 0);
+    t.sliders = [{ name: 'lift', value: 2, min: 0, max: 5 }];
     const formula = t.graph.nodes.find((n) => n.data.formula === 'h + round(3 * sin(tau * x * 2))')!;
     formula.data.formula = 'h + round(3 * sin(tau * x * 2)) + lift';
     const c = compose(t);
@@ -593,8 +629,36 @@ describe('graph editing keeps the music', () => {
     }
     // the bridge (4th section, beats 24–32 → loops 6 and 7) reads the slider
     const bridge = renderTrack(t, song, 6, false).pitchCurve[0];
-    const lower = renderTrack(t, { ...song, sliders: [{ ...song.sliders[0], value: 0 }] }, 6, false).pitchCurve[0];
+    const lower = renderTrack({ ...t, sliders: [{ ...t.sliders[0], value: 0 }] }, song, 6, false).pitchCurve[0];
     expect(bridge - lower).toBe(2);
+  });
+  it('each track has its own sliders: same name, different values, no crosstalk', () => {
+    const song = defaultProject().song;
+    const make = (v: number) => {
+      const t = trackFromPreset(PRESETS.find((p) => p.id === 'form')!, 0);
+      t.graph.nodes.find((n) => n.data.formula === 'h + round(3 * sin(tau * x * 2))')!.data.formula = 'h + round(3 * sin(tau * x * 2)) + lift';
+      t.sliders = [{ name: 'lift', value: v, min: -5, max: 5 }];
+      return t;
+    };
+    const a = make(0), b = make(3);
+    expect(renderTrack(b, song, 6, false).pitchCurve[0] - renderTrack(a, song, 6, false).pitchCurve[0]).toBe(3);
+    // the garden's code keeps each track's slider inside its own function
+    const code = trackCode([compose({ ...a, name: 'low' }), compose({ ...b, name: 'high' })], song, 'js').replace(/^export /gm, '');
+    const fns = new Function(`${code}\nreturn [low, high];`)() as ((n: number, k: number) => Record<string, number>)[];
+    expect(fns[1](0, 6).pitch - fns[0](0, 6).pitch).toBe(3);
+  });
+  it('old gardens: song sliders move to the tracks that read them; the harmony keeps their values', () => {
+    const p = defaultProject();
+    const t = trackFromPreset(PRESETS.find((x) => x.id === 'form')!, 0);
+    t.graph.nodes.find((n) => n.data.formula === 'h + round(3 * sin(tau * x * 2))')!.data.formula = 'h + round(3 * sin(tau * x * 2)) + lift';
+    const { sliders: _a, ...plain } = t;
+    const { sliders: _b, ...other } = p.tracks[0];
+    const legacy = { ...p, song: { ...p.song, harmony: 'pick(bar, 0, root2)', sliders: [{ name: 'lift', value: 2, min: 0, max: 5 }, { name: 'root2', value: -3, min: -5, max: 5 }] }, tracks: [plain, other] } as unknown as Project;
+    const n = normalizeProject(legacy);
+    expect(n.tracks[0].sliders.map((s) => s.name)).toEqual(['lift']);
+    expect(n.tracks[1].sliders).toEqual([]);
+    expect(n.song).not.toHaveProperty('sliders');
+    expect(n.song.harmony).toBe('pick(bar, 0, (-3))');
   });
 });
 

@@ -257,3 +257,25 @@ export function NumberField({ value, onValue, min, max, integer, onFocus, onBlur
     />
   );
 }
+
+/** A number in a box with up/down arrows beside it — the value stays typeable, and ↑/↓ keys work too. */
+export function Stepper({ value, min, max, onValue, label, title }: { value: number; min: number; max: number; onValue: (v: number) => void; label: string; title?: string }) {
+  const nudge = (d: number) => onValue(Math.min(max, Math.max(min, value + d)));
+  return (
+    <div className="stepper" title={title}>
+      <NumberField className="input num stepper-input" integer min={min} max={max} value={value} onValue={onValue} aria-label={label} />
+      <span className="stepper-arrows">
+        <button type="button" tabIndex={-1} aria-label={`${label} up`} disabled={value >= max} onClick={() => nudge(1)}>
+          <svg width="8" height="5" viewBox="0 0 8 5" aria-hidden>
+            <path d="M1 4l3-3 3 3" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button type="button" tabIndex={-1} aria-label={`${label} down`} disabled={value <= min} onClick={() => nudge(-1)}>
+          <svg width="8" height="5" viewBox="0 0 8 5" aria-hidden>
+            <path d="M1 1l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </span>
+    </div>
+  );
+}

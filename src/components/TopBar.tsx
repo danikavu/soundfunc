@@ -8,9 +8,9 @@ import { GardenMenu } from './GardenMenu';
 import { StepPicker } from './StepPicker';
 import { FIXED_LENGTHS, MAX_STEPS, shortBeats, stepLabel } from '../engine/steps';
 import { Dropdown } from './Dropdown';
-import { isDrum } from '../engine/project';
+import { HARMONY_VARS, isDrum } from '../engine/project';
 import { useSelectedTrack } from '../state/store';
-import { Icon, NumberField, TextField, download, fileSafe, isProject } from './ui';
+import { Icon, NumberField, Stepper, TextField, download, fileSafe, isProject } from './ui';
 
 export function toast(msg: string) {
   window.dispatchEvent(new CustomEvent('sf-toast', { detail: msg }));
@@ -226,10 +226,10 @@ function GridField() {
       {isDrum(track.waveform) ? (
         <Placeholder label="Octave" width="w-octave" title="Drums have no octave — their pitch input tunes the hit" />
       ) : (
-        <label className="field-inline w-octave" title="Octave — where pitch 0 sits: 4 is middle C’s octave, −1 the lowest MIDI octave (−4…9; notes beyond MIDI’s range stay at its edge)">
+        <div className="field-inline w-octave" title="Octave — where pitch 0 sits: 4 is middle C’s octave, −1 the lowest MIDI octave (−4…9; notes beyond MIDI’s range stay at its edge)">
           <span>Octave</span>
-          <NumberField className="input num grid-oct" integer min={-4} max={9} value={track.octave} onValue={(octave) => updateTrack(track.id, { octave })} />
-        </label>
+          <Stepper label="Octave" min={-4} max={9} value={track.octave} onValue={(octave) => updateTrack(track.id, { octave })} />
+        </div>
       )}
     </>
   );
@@ -298,7 +298,7 @@ export function TopBar() {
               spellCheck={false}
               onFocus={checkpoint}
               onValue={(harmony) => setSong({ harmony }, false)}
-              style={tryCompile(song.harmony, ['bar', 'k', 'L', ...song.sliders.map((x) => x.name)]).error ? { borderBottomColor: 'var(--accent)' } : undefined}
+              style={tryCompile(song.harmony, HARMONY_VARS).error ? { borderBottomColor: 'var(--accent)' } : undefined}
               title="The chord (scale degree) as a function of bar. Tracks read it as h."
             />
             <button

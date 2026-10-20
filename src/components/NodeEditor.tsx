@@ -423,10 +423,10 @@ export function NodeEditor() {
         </button>
         <button
           className="btn"
-          title="Add a slider — a named constant every formula can use (or Alt+S on a number in a formula)"
+          title="Add a slider to this track — a named constant its formulas can use (or Alt+S on a number in a formula)"
           onClick={() => {
-            const name = useStore.getState().addSlider(0.5);
-            toast(`Added slider “${name}” — type its name in any formula`);
+            const name = useStore.getState().addSlider(track.id, 0.5);
+            toast(`Added slider “${name}” to ${track.name} — type its name in any of its formulas`);
           }}
         >
           <Icon name="sliders" size={14} /> Slider
@@ -434,7 +434,7 @@ export function NodeEditor() {
         <Mutator />
         <SelectionTools />
       </div>
-      <SlidersBar />
+      <SlidersBar track={track} />
       <div className="nodes-canvas">
         <GraphContext.Provider value={{ trackId: track.id, traces: render.traces, errors: render.errors }}>
           <ReactFlow

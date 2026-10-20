@@ -2741,3 +2741,88 @@ button:focus-visible {
 .import-param .input.num {
   width: 64px;
 }
+
+/* ---------- my functions ---------- */
+.mine-head {
+  font: 500 9.5px/1 var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 10px 0 4px;
+}
+.mine-row {
+  position: relative;
+}
+.mine-actions {
+  position: absolute;
+  top: 4px;
+  right: -4px;
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+}
+.mine-row:hover .mine-actions {
+  opacity: 1;
+}
+.mine-actions .icon-btn {
+  width: 22px;
+  height: 22px;
+}
+.track-tools .btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---------- stepper: a number with arrows ---------- */
+.stepper {
+  display: flex;
+  align-items: stretch;
+  height: var(--ctl-h);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--card);
+  overflow: hidden;
+  transition: border-color 0.25s var(--ease);
+}
+.stepper:hover,
+.stepper:focus-within {
+  border-color: var(--line);
+}
+.topbar .stepper .input.num.stepper-input {
+  border: none;
+  height: 100%;
+  width: 30px;
+  padding: 0 0 0 8px;
+  background: transparent;
+}
+.stepper-arrows {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line-soft);
+}
+.stepper-arrows button {
+  flex: 1;
+  width: 18px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.2s, color 0.2s;
+}
+.stepper-arrows button:hover:not(:disabled) {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.stepper-arrows button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.stepper-arrows button + button {
+  border-top: 1px solid var(--line-soft);
+}
+.topbar .field-inline.w-octave {
+  width: 52px;
+}

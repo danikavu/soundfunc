@@ -1,5 +1,5 @@
 import { compileGraph, type Graph } from './graph';
-import { tryCompile, type Compiled } from './expr';
+import { parse, renameVariable, tryCompile, type Compiled } from './expr';
 import { FIXED_LENGTHS, fixedLengthFor, type LengthMode } from './steps';
 import { chordTones, DEFAULT_PITCH_RANGE, limitPitch, midiToDegree, midiToFreq, midiToName, NOTE_NAMES, SCALES, valueToMidi, valueToPitch, type PitchMode, type PitchRange } from './music';
 
@@ -69,6 +69,8 @@ export interface Track {
   glide: number;
   muted: boolean;
   solo: boolean;
+  /** named constants this track's formulas read, Desmos-style — each track has its own */
+  sliders: Slider[];
 }
 
 export const TRACK_DEFAULTS: Omit<Track, 'id' | 'name' | 'color' | 'graph'> = {
@@ -78,6 +80,7 @@ export const TRACK_DEFAULTS: Omit<Track, 'id' | 'name' | 'color' | 'graph'> = {
   pitchMode: 'degree',
   waveform: 'sine',
   timbre: 'sin(tau*p) + 0.5*sin(2*tau*p) + 0.25*sin(3*tau*p)',
+  sliders: [],
   volume: 0.8,
   pan: 0,
   attack: 0.01,
@@ -102,8 +105,6 @@ export interface Song {
   harmony: string;
   /** keep the progression when mutating the whole garden */
   harmonyLocked?: boolean;
-  /** named constants every formula can read, Desmos-style */
-  sliders: Slider[];
   /** where pitches may go: wrap by octaves (default), clamp, or off */
   pitchRange: PitchRange;
   /**
@@ -124,27 +125,29 @@ export interface Slider {
   max: number;
 }
 
-export const sliderNames = (song: Song) => (song.sliders ?? []).map((s) => s.name);
-export const sliderValues = (song: Song): Record<string, number> => Object.fromEntries((song.sliders ?? []).map((s) => [s.name, s.value]));
+export const sliderNames = (track: Track) => (track.sliders ?? []).map((s) => s.name);
+export const sliderValues = (track: Track): Record<string, number> => Object.fromEntries((track.sliders ?? []).map((s) => [s.name, s.value]));
 
-export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', sliders: [], pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16 };
+export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16 };
 export const BEATS_PER_BAR = 4;
 
 const harmonyCache = new Map<string, Compiled | null>();
-function harmonyFn(src: string, sliders: readonly string[]): Compiled | null {
-  const key = `${src}|${sliders.join(',')}`;
-  if (!harmonyCache.has(key)) {
+function harmonyFn(src: string): Compiled | null {
+  if (!harmonyCache.has(src)) {
     if (harmonyCache.size > 64) harmonyCache.clear();
-    harmonyCache.set(key, tryCompile(src, ['bar', 'k', 'L', ...sliders]).fn);
+    harmonyCache.set(src, tryCompile(src, HARMONY_VARS).fn);
   }
-  return harmonyCache.get(key)!;
+  return harmonyCache.get(src)!;
 }
+
+/** what the harmony formula can read — it belongs to the song, so no track's sliders */
+export const HARMONY_VARS = ['bar', 'k', 'L'] as const;
 
 /** The chord (scale degree) sounding at an absolute beat of the song. */
 export function harmonyAt(song: Song, beat: number): number {
-  const fn = harmonyFn(song.harmony ?? '0', sliderNames(song));
+  const fn = harmonyFn(song.harmony ?? '0');
   if (!fn) return 0;
-  const v = fn({ ...sliderValues(song), bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), k: 0, L: scaleLength(song) });
+  const v = fn({ bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), k: 0, L: scaleLength(song) });
   return Number.isFinite(v) ? Math.round(v) : 0;
 }
 
@@ -158,7 +161,8 @@ export interface Project {
 
 /** Fill in fields added since a project was saved. */
 export function normalizeProject(p: Project): Project {
-  const song = { ...SONG_DEFAULTS, ...(p.song as Partial<Song>) };
+  const { sliders: legacySliders, ...songIn } = (p.song ?? {}) as Partial<Song> & { sliders?: Slider[] };
+  const song: Song = { ...SONG_DEFAULTS, ...songIn };
   // projects from before the song's length ruled every track: fixed when all tracks
   // already share one of the fixed lengths, otherwise free — so nothing gets cut
   const lengths = p.tracks.map((t) => (t.steps ?? 16) * (t.stepBeats ?? 0.25));
@@ -167,15 +171,37 @@ export function normalizeProject(p: Project): Project {
     song.lengthMode = same ? 'fixed' : 'free';
     song.lengthBeats = same ? lengths[0] : fixedLengthFor(Math.max(1, ...lengths));
   }
+  // the harmony could read the song's sliders; it keeps their values, written in
+  if (legacySliders?.length) for (const sl of legacySliders) song.harmony = renameVariable(song.harmony, sl.name, sl.value < 0 ? `(${sl.value})` : String(sl.value));
   return {
     name: p.name ?? 'Untitled',
     song,
     tracks: p.tracks.map((t) => {
       // tracks used to carry their own loop length; the song's length rules now
       const { lengthMode: _m, lengthBeats: _l, ...rest } = t as Track & { lengthMode?: unknown; lengthBeats?: unknown };
-      return { ...TRACK_DEFAULTS, ...rest };
+      const track = { ...TRACK_DEFAULTS, ...rest };
+      // sliders used to belong to the whole song; each track now keeps the ones its formulas read
+      if (legacySliders?.length && !t.sliders) {
+        const used = formulaNames(track.graph);
+        track.sliders = legacySliders.filter((sl) => used.has(sl.name)).map((sl) => ({ ...sl }));
+      }
+      return track;
     }),
   };
+}
+
+/** every name the track's formulas read */
+export function formulaNames(graph: Graph): Set<string> {
+  const used = new Set<string>();
+  for (const n of graph.nodes) {
+    if (n.type !== 'expr') continue;
+    try {
+      for (const v of parse(String(n.data.formula ?? '')).variables) used.add(v);
+    } catch {
+      /* an unfinished formula reads nothing */
+    }
+  }
+  return used;
 }
 
 /** A generated note — everything needed for playback, visuals and export. */
@@ -232,8 +258,8 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 export const curveRes = (track: Track) => (track.playMode === 'glide' ? 16 : Math.max(1, Math.min(16, Math.floor(1024 / track.steps))));
 
 export function renderTrack(track: Track, song: Song, loop = 0, withTraces = true): TrackRender {
-  const program = compileGraph(track.graph, sliderNames(song));
-  const vars = sliderValues(song);
+  const program = compileGraph(track.graph, sliderNames(track));
+  const vars = sliderValues(track);
   const traces = withTraces ? new Map<string, number[]>() : undefined;
   const notes: Note[] = [];
   const pitchCurve: number[] = [];

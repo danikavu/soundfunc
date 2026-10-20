@@ -771,7 +771,7 @@ export function trackTex(c: Composed, song: Song): { label: string; tex: string 
   if (vars.has('L')) defs.push(`L = ${scaleLength(song)}`);
   if (vars.has('h') || vars.has('bar')) defs.push(`\\mathrm{bar} = ${toTex(barAst(track))}`);
   if (vars.has('beat')) defs.push(`\\mathit{beat} = ${toTex(beatAst(track))}`);
-  for (const sl of song.sliders ?? []) if (vars.has(sl.name)) defs.push(`${texName(sl.name)} = ${fmtNum(sl.value)}\\ \\text{(slider)}`);
+  for (const sl of track.sliders ?? []) if (vars.has(sl.name)) defs.push(`${texName(sl.name)} = ${fmtNum(sl.value)}\\ \\text{(slider)}`);
   if (vars.has('h')) defs.push(`h = ${toTex(harmonyAst(song))}`);
   if (defs.length) lines.push({ label: 'clock, harmony & sliders', tex: defs.join(',\\quad ') });
   lines.push({ label: 'n runs over', tex: `n \\in \\{0, 1, \\dots, ${track.steps - 1}\\},\\quad k = \\text{loop count}` });
@@ -821,11 +821,6 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
           `SONG = {"bpm": ${song.bpm}, "root": ${song.root}, "scale": [${scale.steps.join(', ')}]}  # root ${NOTE_NAMES[song.root]}`,
           'PHI = (1 + math.sqrt(5)) / 2',
         ];
-  const sliders = (song.sliders ?? []).filter((sl) => cs.some((c) => c.math.vars.has(sl.name) || c.math.bindings.some((b) => varsOf(b.ast).has(sl.name))) || (anyHarmony && varsOf(harmony).has(sl.name)));
-  if (sliders.length) {
-    const cm = lang === 'js' ? '//' : '#';
-    body.push(`\n${lang === 'js' ? '\n' : ''}${cm} sliders — change these to change the music\n${sliders.map((sl) => `${lang === 'js' ? 'export const ' : ''}${sl.name} = ${fmtNum(sl.value)}${lang === 'js' ? ';' : ''}  ${cm} ${fmtNum(sl.min)} … ${fmtNum(sl.max)}`).join('\n')}`);
-  }
   if (anyHarmony) {
     body.push(
       lang === 'js'
@@ -857,6 +852,9 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
     }
     if (vars.has('h')) clock.push(`${pre}h = harmony(bar)${end}`);
     if (vars.has('L')) clock.push(`${pre}L = ${L}${end}  ${lang === 'js' ? '//' : '#'} scale degrees per octave`);
+    // this track's sliders — change these to change the music
+    const sliders = (track.sliders ?? []).filter((sl) => vars.has(sl.name)).map((sl) => `${pre}${sl.name} = ${fmtNum(sl.value)}${end}  ${lang === 'js' ? '//' : '#'} slider ${fmtNum(sl.min)} … ${fmtNum(sl.max)}`);
+    clock.unshift(...sliders);
     const binds = math.bindings.map((b) => `${pre}${b.name} = ${toCode(b.ast, lang)}${end}  ${lang === 'js' ? '//' : '#'} ${b.label}`);
     const mode = `${describeTrack(track, song)} · ${track.steps} steps of ${track.stepBeats} beats`;
     if (lang === 'js') {

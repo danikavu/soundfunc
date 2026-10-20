@@ -3,7 +3,7 @@ import { compileAst, type Ast } from '../engine/expr';
 import { importMath, ImportError, type Imported } from '../engine/importMath';
 import { TRACK_COLORS, layoutGraph, uid } from '../engine/presets';
 import { simplify, substitute, toSource, toTex } from '../engine/symbolic';
-import { TRACK_DEFAULTS, type Track, type Waveform } from '../engine/project';
+import { TRACK_DEFAULTS, type Slider, type Track, type Waveform } from '../engine/project';
 import { useStore } from '../state/store';
 import { toast } from './TopBar';
 import { Icon, NumberField, Seg, TextField } from './ui';
@@ -121,22 +121,17 @@ export function ImportSheet() {
       nodes: Object.entries(nodes).map(([id, [type, data]]) => ({ id, type, position: { x: 0, y: 0 }, data })),
       edges: edges.map(([source, sourceHandle, target, targetHandle]) => ({ id: `${source}.${sourceHandle}-${target}.${targetHandle}`, source, sourceHandle, target, targetHandle })),
     });
-    const { project, plantTrack, addSlider, updateSlider } = useStore.getState();
-    // the function's parameters become song sliders (an existing slider of the same name is reused)
-    const made: string[] = [];
-    for (const prm of params) {
-      if (project.song.sliders.some((x) => x.name === prm.name)) continue;
-      const got = addSlider(prm.value, prm.name);
-      const v = prm.value;
-      updateSlider(got, v > 0 ? { min: 0, max: v * 2 } : v < 0 ? { min: v * 2, max: 0 } : { min: -1, max: 1 });
-      made.push(got);
-    }
+    const { project, plantTrack } = useStore.getState();
+    // the function's parameters become the new track's own sliders
+    const sliders: Slider[] = params.map(({ name: n, value: v }) => ({ name: n, value: v, ...(v > 0 ? { min: 0, max: v * 2 } : v < 0 ? { min: v * 2, max: 0 } : { min: -1, max: 1 }) }));
+    const made = sliders.map((sl) => sl.name);
     const track: Track = {
       ...TRACK_DEFAULTS,
       id: uid('track'),
       name: name.trim() || 'Imported f(x)',
       color: TRACK_COLORS[project.tracks.length % TRACK_COLORS.length],
       graph,
+      sliders,
       steps,
       stepBeats,
       octave: 4,
@@ -239,7 +234,6 @@ export function ImportSheet() {
                         <label key={prm.name} className="import-param">
                           <code>{prm.name}</code>
                           <NumberField className="input num" value={prm.value} onValue={(v) => setParamEdits((e) => ({ ...e, [prm.name]: v }))} aria-label={`${prm.name} starts at`} />
-                          {useStore.getState().project.song.sliders.some((x) => x.name === prm.name) && <small className="muted">uses the existing slider</small>}
                         </label>
                       ))}
                     </div>

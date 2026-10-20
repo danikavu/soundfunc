@@ -881,6 +881,7 @@ export function trackFromTemplate(template: Template, name: string, index: numbe
     color: TRACK_COLORS[index % TRACK_COLORS.length],
     ...template,
     graph: structuredClone(template.graph),
+    sliders: structuredClone(template.sliders ?? []),
     id: uid('track'),
   };
 }
@@ -896,7 +897,7 @@ export function defaultProject(): Project {
   tracks[1].pan = 0.3;
   return {
     name: 'Zen Garden',
-    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', sliders: [], pitchRange: { ...DEFAULT_PITCH_RANGE }, lengthMode: 'fixed', lengthBeats: 8 },
+    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', pitchRange: { ...DEFAULT_PITCH_RANGE }, lengthMode: 'fixed', lengthBeats: 8 },
     tracks,
   };
 }
