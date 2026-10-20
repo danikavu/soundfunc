@@ -5,7 +5,7 @@ import type { EditResult } from '../engine/graphEdit';
 import { applyGrid, fixedLengthFor, gridOf, type Grid } from '../engine/steps';
 import { defaultProject, KITS, PRESETS, trackFromPreset, trackFromTemplate, uid } from '../engine/presets';
 import { mutateHarmony, mutateTrack } from '../engine/mutate';
-import { harmonyCycleBars, normalizeProject, type Project, type Slider, type Song, type Track } from '../engine/project';
+import { harmonyCycleBars, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
 import { CONSTANTS, FUNCTIONS, renameVariable } from '../engine/expr';
 import { ctxVars } from '../engine/graph';
 
@@ -57,12 +57,10 @@ interface State {
   removeTrack: (id: string) => void;
   /** give every track the same step length (one undo step) */
   setStepBeatsAll: (stepBeats: number) => void;
-  /** change a track's grid — steps, step length, fixed/free length — keeping a fixed loop exact */
+  /** change a track's steps or step length — with a fixed song length, the track still fills it exactly */
   setGrid: (trackId: string, patch: Partial<Grid>) => void;
-  /** the song's length; every track set to follow it is re-gridded */
-  setSongLength: (lengthBeats: number) => void;
-  /** the same loop length (or free) for every track */
-  setLengthAll: (patch: Pick<Grid, 'lengthMode'> & Partial<Pick<Grid, 'lengthBeats'>>) => void;
+  /** the song's length (every track fills it) or 'free' (each track loops on its own) */
+  setSongLength: (length: number | 'free') => void;
   /** remove every track at once (one undo step) */
   clearTracks: () => void;
   setGraph: (trackId: string, nodes: GNode[], edges: GEdge[], record?: boolean) => void;
@@ -115,7 +113,7 @@ export const useStore = create<State>()(
         addTrack: (presetId) => {
           const preset = PRESETS.find((p) => p.id === presetId) ?? PRESETS[0];
           const made = trackFromPreset(preset, get().project.tracks.length);
-          const track = made.lengthMode === 'song' ? { ...made, ...applyGrid(gridOf(made), {}, get().project.song.lengthBeats) } : made;
+          const track = fitToSong(made, get().project.song);
           commit((p) => ({ ...p, tracks: [...p.tracks, track] }));
           set({ selectedTrackId: track.id });
         },
@@ -124,20 +122,30 @@ export const useStore = create<State>()(
           if (!kit) return;
           const start = layer ? get().project.tracks.length : 0;
           const tracks = kit.tracks.map((t, i) => trackFromTemplate(t, t.name, start + i));
-          const kitSong = { ...get().project.song, ...kit.song };
-          const cycle = harmonyCycleBars(kitSong);
-          const needs = Math.max(...tracks.map((t) => t.steps * t.stepBeats), cycle < 16 ? cycle * 4 : 0);
+          const cur = get().project.song;
+          // replacing the garden: tracks that share a length make a fixed song, long enough for
+          // the progression too; tracks of different lengths (polyrhythms) make a free song
+          let song: Song = { ...cur, ...kit.song };
+          if (!layer) {
+            const lengths = tracks.map((t) => t.steps * t.stepBeats);
+            const same = lengths.every((l) => Math.abs(l - lengths[0]) < 1e-9);
+            const cycle = harmonyCycleBars(song);
+            song = same
+              ? { ...song, lengthMode: 'fixed', lengthBeats: fixedLengthFor(Math.max(lengths[0], cycle < 16 ? cycle * 4 : 0)) }
+              : { ...song, lengthMode: 'free', lengthBeats: fixedLengthFor(Math.max(...lengths)) };
+          } else song = { ...song, lengthMode: cur.lengthMode, lengthBeats: cur.lengthBeats };
+          const fitted = tracks.map((t) => fitToSong(t, song));
           commit((p) => ({
             ...p,
             name: layer ? p.name : kit.name,
-            song: { ...p.song, ...kit.song, lengthBeats: layer ? Math.max(p.song.lengthBeats, fixedLengthFor(needs)) : fixedLengthFor(needs) },
-            tracks: layer ? [...p.tracks, ...tracks] : tracks,
+            song,
+            tracks: layer ? [...p.tracks, ...fitted] : fitted,
           }));
           if (!layer) set({ currentProjectId: null });
           set({ selectedTrackId: tracks[0]?.id ?? null });
         },
         plantTrack: (track) => {
-          commit((p) => ({ ...p, tracks: [...p.tracks, track.lengthMode === 'song' ? { ...track, ...applyGrid(gridOf(track), {}, p.song.lengthBeats) } : track] }));
+          commit((p) => ({ ...p, tracks: [...p.tracks, fitToSong(track, p.song)] }));
           set({ selectedTrackId: track.id });
         },
         applyGraphEdit: (trackId, edit) => {
@@ -183,7 +191,10 @@ export const useStore = create<State>()(
           if (!kit || !trackIndexes.length) return;
           const start = get().project.tracks.length;
           const tracks = trackIndexes.map((i, j) => trackFromTemplate(kit.tracks[i], kit.tracks[i].name, start + j));
-          commit((p) => ({ ...p, song: adoptSong ? { ...p.song, ...kit.song } : p.song, tracks: [...p.tracks, ...tracks] }));
+          commit((p) => {
+            const song = adoptSong ? { ...p.song, ...kit.song } : p.song;
+            return { ...p, song, tracks: [...p.tracks, ...tracks.map((t) => fitToSong(t, song))] };
+          });
           set({ selectedTrackId: tracks[0].id });
         },
         duplicateTrack: (id) => {
@@ -199,16 +210,15 @@ export const useStore = create<State>()(
           set({ selectedTrackId: copy.id });
         },
         setStepBeatsAll: (stepBeats) =>
-          commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, ...applyGrid(gridOf(t), { stepBeats }, p.song.lengthBeats) })) })),
-        setGrid: (trackId, patch) => commit((p) => mapTrack(trackId, (t) => ({ ...t, ...applyGrid(gridOf(t), patch, p.song.lengthBeats) }))(p)),
-        setLengthAll: (patch) =>
-          commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, ...applyGrid(gridOf(t), patch, p.song.lengthBeats) })) })),
-        setSongLength: (lengthBeats) =>
-          commit((p) => ({
-            ...p,
-            song: { ...p.song, lengthBeats },
-            tracks: p.tracks.map((t) => (t.lengthMode === 'song' ? { ...t, ...applyGrid(gridOf(t), {}, lengthBeats) } : t)),
-          })),
+          commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, ...applyGrid(gridOf(t), { stepBeats }, songGridLength(p.song)) })) })),
+        setGrid: (trackId, patch) => commit((p) => mapTrack(trackId, (t) => ({ ...t, ...applyGrid(gridOf(t), patch, songGridLength(p.song)) }))(p)),
+        setSongLength: (length) =>
+          commit((p) => {
+            // free: every track keeps the loop it has; fixed: every track fills the new length
+            if (length === 'free') return { ...p, song: { ...p.song, lengthMode: 'free' } };
+            const song: Song = { ...p.song, lengthMode: 'fixed', lengthBeats: length };
+            return { ...p, song, tracks: p.tracks.map((t) => fitToSong(t, song)) };
+          }),
         clearTracks: () => {
           commit((p) => ({ ...p, tracks: [] }));
           set({ selectedTrackId: null, audition: null });
@@ -300,6 +310,12 @@ export const useStore = create<State>()(
     },
   ),
 );
+
+/** with a fixed song length, a track is re-gridded to fill it exactly; a free song leaves it as it is */
+function fitToSong(t: Track, song: Song): Track {
+  const L = songGridLength(song);
+  return L === null ? t : { ...t, ...applyGrid(gridOf(t), {}, L) };
+}
 
 const RESERVED = new Set<string>([...ctxVars, 'a', 'b', 'c', 'p', ...Object.keys(CONSTANTS), ...Object.keys(FUNCTIONS)]);
 export const validSliderName = (n: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(n) && !RESERVED.has(n);

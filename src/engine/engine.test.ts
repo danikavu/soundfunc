@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { compile, compileAst, parse } from './expr';
 import { compose, toSource, toTex, trackCode } from './symbolic';
-import { compileGraph, euclid } from './graph';
+import { compileGraph, euclid, NODE_DEFS } from './graph';
+import { docFor } from './nodeDocs';
 import { exportMidi, collectNotes } from './midi';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
 import { KITS, PRESETS, defaultProject, trackFromPreset, trackFromTemplate } from './presets';
@@ -677,38 +678,27 @@ OTHERWISE:
   });
 });
 
-describe('loop length: fixed or free', () => {
-  const fixed = (lengthBeats: number, stepBeats = 0.25) => applyGrid({ steps: 16, stepBeats: 0.25, lengthMode: 'fixed', lengthBeats }, { stepBeats });
-  it('divides a fixed length into whole steps', () => {
-    expect(fixed(8, 0.25)).toMatchObject({ steps: 32, stepBeats: 0.25 });
-    expect(fixed(4, 1 / 3)).toMatchObject({ steps: 12 });
-    expect(fixed(16, 0.2)).toMatchObject({ steps: 80 });
+describe('the song length rules every track', () => {
+  const fit = (L: number, stepBeats: number) => applyGrid({ steps: 16, stepBeats: 0.25 }, { stepBeats }, L);
+  it('divides the song length into whole steps', () => {
+    expect(fit(8, 0.25)).toMatchObject({ steps: 32, stepBeats: 0.25 });
+    expect(fit(4, 1 / 3)).toMatchObject({ steps: 12 });
+    expect(fit(16, 0.2)).toMatchObject({ steps: 80 });
   });
-  it('nudges an irrational step so the loop still lands on the beat', () => {
-    const g = fixed(4, (Math.sqrt(5) - 1) / 4); // φ⁻¹/2 ≈ 0.309 beat
+  it('nudges an irrational step so the track still lands on the beat', () => {
+    const g = fit(4, (Math.sqrt(5) - 1) / 4); // φ⁻¹/2 ≈ 0.309 beat
     expect(g.steps).toBe(13);
     expect(g.steps * g.stepBeats).toBeCloseTo(4, 12);
   });
   it('a typed step count divides the length evenly', () => {
-    const g = applyGrid({ steps: 16, stepBeats: 0.25, lengthMode: 'fixed', lengthBeats: 4 }, { steps: 12 });
-    expect(g.stepBeats).toBeCloseTo(1 / 3, 12);
+    expect(applyGrid({ steps: 16, stepBeats: 0.25 }, { steps: 12 }, 4).stepBeats).toBeCloseTo(1 / 3, 12);
   });
-  it('switching to fixed snaps the loop; free leaves it alone', () => {
-    const free = { steps: 21, stepBeats: 0.375, lengthMode: 'free' as const, lengthBeats: 8 };
-    expect(applyGrid(free, { stepBeats: (Math.sqrt(5) - 1) / 2 }).steps).toBe(21); // 12.98 beats, as asked
-    const g = applyGrid(free, { lengthMode: 'fixed' });
-    expect(g.steps * g.stepBeats).toBeCloseTo(8, 12);
+  it('a free song leaves steps × step length as they are', () => {
+    expect(applyGrid({ steps: 21, stepBeats: 0.375 }, { stepBeats: (Math.sqrt(5) - 1) / 2 }, null).steps).toBe(21);
   });
   it('fits 64 beats of 1/64 notes, and caps at 1024 steps', () => {
-    expect(fixed(64, 1 / 16)).toMatchObject({ steps: 1024, stepBeats: 1 / 16 });
-    expect(fixed(64, 1 / 32).steps).toBe(1024);
-  });
-  it('older projects open as free, with the nearest fixed length remembered', () => {
-    const p = defaultProject();
-    const old = { ...p, tracks: p.tracks.map(({ lengthMode, lengthBeats, ...t }) => t as Track) };
-    const n = normalizeProject(old);
-    expect(n.tracks.every((t) => t.lengthMode === 'free')).toBe(true);
-    expect(n.tracks[0].lengthBeats).toBe(8);
+    expect(fit(64, 1 / 16)).toMatchObject({ steps: 1024, stepBeats: 1 / 16 });
+    expect(fit(64, 1 / 32).steps).toBe(1024);
   });
 });
 
@@ -778,28 +768,37 @@ describe('pitch range', () => {
 });
 
 describe('song length', () => {
-  it('sets the song loop — a progression that never repeats no longer stretches it to 64', () => {
+  it('sets the song loop — a progression that never repeats can’t stretch it', () => {
     const p = defaultProject();
-    expect(p.song.lengthBeats).toBe(8);
+    expect(p.song).toMatchObject({ lengthMode: 'fixed', lengthBeats: 8 });
     expect(songBeats(p.tracks, p.song)).toBe(8);
-    const golden = { ...p.song, harmony: 'floor(7 * fract(bar * phi))' };
-    expect(songBeats(p.tracks, golden)).toBe(8);
-    expect(songBeats(p.tracks, { ...golden, lengthBeats: 32 })).toBe(32);
+    expect(songBeats(p.tracks, { ...p.song, harmony: 'floor(7 * fract(bar * phi))' })).toBe(8);
   });
-  it('a longer track still plays in full', () => {
+  it('a free song is as long as its longest track', () => {
     const p = defaultProject();
     const long = { ...p.tracks[0], steps: 64, stepBeats: 0.5 }; // 32 beats
-    expect(songBeats([long], { ...p.song, lengthBeats: 8 })).toBe(32);
+    expect(songBeats([long, p.tracks[1]], { ...p.song, lengthMode: 'free' })).toBe(32);
+    expect(songBeats([long, p.tracks[1]], p.song)).toBe(8); // fixed: the song's length rules
   });
-  it('tracks set to “Song” take the song’s length; fixed and free ones keep theirs', () => {
-    const g = { steps: 16, stepBeats: 0.25, lengthMode: 'song' as const, lengthBeats: 4 };
-    expect(applyGrid(g, {}, 16)).toMatchObject({ lengthBeats: 16, steps: 64 });
-    expect(applyGrid({ ...g, lengthMode: 'fixed' }, {}, 16)).toMatchObject({ lengthBeats: 4, steps: 16 });
-    expect(applyGrid({ ...g, lengthMode: 'free', steps: 21 }, {}, 16)).toMatchObject({ steps: 21 });
-  });
-  it('older projects get the length their tracks already had', () => {
+  it('older projects open fixed only when their tracks already agree', () => {
     const p = defaultProject();
-    const { lengthBeats, ...old } = p.song;
-    expect(normalizeProject({ ...p, song: old as Project['song'] }).song.lengthBeats).toBe(8);
+    const { lengthMode, lengthBeats, ...old } = p.song;
+    expect(normalizeProject({ ...p, song: old as Project['song'] }).song).toMatchObject({ lengthMode: 'fixed', lengthBeats: 8 });
+    const mixed = { ...p, song: old as Project['song'], tracks: [p.tracks[0], { ...p.tracks[1], steps: 12 }] };
+    expect(normalizeProject(mixed).song.lengthMode).toBe('free');
+    // and tracks no longer carry a loop of their own
+    const withLoop = { ...p, tracks: [{ ...p.tracks[0], lengthMode: 'fixed', lengthBeats: 32 } as unknown as Track] };
+    expect('lengthMode' in normalizeProject(withLoop).tracks[0]).toBe(false);
+  });
+});
+
+describe('node help', () => {
+  it('every port and setting of every node explains itself', () => {
+    const missing: string[] = [];
+    for (const def of Object.values(NODE_DEFS)) {
+      for (const p of [...def.inputs, ...def.outputs]) if (!docFor(def.type, p.id)) missing.push(`${def.type}.${p.id}`);
+      for (const p of def.params) if (!docFor(def.type, p.key)) missing.push(`${def.type}.${p.key}`);
+    }
+    expect(missing).toEqual([]);
   });
 });

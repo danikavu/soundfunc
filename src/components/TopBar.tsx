@@ -102,34 +102,53 @@ function FileMenu() {
   );
 }
 
-/** The song's length: what the Score shows and MIDI exports, and what “Song” tracks follow. */
+/** The song's length: every track fills it — or free, where each track loops on its own. */
 function SongLengthField() {
-  const lengthBeats = useStore((s) => s.project.song.lengthBeats);
+  const song = useStore((s) => s.project.song);
   const setSongLength = useStore((s) => s.setSongLength);
-  const following = useStore((s) => s.project.tracks.filter((t) => t.lengthMode === 'song').length);
   const longest = useStore((s) => Math.max(0, ...s.project.tracks.map((t) => t.steps * t.stepBeats)));
+  const free = song.lengthMode === 'free';
   return (
-    <div className="field-inline w-song" title="The song’s length — for every track. The Score, the Function view and MIDI export use it; tracks whose loop is “song length” follow it">
+    <div
+      className="field-inline w-song"
+      title={free ? `Free — each track loops on its own; the song is its longest track (${shortBeats(longest)})` : `Every track is ${song.lengthBeats} beats long`}
+    >
       <span>Length</span>
       <Dropdown
         compact
         label="Song length"
         value={
-          <b>
-            {lengthBeats}
-            <span className="unit"> beats</span>
-          </b>
+          free ? (
+            <b>free</b>
+          ) : (
+            <b>
+              {song.lengthBeats}
+              <span className="unit"> beats</span>
+            </b>
+          )
         }
         groups={[
           {
-            title: `Song length${following ? ` — ${following} track${following > 1 ? 's' : ''} follow it` : ''}`,
+            title: 'Every track this long',
             items: FIXED_LENGTHS.map((L) => ({
               key: `S${L}`,
               label: `${L} beats`,
-              hint: `${L / 4} bar${L === 4 ? '' : 's'}${longest > L + 1e-9 ? ` · a ${Number(longest.toFixed(2))}-beat track still plays in full` : ''}`,
-              selected: lengthBeats === L,
+              hint: `${L / 4} bar${L === 4 ? '' : 's'}`,
+              selected: !free && song.lengthBeats === L,
               onSelect: () => setSongLength(L),
             })),
+          },
+          {
+            title: 'Free',
+            items: [
+              {
+                key: 'free',
+                label: 'Free',
+                hint: 'each track loops on its own — for polyrhythms',
+                selected: free,
+                onSelect: () => setSongLength('free'),
+              },
+            ],
           },
         ]}
       />
@@ -148,31 +167,32 @@ function Placeholder({ label, width, title }: { label: string; width: string; ti
 }
 
 /**
- * The selected track's grid — steps × step length, loop length, octave. Every field
- * has a fixed width, so changing tracks or values never shifts the rest of the bar.
+ * The selected track: steps × step length, and octave. Its length is the song's —
+ * set by Length on the left. Every field has a fixed width, so nothing shifts.
  */
 function GridField() {
   const track = useSelectedTrack();
   const updateTrack = useStore((s) => s.updateTrack);
   const setGrid = useStore((s) => s.setGrid);
   const setStepBeatsAll = useStore((s) => s.setStepBeatsAll);
-  const setLengthAll = useStore((s) => s.setLengthAll);
   const trackCount = useStore((s) => s.project.tracks.length);
-  const songLength = useStore((s) => s.project.song.lengthBeats);
+  const song = useStore((s) => s.project.song);
   if (!track) {
     return (
       <>
         <Placeholder label="Steps" width="w-grid" title="Select a track to set its steps" />
-        <Placeholder label="Length" width="w-length" title="Select a track to set its length" />
         <Placeholder label="Octave" width="w-octave" title="Select a track to set its octave" />
       </>
     );
   }
-  const loopBeats = track.steps * track.stepBeats;
+  const free = song.lengthMode === 'free';
   return (
     <>
-      <div className="field-inline grid-field w-grid">
-        <span title={`Steps and step length of “${track.name}”`}>
+      <div
+        className="field-inline grid-field w-grid"
+        title={free ? `“${track.name}” loops every ${shortBeats(track.steps * track.stepBeats)}` : `“${track.name}” fills the song’s ${song.lengthBeats} beats`}
+      >
+        <span>
           <i className="grid-dot" style={{ background: track.color }} />
           <span className="grid-name">{track.name}</span>
         </span>
@@ -185,7 +205,7 @@ function GridField() {
             value={track.steps}
             onValue={(steps) => setGrid(track.id, { steps })}
             aria-label="Steps"
-            title={track.lengthMode !== 'free' ? `Steps — divides the ${track.lengthBeats}-beat loop evenly` : 'Steps'}
+            title={free ? 'Steps' : `Steps — divides the song’s ${song.lengthBeats} beats evenly`}
           />
           <span className="muted grid-times">×</span>
           <StepPicker
@@ -202,87 +222,6 @@ function GridField() {
             }
           />
         </div>
-      </div>
-      <div
-        className="field-inline w-length"
-        title={track.lengthMode === 'song' ? `follows the global Length — ${track.lengthBeats} beats` : track.lengthMode === 'fixed' ? `${track.lengthBeats} beats` : `free — ${loopBeats} beats`}
-      >
-        <span>Loop</span>
-        <Dropdown
-          compact
-          label="Loop length"
-          value={
-            track.lengthMode === 'song' ? (
-              <>
-                <b>song</b>
-                <small>{track.lengthBeats} beats</small>
-              </>
-            ) : track.lengthMode === 'fixed' ? (
-              <>
-                <b>
-                  {track.lengthBeats}
-                  <span className="unit"> beats</span>
-                </b>
-                <small>{track.lengthBeats / 4} bar{track.lengthBeats === 4 ? '' : 's'}</small>
-              </>
-            ) : (
-              <>
-                <b>free</b>
-                <small>{shortBeats(loopBeats)}</small>
-              </>
-            )
-          }          groups={[
-            {
-              title: 'Song',
-              items: [
-                {
-                  key: 'song',
-                  label: `Song length`,
-                  hint: `${songLength} beats now — follows the global Length`,
-                  selected: track.lengthMode === 'song',
-                  onSelect: () => setGrid(track.id, { lengthMode: 'song' }),
-                },
-              ],
-            },
-            {
-              title: 'Fixed — always lands on the bar',
-              items: FIXED_LENGTHS.map((L) => ({
-                key: `L${L}`,
-                label: `${L} beats`,
-                hint: `${L / 4} bar${L === 4 ? '' : 's'} · ${Math.max(1, Math.min(MAX_STEPS, Math.round(L / track.stepBeats)))} steps`,
-                selected: track.lengthMode === 'fixed' && track.lengthBeats === L,
-                onSelect: () => setGrid(track.id, { lengthMode: 'fixed', lengthBeats: L }),
-              })),
-            },
-            {
-              title: 'Free — experimental',
-              items: [
-                {
-                  key: 'free',
-                  label: 'Free',
-                  hint: 'steps × step length, whatever that adds up to',
-                  selected: track.lengthMode === 'free',
-                  onSelect: () => setGrid(track.id, { lengthMode: 'free' }),
-                },
-              ],
-            },
-          ]}
-          footer={
-            trackCount > 1 ? (
-              <button
-                className="btn small ghost step-all"
-                onClick={() => {
-                  setLengthAll(track.lengthMode === 'free' ? { lengthMode: 'free' } : { lengthMode: track.lengthMode, lengthBeats: track.lengthBeats });
-                  toast(
-                    `Every track ${track.lengthMode === 'song' ? 'now follows the song' : track.lengthMode === 'fixed' ? `is now ${track.lengthBeats} beats long` : 'is now free'} — ⌘Z to undo`,
-                  );
-                }}
-              >
-                {track.lengthMode === 'song' ? 'Make every track follow the global Length' : track.lengthMode === 'fixed' ? `Make every track ${track.lengthBeats} beats` : 'Make every track free'}
-              </button>
-            ) : undefined
-          }
-        />
       </div>
       {isDrum(track.waveform) ? (
         <Placeholder label="Octave" width="w-octave" title="Drums have no octave — their pitch input tunes the hit" />

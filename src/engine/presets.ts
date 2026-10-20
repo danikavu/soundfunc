@@ -1,5 +1,4 @@
 import { NODE_DEFS, type GEdge, type GNode, type Graph, type NodeData } from './graph';
-import { nearestFixedLength } from './steps';
 import { DEFAULT_PITCH_RANGE, type PitchMode } from './music';
 import { TRACK_DEFAULTS, type DrumVoice, type Project, type Song, type Track, type Waveform } from './project';
 
@@ -697,8 +696,6 @@ export const PRESETS: Preset[] = [
       pitchMode: 'degree',
       steps: 16,
       stepBeats: 0.25,
-      lengthMode: 'song',
-      lengthBeats: 4,
       octave: 4,
       graph: graph(
         [
@@ -878,11 +875,8 @@ let counter = 0;
 export const uid = (prefix = 'id') => `${prefix}_${Date.now().toString(36)}${(counter++).toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 
 export function trackFromTemplate(template: Template, name: string, index: number): Track {
-  const steps = template.steps ?? TRACK_DEFAULTS.steps;
-  const stepBeats = template.stepBeats ?? TRACK_DEFAULTS.stepBeats;
   return {
     ...TRACK_DEFAULTS,
-    lengthBeats: nearestFixedLength(steps * stepBeats),
     name,
     color: TRACK_COLORS[index % TRACK_COLORS.length],
     ...template,
@@ -902,7 +896,7 @@ export function defaultProject(): Project {
   tracks[1].pan = 0.3;
   return {
     name: 'Zen Garden',
-    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', sliders: [], pitchRange: { ...DEFAULT_PITCH_RANGE }, lengthBeats: 8 },
+    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', sliders: [], pitchRange: { ...DEFAULT_PITCH_RANGE }, lengthMode: 'fixed', lengthBeats: 8 },
     tracks,
   };
 }

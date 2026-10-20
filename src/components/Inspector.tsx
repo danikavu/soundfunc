@@ -269,8 +269,8 @@ function SoundTab() {
 
       <div className="eyebrow">Pattern</div>
       <p className="muted" style={{ fontSize: 11, margin: '0 0 8px' }}>
-        {track.steps} steps of {stepLabel(track.stepBeats)} ={' '}
-        {track.lengthMode === 'fixed' ? `${track.lengthBeats} beats (fixed)` : `${Number((track.steps * track.stepBeats).toFixed(3))} beats (free)`}
+        {track.steps} steps of {stepLabel(track.stepBeats)} = {Number((track.steps * track.stepBeats).toFixed(3))} beats
+        {project.song.lengthMode === 'free' ? ' (free song)' : ' (the song’s length)'}
         {drum ? '' : `, octave ${track.octave}`} — set in the top bar.
       </p>
       {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} />}

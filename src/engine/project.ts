@@ -1,6 +1,6 @@
 import { compileGraph, type Graph } from './graph';
 import { tryCompile, type Compiled } from './expr';
-import { fixedLengthFor, nearestFixedLength, type LengthMode } from './steps';
+import { FIXED_LENGTHS, fixedLengthFor, type LengthMode } from './steps';
 import { chordTones, DEFAULT_PITCH_RANGE, limitPitch, midiToDegree, midiToFreq, midiToName, NOTE_NAMES, SCALES, valueToMidi, valueToPitch, type PitchMode, type PitchRange } from './music';
 
 export type DrumVoice = 'kick' | 'snare' | 'hat' | 'openhat' | 'clap' | 'rim' | 'tom' | 'crash';
@@ -48,9 +48,6 @@ export interface Track {
   steps: number;
   /** step length in beats (0.25 = sixteenth) */
   stepBeats: number;
-  /** fixed: the loop is exactly lengthBeats (4/8/16/32/64); free: steps × stepBeats */
-  lengthMode: LengthMode;
-  lengthBeats: number;
   octave: number;
   pitchMode: PitchMode;
   waveform: Waveform;
@@ -77,8 +74,6 @@ export interface Track {
 export const TRACK_DEFAULTS: Omit<Track, 'id' | 'name' | 'color' | 'graph'> = {
   steps: 16,
   stepBeats: 0.25,
-  lengthMode: 'free',
-  lengthBeats: 4,
   octave: 4,
   pitchMode: 'degree',
   waveform: 'sine',
@@ -111,9 +106,16 @@ export interface Song {
   sliders: Slider[];
   /** where pitches may go: wrap by octaves (default), clamp, or off */
   pitchRange: PitchRange;
-  /** the song's loop, in beats (4/8/16/32/64): what the Score shows and MIDI exports; tracks set to “Song” follow it */
+  /**
+   * fixed: every track is exactly lengthBeats (4/8/16/32/64) long ·
+   * free: each track loops on its own (steps × step length); the song is the longest
+   */
+  lengthMode: LengthMode;
   lengthBeats: number;
 }
+
+/** the length every track fills, or null when the song is free */
+export const songGridLength = (song: Song): number | null => (song.lengthMode === 'free' ? null : song.lengthBeats);
 
 export interface Slider {
   name: string;
@@ -125,7 +127,7 @@ export interface Slider {
 export const sliderNames = (song: Song) => (song.sliders ?? []).map((s) => s.name);
 export const sliderValues = (song: Song): Record<string, number> => Object.fromEntries((song.sliders ?? []).map((s) => [s.name, s.value]));
 
-export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', sliders: [], pitchRange: DEFAULT_PITCH_RANGE, lengthBeats: 16 };
+export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', sliders: [], pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16 };
 export const BEATS_PER_BAR = 4;
 
 const harmonyCache = new Map<string, Compiled | null>();
@@ -157,16 +159,21 @@ export interface Project {
 /** Fill in fields added since a project was saved. */
 export function normalizeProject(p: Project): Project {
   const song = { ...SONG_DEFAULTS, ...(p.song as Partial<Song>) };
-  // projects from before the song had a length: the length its tracks already had
-  if (!('lengthBeats' in (p.song ?? {}))) song.lengthBeats = fixedLengthFor(Math.max(1, ...p.tracks.map((t) => (t.steps ?? 16) * (t.stepBeats ?? 0.25))));
+  // projects from before the song's length ruled every track: fixed when all tracks
+  // already share one of the fixed lengths, otherwise free — so nothing gets cut
+  const lengths = p.tracks.map((t) => (t.steps ?? 16) * (t.stepBeats ?? 0.25));
+  if (!('lengthMode' in (p.song ?? {}))) {
+    const same = lengths.length > 0 && lengths.every((l) => Math.abs(l - lengths[0]) < 1e-9) && (FIXED_LENGTHS as readonly number[]).some((f) => Math.abs(f - lengths[0]) < 1e-9);
+    song.lengthMode = same ? 'fixed' : 'free';
+    song.lengthBeats = same ? lengths[0] : fixedLengthFor(Math.max(1, ...lengths));
+  }
   return {
     name: p.name ?? 'Untitled',
     song,
     tracks: p.tracks.map((t) => {
-      const track = { ...TRACK_DEFAULTS, ...t };
-      // projects from before fixed lengths: keep them free, remember the nearest fixed length
-      if (!('lengthBeats' in t)) track.lengthBeats = nearestFixedLength(track.steps * track.stepBeats);
-      return track;
+      // tracks used to carry their own loop length; the song's length rules now
+      const { lengthMode: _m, lengthBeats: _l, ...rest } = t as Track & { lengthMode?: unknown; lengthBeats?: unknown };
+      return { ...TRACK_DEFAULTS, ...rest };
     }),
   };
 }
@@ -325,11 +332,12 @@ export function harmonyCycleBars(song: Song): number {
 }
 
 /**
- * One full cycle of the song: its length setting — or the longest track, if one runs
- * longer. (The progression no longer stretches it: it repeats, or keeps going, inside.)
+ * One full cycle of the song: its length — or, when the song is free, its longest
+ * track. (The progression doesn't stretch it: it repeats, or keeps going, inside.)
  */
 export function songBeats(tracks: Track[], song: Song): number {
-  return Math.max(1, song.lengthBeats ?? 16, ...tracks.map(patternBeats));
+  if (song.lengthMode !== 'free') return song.lengthBeats ?? 16;
+  return Math.max(1, ...tracks.map(patternBeats));
 }
 
 export function patternBeats(track: Track): number {

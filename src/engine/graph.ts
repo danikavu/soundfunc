@@ -476,7 +476,7 @@ export const NODE_DEFS: Record<string, NodeDef> = {
     type: 'output',
     label: 'Note Out',
     category: 'output',
-    hint: 'pitch · velocity (0 = rest) · length in steps · shift (late by part of a step) · ratchet (repeats) · chord (tones stacked every `stack` degrees) · inversion · strum',
+    hint: 'What you hear. Each step it turns these inputs into a note — or a rest, or a chord. Hover an input to see what it does.',
     defaults: {},
     inputs: [
       { id: 'pitch', label: 'pitch', fallback: 0 },
