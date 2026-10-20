@@ -431,8 +431,18 @@ const TEX_FN: Record<string, string> = {
   log: '\\ln', log2: '\\log_2', min: '\\min', max: '\\max', gcd: '\\gcd',
 };
 
+const TEX_GREEK = new Set([
+  'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'omicron', 'rho', 'sigma', 'upsilon', 'chi', 'psi', 'omega',
+  'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Sigma', 'Upsilon', 'Psi', 'Omega',
+]);
+
 function texName(name: string): string {
   if (TEX_VARS[name]) return TEX_VARS[name];
+  // a name renamed to dodge a SoundFunc one (k → k_) shows as k′
+  if (/^[A-Za-z]+_$/.test(name)) return `${texName(name.slice(0, -1))}'`;
+  const sub = /^([A-Za-z]+)_([A-Za-z0-9]+)$/.exec(name);
+  if (sub) return `${texName(sub[1])}_{${sub[2].length > 1 && !/^\d+$/.test(sub[2]) ? `\\mathrm{${sub[2]}}` : sub[2]}}`;
+  if (TEX_GREEK.has(name)) return `\\${name}`;
   const m = /^([a-zA-Z]+)(\d+)$/.exec(name);
   if (m) return `${m[1]}_{${m[2]}}`;
   return name.length > 1 ? `\\mathit{${name}}` : name;

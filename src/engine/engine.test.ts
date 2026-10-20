@@ -802,3 +802,45 @@ describe('node help', () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe('importing: Greek letters, subscripts, parameters, any time variable', () => {
+  const run = (src: string, scope: Record<string, number> = {}) => {
+    const r = importMath(src);
+    return { r, at: (t: number) => compileAst(r.value)({ ...Object.fromEntries(r.params.map((p) => [p.name, p.value])), ...scope, t }) };
+  };
+  it('t_i = x − σ u_i, σ > 0: Greek and subscripted names become sliders; the condition is noted', () => {
+    const { r, at } = run('t_i = x - \\sigma u_i, \\quad \\sigma > 0');
+    expect(r.timeVar).toBe('x');
+    expect(r.params.map((p) => p.name).sort()).toEqual(['sigma', 'u_i']);
+    expect(at(3)).toBe(2); // 3 − 1·1
+    expect(r.warnings.join(' ')).toMatch(/condition/);
+  });
+  it('p = p_0 e^{−h/H}: any name can be the function; h is the one that moves', () => {
+    const { r, at } = run('p = p_0 e^{-h/H}');
+    expect(r.timeVar).toBe('h');
+    expect(r.params.map((p) => p.name).sort()).toEqual(['H', 'p_0']);
+    expect(at(1)).toBeCloseTo(Math.exp(-1), 12);
+  });
+  it('k = 2.5 on its own line becomes a slider starting at 2.5, renamed away from the loop count', () => {
+    const { r, at } = run('k=2.5\ng(x)=\\tanh(k\\sin(2\\pi x))');
+    expect(r.params).toEqual([{ name: 'k_', value: 2.5 }]);
+    expect(at(0.25)).toBeCloseTo(Math.tanh(2.5), 12);
+  });
+  it('a constant written as an expression is written into the function', () => {
+    const { r, at } = run('a = 3\nc = 2a\ny = c x');
+    expect(r.params.map((p) => p.name)).toEqual(['a_']);
+    expect(at(1)).toBe(6);
+  });
+  it('the time variable can be Greek, and can be chosen', () => {
+    expect(run('r(\\theta) = 1 + \\cos(3\\theta)').r.timeVar).toBe('theta');
+    const chosen = importMath('p = p_0 e^{-h/H}', { timeVar: 'H' });
+    expect(chosen.params.map((p) => p.name).sort()).toEqual(['h_', 'p_0']);
+    expect(chosen.names).toContain('h');
+  });
+  it('unicode Greek and \\operatorname{sgn} read too', () => {
+    const { r, at } = run('y = α sgn(sin(2πx))');
+    expect(r.params.map((p) => p.name)).toEqual(['alpha']);
+    expect(at(0.25)).toBe(1);
+    expect(at(0.75)).toBe(-1);
+  });
+});

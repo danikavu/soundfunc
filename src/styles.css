@@ -2723,3 +2723,21 @@ button:focus-visible {
   margin: 0;
   color: var(--ink-3);
 }
+
+.import-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.import-param {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.import-param code {
+  font: 12.5px var(--mono);
+  color: var(--accent);
+}
+.import-param .input.num {
+  width: 64px;
+}
