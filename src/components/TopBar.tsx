@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { exportMidi, exportNotesCsv } from '../engine/midi';
-import { NOTE_NAMES, PROGRESSIONS, SCALES } from '../engine/music';
+import { NOTE_NAMES, PROGRESSIONS, SCALE_GROUPS, SCALES, type ScaleGroup } from '../engine/music';
 import { tryCompile } from '../engine/expr';
 import { useStore } from '../state/store';
 import { togglePlay } from '../state/transport';
@@ -106,26 +106,31 @@ function FileMenu() {
 function SongLengthField() {
   const song = useStore((s) => s.project.song);
   const setSongLength = useStore((s) => s.setSongLength);
+  const setSong = useStore((s) => s.setSong);
+  const exact = song.repeat === 'exact';
   const longest = useStore((s) => Math.max(0, ...s.project.tracks.map((t) => t.steps * t.stepBeats)));
   const free = song.lengthMode === 'free';
   return (
     <div
       className="field-inline w-song"
-      title={free ? `Free — each track loops on its own; the song is its longest track (${shortBeats(longest)})` : `Every track is ${song.lengthBeats} beats long`}
+      title={`${free ? `Free — each track loops on its own; the song is its longest track (${shortBeats(longest)})` : `Every track is ${song.lengthBeats} beats long`} · ${exact ? 'repeats exactly, note for note' : 'evolves — k, bar and the harmony run on from pass to pass'}`}
     >
       <span>Length</span>
       <Dropdown
         compact
         label="Song length"
         value={
-          free ? (
-            <b>free</b>
-          ) : (
-            <b>
-              {song.lengthBeats}
-              <span className="unit"> beats</span>
-            </b>
-          )
+          <b>
+            {free ? 'free' : song.lengthBeats}
+            {exact ? (
+              <span className="repeat-mark" aria-label="repeats exactly">
+                {' '}
+                ⟲
+              </span>
+            ) : (
+              !free && <span className="unit"> beats</span>
+            )}
+          </b>
         }
         groups={[
           {
@@ -147,6 +152,25 @@ function SongLengthField() {
                 hint: 'each track loops on its own — for polyrhythms',
                 selected: free,
                 onSelect: () => setSongLength('free'),
+              },
+            ],
+          },
+          {
+            title: 'Each pass',
+            items: [
+              {
+                key: 'evolve',
+                label: 'Evolves',
+                hint: 'k, bar and the harmony run on — every pass can differ',
+                selected: !exact,
+                onSelect: () => setSong({ repeat: 'evolve' }),
+              },
+              {
+                key: 'exact',
+                label: 'Repeats exactly',
+                hint: 'the clock starts again each pass — note for note',
+                selected: exact,
+                onSelect: () => setSong({ repeat: 'exact' }),
               },
             ],
           },
@@ -241,10 +265,6 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <div className="row garden-title" style={{ gap: 2 }}>
-        <TextField className="project-name" value={project.name} onValue={setProjectName} aria-label="Garden name" title="The garden’s name — click to rename" />
-        <GardenMenu />
-      </div>
 
       <div className="transport">
         <button className={`play ${playing ? 'on' : ''}`} onClick={() => void togglePlay()} title="Play / stop (space)">
@@ -275,18 +295,18 @@ export function TopBar() {
             compact
             label="Scale"
             value={<b>{(SCALES[song.scale] ?? SCALES.major).label}</b>}
-            groups={[
-              {
-                title: 'Scale',
-                items: Object.entries(SCALES).map(([k, sc]) => ({
+            groups={(Object.keys(SCALE_GROUPS) as ScaleGroup[]).map((g) => ({
+              title: SCALE_GROUPS[g],
+              items: Object.entries(SCALES)
+                .filter(([, sc]) => sc.group === g)
+                .map(([k, sc]) => ({
                   key: k,
                   label: sc.label,
-                  hint: `${sc.steps.length} notes`,
+                  hint: sc.hint ? `${sc.steps.length} notes · ${sc.hint}` : `${sc.steps.length} notes`,
                   selected: song.scale === k,
                   onSelect: () => setSong({ scale: k }),
                 })),
-              },
-            ]}
+            }))}
           />
         </div>
         <div className="field-inline">
@@ -346,6 +366,10 @@ export function TopBar() {
 
       <div className="spacer" />
 
+      <div className="row garden-title">
+        <TextField className="project-name" value={project.name} onValue={setProjectName} aria-label="Garden name" title={`${project.name} — click to rename`} />
+        <GardenMenu />
+      </div>
       <div className="row" style={{ gap: 2 }}>
         <button className="icon-btn" onClick={undo} disabled={!past.length} title="Undo (⌘Z)">
           <Icon name="undo" />

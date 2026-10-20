@@ -113,7 +113,14 @@ export interface Song {
    */
   lengthMode: LengthMode;
   lengthBeats: number;
+  /**
+   * evolve: time keeps running from pass to pass — k, bar and the harmony move on ·
+   * exact: every pass of the song starts the clock again, so it repeats note for note
+   */
+  repeat: RepeatMode;
 }
+
+export type RepeatMode = 'evolve' | 'exact';
 
 /** the length every track fills, or null when the song is free */
 export const songGridLength = (song: Song): number | null => (song.lengthMode === 'free' ? null : song.lengthBeats);
@@ -128,7 +135,7 @@ export interface Slider {
 export const sliderNames = (track: Track) => (track.sliders ?? []).map((s) => s.name);
 export const sliderValues = (track: Track): Record<string, number> => Object.fromEntries((track.sliders ?? []).map((s) => [s.name, s.value]));
 
-export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16 };
+export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16, repeat: 'evolve' };
 export const BEATS_PER_BAR = 4;
 
 const harmonyCache = new Map<string, Compiled | null>();
@@ -364,6 +371,21 @@ export function harmonyCycleBars(song: Song): number {
 export function songBeats(tracks: Track[], song: Song): number {
   if (song.lengthMode !== 'free') return song.lengthBeats ?? 16;
   return Math.max(1, ...tracks.map(patternBeats));
+}
+
+/**
+ * Split a stretch of play time [from, to) into pieces of song time: with `repeat: 'exact'`
+ * each pass of the song starts again at 0; otherwise song time is play time.
+ * `base` is where the piece's song time 0 sits in play time.
+ */
+export function songWindows(song: Song, songLength: number, from: number, to: number): { base: number; from: number; to: number }[] {
+  if (song.repeat !== 'exact' || !(songLength > 0)) return [{ base: 0, from, to }];
+  const out: { base: number; from: number; to: number }[] = [];
+  for (let p = Math.floor(from / songLength + 1e-9); p * songLength < to - 1e-9; p++) {
+    const base = p * songLength;
+    out.push({ base, from: Math.max(0, from - base), to: Math.min(songLength, to - base) });
+  }
+  return out;
 }
 
 export function patternBeats(track: Track): number {

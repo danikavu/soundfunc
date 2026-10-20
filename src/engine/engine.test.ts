@@ -8,11 +8,13 @@ import { compose, toSource, toTex, trackCode } from './symbolic';
 import { compileGraph, euclid, NODE_DEFS } from './graph';
 import { docFor } from './nodeDocs';
 import { exportMidi, collectNotes } from './midi';
+import { songWindows } from './project';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
 import { KITS, PRESETS, defaultProject, trackFromPreset, trackFromTemplate } from './presets';
 import { harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
 import { chordName, chordTones, limitPitch } from './music';
-import { mulberry32, mutateFormula, mutateTrack, musicalScore } from './mutate';
+import { mulberry32, mutateFormula, mutateOneNode, mutateTrack, musicalScore } from './mutate';
+import { useStore } from '../state/store';
 import { parsePattern } from './graph';
 import { timbreHarmonics } from './timbre';
 import { importMath } from './importMath';
@@ -906,5 +908,107 @@ describe('importing: Greek letters, subscripts, parameters, any time variable', 
     expect(r.params.map((p) => p.name)).toEqual(['alpha']);
     expect(at(0.25)).toBe(1);
     expect(at(0.75)).toBe(-1);
+  });
+});
+
+describe('each pass: evolve or repeat exactly', () => {
+  const evolving = () => {
+    const p = defaultProject();
+    const t = trackFromPreset(PRESETS.find((x) => x.id === 'evolve')!, 0);
+    return { ...p, song: { ...p.song, lengthBeats: 4, exportLoops: 3 }, tracks: [t] } as Project;
+  };
+  const passes = (p: Project) => {
+    const notes = collectNotes(p)[0].notes;
+    return [0, 1, 2].map((i) => notes.filter((n) => n.beat >= i * 4 && n.beat < (i + 1) * 4).map((n) => [n.beat - i * 4, n.midi]));
+  };
+  it('song windows split play time into passes only when repeating exactly', () => {
+    const song = defaultProject().song;
+    expect(songWindows(song, 8, 6, 10)).toEqual([{ base: 0, from: 6, to: 10 }]);
+    expect(songWindows({ ...song, repeat: 'exact' }, 8, 6, 10)).toEqual([{ base: 0, from: 6, to: 8 }, { base: 8, from: 0, to: 2 }]);
+  });
+  it('evolve: k runs on, so passes differ; exact: every pass is the first', () => {
+    const p = evolving();
+    const ev = passes(p);
+    expect(ev[1]).not.toEqual(ev[0]);
+    const ex = passes({ ...p, song: { ...p.song, repeat: 'exact' } });
+    expect(ex[0]).toEqual(ev[0]);
+    expect(ex[1]).toEqual(ex[0]);
+    expect(ex[2]).toEqual(ex[0]);
+  });
+  it('exact, free length: shorter tracks start again with the song', () => {
+    const p = evolving();
+    const long = { ...p.tracks[0], id: 'long', steps: 20 }; // 5 beats
+    const short = { ...p.tracks[0], id: 'short', steps: 12 }; // 3 beats
+    const song = { ...p.song, lengthMode: 'free' as const, repeat: 'exact' as const, exportLoops: 2 };
+    const [, s] = collectNotes({ ...p, song, tracks: [long, short] });
+    const first = s.notes.filter((n) => n.beat < 5).map((n) => [n.beat, n.midi]);
+    const second = s.notes.filter((n) => n.beat >= 5).map((n) => [n.beat - 5, n.midi]);
+    expect(second).toEqual(first);
+    expect(first.every(([b]) => b < 5)).toBe(true);
+  });
+});
+
+describe('duplicate, copy & paste, and one-node mutation', () => {
+  const fresh = () => {
+    useStore.setState({ project: defaultProject(), clipboard: null, past: [], future: [] });
+    const [a, b] = useStore.getState().project.tracks;
+    useStore.getState().selectTrack(a.id);
+    return { a, b };
+  };
+  const track = (id: string) => useStore.getState().project.tracks.find((t) => t.id === id)!;
+
+  it('duplicates a track right after itself, with a copy name', () => {
+    const { a } = fresh();
+    useStore.getState().duplicateTrack(a.id);
+    useStore.getState().duplicateTrack(a.id);
+    const names = useStore.getState().project.tracks.map((t) => t.name);
+    expect(names.slice(0, 3)).toEqual([a.name, `${a.name} copy 2`, `${a.name} copy`]);
+    const copy = useStore.getState().project.tracks[2];
+    expect(copy.id).not.toBe(a.id);
+    expect(copy.graph).toEqual(a.graph);
+  });
+  it('copies nodes into another track: fresh ids, inner wires, its clock, its sliders, free Note Out ports only', () => {
+    const { a, b } = fresh();
+    useStore.getState().updateNodeData(a.id, a.graph.nodes.find((n) => n.type !== 'output' && n.type !== 'step')!.id, {});
+    // a formula that reads a slider of track a
+    useStore.getState().addSlider(a.id, 0.5, 'depth');
+    useStore.getState().setGraph(a.id, [...track(a.id).graph.nodes, { id: 'f1', type: 'expr', position: { x: 0, y: 500 }, data: { formula: 'x * depth' } }], track(a.id).graph.edges);
+    const ids = track(a.id).graph.nodes.filter((n) => n.type !== 'output').map((n) => n.id);
+    expect(useStore.getState().copyNodes(a.id, ids)).toBe(ids.length);
+    const before = track(b.id);
+    const r = useStore.getState().pasteNodes(b.id);
+    expect(typeof r).toBe('number');
+    const after = track(b.id);
+    const added = after.graph.nodes.filter((n) => !before.graph.nodes.some((x) => x.id === n.id));
+    expect(added.length).toBe(r);
+    expect(added.some((n) => n.type === 'step')).toBe(before.graph.nodes.every((n) => n.type !== 'step'));
+    expect(added.every((n) => !ids.includes(n.id))).toBe(true);
+    expect(after.sliders.map((s) => s.name)).toContain('depth');
+    // b's Note Out keeps its own wiring
+    const out = after.graph.nodes.find((n) => n.type === 'output')!;
+    for (const e of before.graph.edges.filter((e) => e.target === out.id)) expect(after.graph.edges).toContainEqual(expect.objectContaining({ source: e.source, targetHandle: e.targetHandle }));
+    expect(renderTrack(after, useStore.getState().project.song).errors.size).toBe(0);
+  });
+  it('the node dice changes only that node', () => {
+    const t = trackFromPreset(PRESETS.find((x) => x.id === 'evolve')!, 0);
+    const target = t.graph.nodes.find((n) => n.type === 'expr')!;
+    const r = mutateOneNode(t, defaultProject().song, target.id, 0.5, 1234);
+    expect(r.track).not.toBe(t);
+    for (const n of r.track.graph.nodes) {
+      const was = t.graph.nodes.find((x) => x.id === n.id)!;
+      if (n.id === target.id) expect(n.data).not.toEqual(was.data);
+      else expect(n.data).toEqual(was.data);
+    }
+    expect(r.track.graph.edges).toEqual(t.graph.edges);
+  });
+  it('every scale is well-formed, and None is every semitone', () => {
+    for (const [k, sc] of Object.entries(SCALES)) {
+      expect(sc.steps[0], k).toBe(0);
+      expect([...sc.steps].sort((x, y) => x - y), k).toEqual(sc.steps);
+      expect(new Set(sc.steps).size, k).toBe(sc.steps.length);
+      expect(Math.max(...sc.steps), k).toBeLessThan(12);
+    }
+    expect(SCALES.chromatic.label).toBe('None');
+    expect(degreeToMidi(13, 0, SCALES.chromatic.steps, 4)).toBe(60 + 13);
   });
 });

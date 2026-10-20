@@ -64,9 +64,12 @@ export function GardenMenu() {
 
   return (
     <div className="menu garden-menu" ref={ref}>
-      <button className={`icon-btn ${open ? 'active' : ''}`} onClick={() => setOpen((o) => !o)} title="Your gardens — save, open, start anew">
-        <Icon name="book" size={15} />
-        {unsaved && <span className="unsaved-dot" title="Unsaved changes" />}
+      <button className="icon-btn save-btn" onClick={() => saveGarden()} title={unsaved ? 'Save (⌘S) — there are unsaved changes' : 'Save (⌘S) — saved'} aria-label="Save garden">
+        <Icon name="save" size={21} />
+        {unsaved && <span className="unsaved-dot" />}
+      </button>
+      <button className={`icon-btn garden-caret ${open ? 'active' : ''}`} onClick={() => setOpen((o) => !o)} title="Your gardens — save as a copy, open, start anew" aria-label="Your gardens">
+        <Icon name="caret" size={13} />
       </button>
       {open && (
         <div className="menu-pop garden-pop">

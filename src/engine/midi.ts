@@ -1,4 +1,4 @@
-import { audibleTracks, isDrum, keyLabel, patternBeats, renderTrack, songBeats, type Note, type Project, type Track, type Waveform } from './project';
+import { audibleTracks, isDrum, keyLabel, patternBeats, renderTrack, songBeats, songWindows, type Note, type Project, type Track, type Waveform } from './project';
 
 const PPQ = 480;
 /** pitch-bend range we program into each glide channel, in semitones */
@@ -71,25 +71,29 @@ export interface ExportTrack {
 export function collectNotes(project: Project): ExportTrack[] {
   const tracks = audibleTracks(project.tracks);
   const total = exportBeats(project);
+  // the same song time playback uses: with "repeat exactly" each pass starts again
+  const windows = songWindows(project.song, songBeats(tracks, project.song), 0, total);
   return tracks.map((track) => {
     const len = patternBeats(track);
-    const loops = len > 0 ? Math.ceil(total / len - 1e-9) : 0;
     const notes: Note[] = [];
     const glide: GlidePoint[] = [];
     const isGlide = track.playMode === 'glide' && !isDrum(track.waveform);
-    for (let k = 0; k < loops; k++) {
-      const r = renderTrack(track, project.song, k, false);
-      if (isGlide) {
-        r.curve.beat.forEach((b, i) => {
-          const beat = k * len + b;
-          if (beat < total - 1e-9) glide.push({ beat, midi: r.curve.midi[i], velocity: r.curve.velocity[i] });
-        });
-        continue;
-      }
-      for (const n of r.notes) {
-        const beat = k * len + n.beat;
-        if (beat >= total - 1e-9) continue;
-        notes.push({ ...n, beat, duration: Math.min(n.duration, total - beat) });
+    if (len <= 0) return { track, notes, glide };
+    for (const w of windows) {
+      for (let k = Math.floor(w.from / len + 1e-9); k * len < w.to - 1e-9; k++) {
+        const r = renderTrack(track, project.song, k, false);
+        if (isGlide) {
+          r.curve.beat.forEach((b, i) => {
+            const beat = k * len + b;
+            if (beat < w.to - 1e-9) glide.push({ beat: w.base + beat, midi: r.curve.midi[i], velocity: r.curve.velocity[i] });
+          });
+          continue;
+        }
+        for (const n of r.notes) {
+          const beat = k * len + n.beat;
+          if (beat >= w.to - 1e-9) continue;
+          notes.push({ ...n, beat: w.base + beat, duration: Math.min(n.duration, total - w.base - beat) });
+        }
       }
     }
     return { track, notes, glide };

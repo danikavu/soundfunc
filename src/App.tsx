@@ -7,7 +7,7 @@ import { withAudition } from './state/audition';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { Visualizer } from './components/Visualizer';
-import { NodeEditor, runMutate, toggleLockSelected } from './components/NodeEditor';
+import { NodeEditor, copySelected, pasteInto, runMutate, toggleLockSelected } from './components/NodeEditor';
 import { Inspector } from './components/Inspector';
 import { FunctionSheet } from './components/FunctionSheet';
 import { ImportSheet } from './components/ImportSheet';
@@ -54,6 +54,10 @@ export function App() {
       } else if (e.code === 'Space') {
         e.preventDefault();
         void togglePlay();
+      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'c') {
+        if (copySelected()) e.preventDefault();
+      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'v') {
+        if (pasteInto()) e.preventDefault();
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) useStore.getState().redo();

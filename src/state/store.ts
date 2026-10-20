@@ -5,12 +5,20 @@ import type { EditResult } from '../engine/graphEdit';
 import { applyGrid, fixedLengthFor, gridOf, type Grid } from '../engine/steps';
 import type { SavedFunction } from './library';
 import { defaultProject, KITS, PRESETS, trackFromPreset, trackFromTemplate, uid } from '../engine/presets';
-import { mutateHarmony, mutateTrack } from '../engine/mutate';
-import { harmonyCycleBars, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
+import { mutateHarmony, mutateOneNode, mutateTrack } from '../engine/mutate';
+import { blockFromSelection, insertBlock, type Block } from '../engine/graphEdit';
+import { formulaNames, harmonyCycleBars, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
 import { CONSTANTS, FUNCTIONS, renameVariable } from '../engine/expr';
 import { ctxVars } from '../engine/graph';
 
 const HISTORY_LIMIT = 80;
+
+export interface NodeClip {
+  block: Block;
+  sliders: Slider[];
+  /** the track it was copied from */
+  from: string;
+}
 
 interface State {
   project: Project;
@@ -57,6 +65,14 @@ interface State {
   /** add some of a kit's tracks (e.g. just its drums) to the current garden */
   addKitTracks: (kitId: string, trackIndexes: number[], adoptSong?: boolean) => void;
   duplicateTrack: (id: string) => void;
+  /** copied nodes (with their wires and the sliders they read), ready to paste into any track */
+  clipboard: NodeClip | null;
+  /** copy nodes of a track; returns how many */
+  copyNodes: (trackId: string, ids: string[]) => number;
+  /** paste the clipboard into a track; returns how many nodes landed, or an error */
+  pasteNodes: (trackId: string, at?: { x: number; y: number }) => number | string;
+  /** mutate one node by the randomizer dial; false if nothing changed */
+  mutateNode: (trackId: string, nodeId: string) => boolean;
   removeTrack: (id: string) => void;
   /** give every track the same step length (one undo step) */
   setStepBeatsAll: (stepBeats: number) => void;
@@ -209,10 +225,47 @@ export const useStore = create<State>()(
           });
           set({ selectedTrackId: tracks[0].id });
         },
+        clipboard: null,
+        copyNodes: (trackId, ids) => {
+          const t = get().project.tracks.find((x) => x.id === trackId);
+          if (!t) return 0;
+          const block = blockFromSelection(t.graph, ids, 'clipboard');
+          if ('error' in block) return 0;
+          const used = formulaNames({ nodes: block.nodes, edges: [] });
+          set({ clipboard: { block, sliders: t.sliders.filter((sl) => used.has(sl.name)).map((sl) => ({ ...sl })), from: trackId } });
+          return block.nodes.length;
+        },
+        pasteNodes: (trackId, at) => {
+          const clip = get().clipboard;
+          const t = get().project.tracks.find((x) => x.id === trackId);
+          if (!clip) return 'Nothing copied yet — select nodes and press ⌘C';
+          if (!t) return 'No track';
+          // wires into Note Out only where this track's Note Out is still free
+          const out = t.graph.nodes.find((n) => n.type === 'output');
+          const busy = new Set(t.graph.edges.filter((e) => e.target === out?.id).map((e) => String(e.targetHandle)));
+          const block = { ...clip.block, toOutput: (clip.block.toOutput ?? []).filter((w) => !busy.has(w.port)) };
+          // paste beside what's there: to the right of the source when it is the same track
+          const minX = Math.min(...block.nodes.map((n) => n.position.x)), minY = Math.min(...block.nodes.map((n) => n.position.y));
+          const r = insertBlock(t.graph, block, at ?? (clip.from === trackId ? { x: minX + 40, y: minY + 40 } : { x: minX, y: minY }));
+          const missing = clip.sliders.filter((sl) => !t.sliders.some((x) => x.name === sl.name));
+          commit(mapTrack(trackId, (x) => ({ ...x, graph: r.graph, sliders: [...x.sliders, ...missing] })));
+          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sf-fit'));
+          return r.ids.length;
+        },
+        mutateNode: (trackId, nodeId) => {
+          const { project, chaos } = get();
+          const t = project.tracks.find((x) => x.id === trackId);
+          if (!t) return false;
+          const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
+          const r = mutateOneNode(t, project.song, nodeId, chaos, seed);
+          if (r.track === t) return false;
+          commit(mapTrack(trackId, () => r.track));
+          return true;
+        },
         duplicateTrack: (id) => {
           const src = get().project.tracks.find((t) => t.id === id);
           if (!src) return;
-          const copy: Track = { ...structuredClone(src), id: uid('track'), name: `${src.name} ²`, solo: false };
+          const copy: Track = { ...structuredClone(src), id: uid('track'), name: copyName(src.name, get().project.tracks.map((t) => t.name)), solo: false };
           commit((p) => {
             const i = p.tracks.findIndex((t) => t.id === id);
             const tracks = [...p.tracks];
@@ -343,4 +396,12 @@ function rewriteFormulas(t: Track, fn: (src: string) => string): Track {
 
 export function useSelectedTrack(): Track | null {
   return useStore((s) => s.project.tracks.find((t) => t.id === s.selectedTrackId) ?? s.project.tracks[0] ?? null);
+}
+
+/** "Bass" → "Bass copy", then "Bass copy 2"… */
+function copyName(name: string, taken: string[]): string {
+  const base = `${name.replace(/ copy( \d+)?$/, '')} copy`;
+  let n = base;
+  for (let i = 2; taken.includes(n); i++) n = `${base} ${i}`;
+  return n;
 }

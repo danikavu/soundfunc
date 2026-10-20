@@ -181,6 +181,8 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
   const updateNodeData = useStore((s) => s.updateNodeData);
   const checkpoint = useStore((s) => s.checkpoint);
   const setLocked = useStore((s) => s.setLocked);
+  const mutateNode = useStore((s) => s.mutateNode);
+  const chaos = useStore((s) => s.chaos);
   const setAudition = useStore((s) => s.setAudition);
   const applyGraphEdit = useStore((s) => s.applyGraphEdit);
   const listening = useStore((s) => s.audition?.nodeId === id);
@@ -224,6 +226,26 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
             }}
           >
             <Icon name="split" size={12} />
+          </button>
+        )}
+        {def.params.length > 0 && (
+          <button
+            className="lock nodrag dice"
+            disabled={!!d.locked}
+            title={
+              d.locked
+                ? 'Locked — unlock to mutate it'
+                : `Mutate just this node — ${chaos < 0.35 ? 'harmonious' : chaos < 0.7 ? 'adventurous' : 'experimental'}, by the Mutate dial`
+            }
+            onClick={(e) => {
+              const btn = e.currentTarget;
+              btn.classList.remove('rolled');
+              void btn.offsetWidth; // restart the roll
+              btn.classList.add('rolled');
+              if (!mutateNode(ctx.trackId, id)) toast('No change found for this node — try again, or turn the dial up');
+            }}
+          >
+            <Icon name="dice" size={12} />
           </button>
         )}
         {def.params.length > 0 && (

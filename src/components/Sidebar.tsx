@@ -107,7 +107,7 @@ function MyFunctions() {
 }
 
 export function Sidebar() {
-  const { project, selectTrack, updateTrack, addTrack, removeTrack } = useStore();
+  const { project, selectTrack, updateTrack, addTrack, removeTrack, duplicateTrack } = useStore();
   const selected = useSelectedTrack();
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
 
@@ -154,6 +154,9 @@ export function Sidebar() {
             </button>
             <button className={`ms solo ${t.solo ? 'on' : ''}`} title="Solo" onClick={() => updateTrack(t.id, { solo: !t.solo })}>
               S
+            </button>
+            <button className="ms remove" title="Duplicate track — every node, value and slider" aria-label={`Duplicate ${t.name}`} onClick={() => duplicateTrack(t.id)}>
+              <Icon name="copy" size={11} />
             </button>
             <button className="ms remove" title="Remove track (⌘Z to undo)" aria-label={`Remove ${t.name}`} onClick={() => removeTrack(t.id)}>
               <Icon name="close" size={11} />

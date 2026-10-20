@@ -24,6 +24,7 @@ import { FuncNode, GraphContext, CATEGORY_COLORS } from './FuncNode';
 import { Icon, Seg, getRender } from './ui';
 import { toast } from './TopBar';
 import { SlidersBar } from './SlidersBar';
+import { Dropdown } from './Dropdown';
 
 const nodeTypes = Object.fromEntries(Object.keys(NODE_DEFS).map((k) => [k, FuncNode]));
 
@@ -163,6 +164,28 @@ function Mutator() {
 }
 
 /** Lock the selected nodes (or unlock them if they are all locked already). */
+/** ⌘C: copy the selected nodes of the open track */
+export function copySelected(): boolean {
+  const { project, selectedTrackId, copyNodes } = useStore.getState();
+  const track = project.tracks.find((t) => t.id === selectedTrackId) ?? project.tracks[0];
+  const ids = track?.graph.nodes.filter((n) => (n as { selected?: boolean }).selected && n.type !== 'output').map((n) => n.id) ?? [];
+  if (!track || !ids.length) return false;
+  const n = copyNodes(track.id, ids);
+  if (n) toast(`Copied ${n} node${n > 1 ? 's' : ''} — select any track and press ⌘V`);
+  return n > 0;
+}
+
+/** ⌘V: paste copied nodes into a track (the open one by default) */
+export function pasteInto(trackId?: string): boolean {
+  const { project, selectedTrackId, pasteNodes, clipboard } = useStore.getState();
+  const id = trackId ?? selectedTrackId ?? project.tracks[0]?.id;
+  if (!id || !clipboard) return false;
+  const r = pasteNodes(id);
+  const name = project.tracks.find((t) => t.id === id)?.name;
+  toast(typeof r === 'string' ? r : `Pasted ${r} node${r === 1 ? '' : 's'} into ${name}${clipboard.sliders.length ? ' · with their sliders' : ''}`);
+  return typeof r !== 'string';
+}
+
 export function toggleLockSelected(): boolean {
   const { project, selectedTrackId, setLocked } = useStore.getState();
   const track = project.tracks.find((t) => t.id === selectedTrackId) ?? project.tracks[0];
@@ -184,6 +207,8 @@ function SelectionTools() {
   const setAudition = useStore((s) => s.setAudition);
   const audition = useStore((s) => s.audition);
   const saveBlock = useLibrary((s) => s.saveBlock);
+  const clipboard = useStore((s) => s.clipboard);
+  useStore((s) => s.project.tracks.length); // keep "Copy to…" in step with the tracks
   const [naming, setNaming] = useState<string | null>(null);
   if (!track) return null;
   const selected = track.graph.nodes.filter((n) => isSelected(n) && n.type !== 'output');
@@ -194,6 +219,7 @@ function SelectionTools() {
     toast(err ?? done);
   };
   const ids = selected.map((n) => n.id);
+  const others = useStore.getState().project.tracks.filter((t) => t.id !== track.id);
 
   if (naming !== null) {
     const commitName = () => {
@@ -253,6 +279,29 @@ function SelectionTools() {
               <Icon name="headphones" size={12} /> Listen
             </button>
           )}
+          <button className="btn small ghost" onClick={copySelected} title="Copy the selected nodes and their wires (⌘C) — paste into any track with ⌘V">
+            <Icon name="copy" size={12} /> Copy
+          </button>
+          {others.length > 0 && (
+            <Dropdown
+              compact
+              label="Copy to track"
+              value={<span>Copy to…</span>}
+              groups={[
+                {
+                  title: 'Copy the selection into',
+                  items: others.map((o) => ({
+                    key: o.id,
+                    label: o.name,
+                    glyph: <span className="stone" style={{ background: o.color }} />,
+                    onSelect: () => {
+                      if (useStore.getState().copyNodes(track.id, ids)) pasteInto(o.id);
+                    },
+                  })),
+                },
+              ]}
+            />
+          )}
           <button className="btn small ghost" onClick={toggleLockSelected} title="Lock / unlock the selected nodes (L)">
             <Icon name={selected.every((n) => n.data.locked) ? 'unlock' : 'lock'} size={12} />
             {selected.every((n) => n.data.locked) ? 'Unlock' : 'Lock'}
@@ -273,8 +322,15 @@ function SelectionTools() {
               Unlock all
             </button>
           </>
+        ) : clipboard ? (
+          <>
+            <span>select nodes to explode, collapse, copy, save or lock them</span>
+            <button className="btn small ghost" onClick={() => pasteInto(track.id)} title="Paste the copied nodes here (⌘V)">
+              <Icon name="copy" size={12} /> Paste {clipboard.block.nodes.length} node{clipboard.block.nodes.length > 1 ? 's' : ''}
+            </button>
+          </>
         ) : (
-          <span>select nodes to explode, collapse, save or lock them</span>
+          <span>select nodes to explode, collapse, copy, save or lock them</span>
         ))}
     </div>
   );

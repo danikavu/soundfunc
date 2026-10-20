@@ -2826,3 +2826,56 @@ button:focus-visible {
 .topbar .field-inline.w-octave {
   width: 52px;
 }
+
+/* the song repeats exactly: a quiet loop mark in place of "beats" */
+.topbar .repeat-mark {
+  color: var(--accent);
+  font-weight: 400;
+}
+
+/* the node's own dice: a short roll when pressed */
+.fnode-head .lock.dice:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.fnode-head .lock.dice.rolled svg {
+  animation: dice-roll 0.45s var(--ease);
+}
+@keyframes dice-roll {
+  0% { transform: rotate(0) scale(1); }
+  50% { transform: rotate(200deg) scale(0.8); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+/* the garden's name sits on the right, with a save button beside it */
+.topbar .garden-title {
+  gap: 0;
+}
+.topbar .garden-title .project-name {
+  text-align: right;
+  margin-right: 4px;
+  text-overflow: ellipsis;
+}
+.garden-menu {
+  display: flex;
+  align-items: center;
+}
+.garden-menu .save-btn {
+  width: 34px;
+  height: 34px;
+}
+.garden-menu .garden-caret {
+  width: 18px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--ink-3);
+}
+.garden-menu .unsaved-dot {
+  top: 5px;
+  right: 5px;
+  box-shadow: 0 0 0 2px var(--paper);
+}
+.garden-pop {
+  left: auto;
+  right: 0;
+}

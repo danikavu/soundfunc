@@ -1,5 +1,5 @@
 import { midiToFreq } from './music';
-import { audibleTracks, isDrum, patternBeats, renderTrack, type Project, type Track, type TrackRender } from './project';
+import { audibleTracks, isDrum, patternBeats, renderTrack, songBeats, songWindows, type Project, type Track, type TrackRender } from './project';
 import { timbreHarmonics } from './timbre';
 
 const LOOKAHEAD_SEC = 0.12;
@@ -195,24 +195,29 @@ export class AudioEngine {
     this.scheduledBeat = to;
     const secPerBeat = 60 / this.bpm;
     const live = new Set<string>();
+    const tracks = audibleTracks(this.project.tracks);
+    // song time: with "repeat exactly" every pass starts the clock again
+    const windows = songWindows(this.project.song, songBeats(tracks, this.project.song), from, to);
 
-    for (const track of audibleTracks(this.project.tracks)) {
+    for (const track of tracks) {
       const len = patternBeats(track);
       if (len <= 0) continue;
       const bus = this.bus(track);
       const glide = track.playMode === 'glide' && !isDrum(track.waveform);
       if (glide) live.add(track.id);
-      for (let k = Math.floor(from / len); k * len < to; k++) {
-        const render = this.renderFor(track, k);
-        if (glide) {
-          this.scheduleGlide(track, bus, render, k * len, from, to);
-          continue;
-        }
-        for (const note of render.notes) {
-          const beat = k * len + note.beat;
-          if (beat < from || beat >= to) continue;
-          const freq = isDrum(track.waveform) ? Math.pow(2, note.tune / 12) : note.freq;
-          this.voice(track, bus, this.timeAt(beat), note.duration * secPerBeat, freq, note.velocity);
+      for (const w of windows) {
+        for (let k = Math.floor(w.from / len + 1e-9); k * len < w.to; k++) {
+          const render = this.renderFor(track, k);
+          if (glide) {
+            this.scheduleGlide(track, bus, render, w.base + k * len, w.base + w.from, w.base + w.to);
+            continue;
+          }
+          for (const note of render.notes) {
+            const beat = k * len + note.beat;
+            if (beat < w.from || beat >= w.to) continue;
+            const freq = isDrum(track.waveform) ? Math.pow(2, note.tune / 12) : note.freq;
+            this.voice(track, bus, this.timeAt(w.base + beat), note.duration * secPerBeat, freq, note.velocity);
+          }
         }
       }
     }
