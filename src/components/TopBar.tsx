@@ -5,12 +5,10 @@ import { tryCompile } from '../engine/expr';
 import { useStore } from '../state/store';
 import { togglePlay } from '../state/transport';
 import { GardenMenu } from './GardenMenu';
-import { StepPicker } from './StepPicker';
-import { FIXED_LENGTHS, MAX_STEPS, shortBeats, stepLabel } from '../engine/steps';
+import { FIXED_LENGTHS, shortBeats } from '../engine/steps';
 import { Dropdown } from './Dropdown';
-import { HARMONY_VARS, isDrum } from '../engine/project';
-import { useSelectedTrack } from '../state/store';
-import { Icon, NumberField, Stepper, TextField, download, fileSafe, isProject } from './ui';
+import { HARMONY_VARS, patternBeats } from '../engine/project';
+import { Icon, Stepper, TextField, download, fileSafe, isProject } from './ui';
 
 export function toast(msg: string) {
   window.dispatchEvent(new CustomEvent('sf-toast', { detail: msg }));
@@ -63,7 +61,7 @@ function FileMenu() {
               toast(`Exported ${project.song.exportLoops} loop${project.song.exportLoops > 1 ? 's' : ''} as MIDI`);
             })}
           >
-            MIDI file <small>Multi-track .mid with tempo & key</small>
+            MIDI file <small>Multi-channel .mid with tempo & key</small>
           </button>
           <button onClick={run(() => download(`${name}-notes.csv`, exportNotesCsv(project), 'text/csv'))}>
             Note data <small>CSV of pitch, velocity, key, timing</small>
@@ -108,12 +106,12 @@ function SongLengthField() {
   const setSongLength = useStore((s) => s.setSongLength);
   const setSong = useStore((s) => s.setSong);
   const exact = song.repeat === 'exact';
-  const longest = useStore((s) => Math.max(0, ...s.project.tracks.map((t) => t.steps * t.stepBeats)));
+  const longest = useStore((s) => Math.max(0, ...s.project.tracks.map(patternBeats)));
   const free = song.lengthMode === 'free';
   return (
     <div
       className="field-inline w-song"
-      title={`${free ? `Free — each track loops on its own; the song is its longest track (${shortBeats(longest)})` : `Every track is ${song.lengthBeats} beats long`} · ${exact ? 'repeats exactly, note for note' : 'evolves — k, bar and the harmony run on from pass to pass'}`}
+      title={`${free ? `Free — each channel loops on its own; the song is its longest channel (${shortBeats(longest)})` : `Every channel is ${song.lengthBeats} beats long`} · ${exact ? 'repeats exactly, note for note' : 'evolves — k, bar and the harmony run on from pass to pass'}`}
     >
       <span>Length</span>
       <Dropdown
@@ -134,7 +132,7 @@ function SongLengthField() {
         }
         groups={[
           {
-            title: 'Every track this long',
+            title: 'Every channel this long',
             items: FIXED_LENGTHS.map((L) => ({
               key: `S${L}`,
               label: `${L} beats`,
@@ -149,7 +147,7 @@ function SongLengthField() {
               {
                 key: 'free',
                 label: 'Free',
-                hint: 'each track loops on its own — for polyrhythms',
+                hint: 'each channel loops on its own — for polyrhythms',
                 selected: free,
                 onSelect: () => setSongLength('free'),
               },
@@ -177,85 +175,6 @@ function SongLengthField() {
         ]}
       />
     </div>
-  );
-}
-
-/** a field that keeps its place in the bar when it has nothing to show */
-function Placeholder({ label, width, title }: { label: string; width: string; title: string }) {
-  return (
-    <div className={`field-inline ${width}`} title={title}>
-      <span>{label}</span>
-      <span className="field-placeholder">–</span>
-    </div>
-  );
-}
-
-/**
- * The selected track: steps × step length, and octave. Its length is the song's —
- * set by Length on the left. Every field has a fixed width, so nothing shifts.
- */
-function GridField() {
-  const track = useSelectedTrack();
-  const updateTrack = useStore((s) => s.updateTrack);
-  const setGrid = useStore((s) => s.setGrid);
-  const setStepBeatsAll = useStore((s) => s.setStepBeatsAll);
-  const trackCount = useStore((s) => s.project.tracks.length);
-  const song = useStore((s) => s.project.song);
-  if (!track) {
-    return (
-      <>
-        <Placeholder label="Steps" width="w-grid" title="Select a track to set its steps" />
-        <Placeholder label="Octave" width="w-octave" title="Select a track to set its octave" />
-      </>
-    );
-  }
-  const free = song.lengthMode === 'free';
-  return (
-    <>
-      <div
-        className="field-inline grid-field w-grid"
-        title={free ? `“${track.name}” loops every ${shortBeats(track.steps * track.stepBeats)}` : `“${track.name}” fills the song’s ${song.lengthBeats} beats`}
-      >
-        <span>
-          <i className="grid-dot" style={{ background: track.color }} />
-          <span className="grid-name">{track.name}</span>
-        </span>
-        <div className="grid-controls">
-          <NumberField
-            className="input num"
-            integer
-            min={1}
-            max={MAX_STEPS}
-            value={track.steps}
-            onValue={(steps) => setGrid(track.id, { steps })}
-            aria-label="Steps"
-            title={free ? 'Steps' : `Steps — divides the song’s ${song.lengthBeats} beats evenly`}
-          />
-          <span className="muted grid-times">×</span>
-          <StepPicker
-            compact
-            value={track.stepBeats}
-            onChange={(stepBeats) => setGrid(track.id, { stepBeats })}
-            onApplyAll={
-              trackCount > 1
-                ? () => {
-                    setStepBeatsAll(track.stepBeats);
-                    toast(`Every track now steps in ${stepLabel(track.stepBeats)} — ⌘Z to undo`);
-                  }
-                : undefined
-            }
-          />
-        </div>
-      </div>
-      {isDrum(track.waveform) ? (
-        <Placeholder label="Octave" width="w-octave" title="Drums have no octave — their pitch input tunes the hit" />
-      ) : (
-        <div className="field-inline w-octave" title="Octave — where pitch 0 sits: 4 is middle C’s octave, −1 the lowest MIDI octave (−4…9; notes beyond MIDI’s range stay at its edge)">
-          <span>Octave</span>
-          <Stepper label="Octave" min={-4} max={9} value={track.octave} onValue={(octave) => updateTrack(track.id, { octave })} />
-        </div>
-      )}
-    </>
   );
 }
 
@@ -319,12 +238,12 @@ export function TopBar() {
               onFocus={checkpoint}
               onValue={(harmony) => setSong({ harmony }, false)}
               style={tryCompile(song.harmony, HARMONY_VARS).error ? { borderBottomColor: 'var(--accent)' } : undefined}
-              title="The chord (scale degree) as a function of bar. Tracks read it as h."
+              title="The chord (scale degree) as a function of bar. Channels read it as h."
             />
             <button
               className={`lock ${song.harmonyLocked ? 'on' : ''}`}
               style={{ margin: 0, opacity: song.harmonyLocked ? 1 : 0.55 }}
-              title={song.harmonyLocked ? 'Harmony locked — garden mutations keep it' : 'Lock the harmony against garden mutations'}
+              title={song.harmonyLocked ? 'Harmony locked — track mutations keep it' : 'Lock the harmony against track mutations'}
               aria-pressed={!!song.harmonyLocked}
               onClick={() => setSong({ harmonyLocked: !song.harmonyLocked })}
             >
@@ -334,7 +253,16 @@ export function TopBar() {
               <Dropdown
                 compact
                 label="Chord progressions"
-                value={<b title={PROGRESSIONS.find((p) => p.formula === song.harmony)?.label ?? 'custom progression'}>{PROGRESSIONS.find((p) => p.formula === song.harmony)?.label.split(/\s+/)[0] ?? 'custom'}</b>}
+                value={(() => {
+                  const prog = PROGRESSIONS.find((p) => p.formula === song.harmony);
+                  // "Royal Road  IV–V–iii–vi" → "Royal Road"; a constant harmony is a drone
+                  const name = prog ? prog.label.split(/\s{2,}/)[0] : /^\s*-?\d+(\.\d+)?\s*$/.test(song.harmony) ? 'Drone' : 'Custom';
+                  return (
+                    <b className="prog-name" title={prog?.label ?? (name === 'Drone' ? 'One chord all the way' : 'Your own progression')}>
+                      {name}
+                    </b>
+                  );
+                })()}
                 groups={[
                   {
                     title: 'Progressions',
@@ -351,23 +279,18 @@ export function TopBar() {
             </div>
           </div>
         </div>
-        <label className="field-inline hide-narrow w-space">
-          <span>Space</span>
+        <label className="field-inline hide-narrow w-space" title="Reverb — how much of the whole track rings in the room">
+          <span>Reverb</span>
           <span className="space-slider">
-            <input type="range" min={0} max={1} step={0.01} value={song.reverb} onChange={(e) => setSong({ reverb: Number(e.target.value) })} aria-label="Space (reverb)" />
+            <input type="range" min={0} max={1} step={0.01} value={song.reverb} onChange={(e) => setSong({ reverb: Number(e.target.value) })} aria-label="Reverb" />
           </span>
         </label>
-      </div>
-
-      {/* everything above is the whole song; this panel is only the selected track */}
-      <div className="track-panel" aria-label="Selected track">
-        <GridField />
       </div>
 
       <div className="spacer" />
 
       <div className="row garden-title">
-        <TextField className="project-name" value={project.name} onValue={setProjectName} aria-label="Garden name" title={`${project.name} — click to rename`} />
+        <TextField className="project-name" value={project.name} onValue={setProjectName} aria-label="Track name" title={`${project.name} — click to rename`} />
         <GardenMenu />
       </div>
       <div className="row" style={{ gap: 2 }}>

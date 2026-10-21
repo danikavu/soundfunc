@@ -63,7 +63,7 @@ export function KitPicker() {
                   <span className="serif">{k.name}</span>
                   <small>
                     {k.song?.bpm ? `${k.song.bpm} bpm · ` : ''}
-                    {k.tracks.length} tracks
+                    {k.tracks.length} channels
                   </small>
                 </button>
               </li>
@@ -86,10 +86,10 @@ export function KitPicker() {
                 onClick={() => {
                   addKit(kit.id, false);
                   setOpen(false);
-                  toast(`Planted ${kit.name} — ⌘Z to bring your garden back`);
+                  toast(`Planted ${kit.name} — ⌘Z to bring your track back`);
                 }}
               >
-                Replace garden
+                Replace track
               </button>
               <button
                 className="btn small"
@@ -105,7 +105,7 @@ export function KitPicker() {
                   className="btn small"
                   onClick={() => {
                     addKitTracks(kit.id, drums, adopt);
-                    toast(`Added ${drums.length} percussion tracks from ${kit.name}${tempoNote}`);
+                    toast(`Added ${drums.length} percussion channels from ${kit.name}${tempoNote}`);
                   }}
                 >
                   <Icon name="plus" size={11} /> Percussion only
@@ -114,8 +114,8 @@ export function KitPicker() {
             </div>
 
             <div className="kit-tracks-head">
-              <span>Tracks — add one at a time</span>
-              <label title="Off: tracks join your garden at its own tempo. On: the garden takes the kit’s tempo and key.">
+              <span>Channels — add one at a time</span>
+              <label title="Off: channels join your track at its own tempo. On: the track takes the kit’s tempo and key.">
                 <input type="checkbox" checked={adopt} onChange={(e) => setAdopt(e.target.checked)} /> use kit tempo & key
               </label>
             </div>

@@ -81,7 +81,7 @@ function SliderChip({ s, trackId }: { s: Slider; trackId: string }) {
               toast(`Removed “${s.name}” — formulas now hold ${fmt(s.value)}`);
             }}
           >
-            Remove slider <small>Its current value is written back into this track’s formulas</small>
+            Remove slider <small>Its current value is written back into this channel’s formulas</small>
           </button>
         </div>
       )}

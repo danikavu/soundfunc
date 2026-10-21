@@ -81,7 +81,8 @@ textarea {
 
 .main {
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr) 288px;
+  /* the side panels never change width — not with the window, not with their content */
+  grid-template-columns: var(--left-w) minmax(0, 1fr) var(--right-w);
   min-height: 0;
 }
 
@@ -96,6 +97,9 @@ textarea {
 
 .panel {
   overflow-y: auto;
+  /* room for the scrollbar is kept even when there is nothing to scroll, so the inside never shifts */
+  scrollbar-gutter: stable;
+  min-width: 0;
   min-height: 0;
   padding: 18px 16px 32px;
   scrollbar-width: thin;
@@ -964,9 +968,6 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 
 @media (max-width: 1100px) {
-  .main {
-    grid-template-columns: 200px minmax(0, 1fr) 250px;
-  }
   .topbar .hide-narrow {
     display: none;
   }
@@ -3097,4 +3098,364 @@ button:focus-visible {
   font: 400 18px/1.2 var(--sans);
   color: var(--accent);
   letter-spacing: 0;
+}
+
+/* ---------- folding sections: My functions, Function presets ---------- */
+.fold {
+  margin: 0 -6px 6px;
+}
+.fold-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font: 400 14px/1.2 var(--sans);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.25s var(--ease), background 0.25s var(--ease);
+}
+.fold-trigger:hover,
+.fold.open .fold-trigger {
+  border-color: var(--line);
+  background: var(--paper-2);
+}
+.fold-trigger small {
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+.fold-chevron {
+  margin-left: auto;
+  font: 300 18px/1 var(--serif);
+  color: var(--ink-3);
+  transition: transform 0.25s var(--ease);
+}
+.fold.open .fold-chevron {
+  transform: rotate(90deg);
+}
+.fold-body {
+  padding: 6px 6px 2px;
+}
+.fold-empty {
+  font-size: 11px;
+  margin: 2px 4px 6px;
+}
+/* ---------- ⓘ: explanations on demand ---------- */
+.info {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+.info-btn {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.info-btn:hover,
+.info.open .info-btn {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.info-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -6px;
+  z-index: 80;
+  width: 240px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--shadow-lg, var(--shadow));
+  font: 400 11.5px/1.5 var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-2);
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
+}
+.info.right .info-pop {
+  left: auto;
+  right: -6px;
+}
+.info:hover .info-pop,
+.info.open .info-pop,
+.info-btn:focus-visible + .info-pop {
+  opacity: 1;
+  transform: none;
+}
+.eyebrow-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.eyebrow-info .info {
+  margin-left: 2px;
+}
+/* the channel's grid, in the right panel */
+.channel-grid {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.channel-grid .input.num {
+  width: 52px;
+}
+.channel-grid .stepper .input.num.stepper-input {
+  width: 34px;
+  border: none;
+  background: transparent;
+  padding: 0 0 0 8px;
+  height: 100%;
+}
+.channel-grid .stepper {
+  height: 32px;
+}
+.all-channels {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  font-size: 11px;
+}
+.all-channels .muted {
+  margin-right: 4px;
+}
+.all-channels .btn.on {
+  color: var(--accent);
+}
+/* closed explanations take no room at all (an invisible one near the edge would widen the page) */
+.info-pop {
+  display: none;
+}
+.info:hover .info-pop,
+.info.open .info-pop,
+.info-btn:focus-visible + .info-pop {
+  display: block;
+  animation: info-in 0.18s var(--ease);
+}
+@keyframes info-in {
+  from { opacity: 0; transform: translateY(-3px); }
+}
+/* in the right panel, open toward the middle of the screen */
+aside.panel:last-of-type .info-pop {
+  left: auto;
+  right: -6px;
+}
+
+/* ⓘ notes float above every panel */
+.info .info-pop {
+  position: fixed;
+  display: block;
+  right: auto;
+  opacity: 1;
+  transform: none;
+  pointer-events: none;
+  animation: info-in 0.18s var(--ease);
+}
+.info-btn.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+/* Save Channel · Import · Export share the row evenly */
+.track-tools .btn {
+  flex: 1 1 auto;
+  justify-content: center;
+  padding: 3px 3px;
+  gap: 4px;
+  white-space: nowrap;
+}
+.all-channels .btn.on {
+  color: inherit;
+  border-color: transparent;
+}
+
+/* ---------- paste a function: a preview of one fixed size ---------- */
+.import-src-wrap {
+  position: relative;
+}
+.import-src-wrap .import-src {
+  width: 100%;
+  padding-right: 84px;
+}
+.import-paste {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.import-preview {
+  display: grid;
+  grid-template-rows: 64px 140px;
+  gap: 8px;
+  width: 100%;
+  flex: none;
+}
+.import-read {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  border-bottom: 1px dashed var(--line-soft);
+}
+.import-read-tex {
+  height: 64px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: auto hidden;
+  scrollbar-width: thin;
+}
+.import-read-tex .tex {
+  white-space: nowrap;
+}
+.import-plot-box {
+  position: relative;
+  height: 140px;
+  min-width: 0;
+}
+.import-plot-box .import-plot {
+  display: block;
+  height: 140px;
+}
+.import-plot.empty {
+  background: repeating-linear-gradient(90deg, transparent 0 39px, var(--line-soft) 39px 40px), var(--paper);
+  opacity: 0.6;
+}
+.import-overlay {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  max-height: 116px;
+  overflow: auto;
+}
+
+/* ---------- stretch ---------- */
+.stretch-field > span {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.stretch-reset {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 10px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.stretch-ctl {
+  display: flex;
+  align-items: stretch;
+  height: 32px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--card);
+  overflow: hidden;
+}
+.stretch-btn {
+  border: none;
+  background: transparent;
+  padding: 0 8px;
+  font: 500 11px/1 var(--sans);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.stretch-btn:hover:not(:disabled) {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.stretch-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.stretch-btn:first-child {
+  border-right: 1px solid var(--line-soft);
+}
+.stretch-btn:last-child {
+  border-left: 1px solid var(--line-soft);
+}
+.stretch-x {
+  align-self: center;
+  padding-left: 7px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.channel-grid .input.num.stretch-input {
+  width: 46px;
+  border: none;
+  background: transparent;
+  height: 100%;
+  padding: 0 2px;
+}
+.stretch-badge {
+  margin-left: 6px;
+  font: 500 10px/1 var(--mono);
+  color: var(--accent);
+  vertical-align: 2px;
+}
+.stretch-input {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.stretch-input::-webkit-inner-spin-button,
+.stretch-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+:root {
+  --left-w: 264px;
+  --right-w: 316px;
+}
+
+/* the progressions box: the progression's name, as wide as the bar allows (narrower rules last) */
+.topbar .w-prog {
+  width: 150px;
+}
+.topbar .w-prog .dropdown-value b {
+  display: inline;
+}
+.topbar .w-prog .prog-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+}
+@media (max-width: 1440px) {
+  .topbar .w-prog {
+    width: 128px;
+  }
+}
+@media (max-width: 1280px) {
+  .topbar .w-prog {
+    width: 104px;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .w-prog {
+    width: 84px;
+  }
 }

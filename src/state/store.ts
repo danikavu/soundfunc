@@ -7,7 +7,7 @@ import type { SavedFunction } from './library';
 import { defaultProject, KITS, PRESETS, trackFromPreset, trackFromTemplate, uid } from '../engine/presets';
 import { mutateHarmony, mutateOneNode, mutateTrack } from '../engine/mutate';
 import { blockFromSelection, insertBlock, type Block } from '../engine/graphEdit';
-import { formulaNames, harmonyCycleBars, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
+import { formulaNames, harmonyCycleBars, isDrum, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
 import { CONSTANTS, FUNCTIONS, renameVariable } from '../engine/expr';
 import { ctxVars } from '../engine/graph';
 
@@ -67,6 +67,8 @@ interface State {
   duplicateTrack: (id: string) => void;
   /** mute / solo every track at once (one undo step) */
   setAllTracks: (flag: 'muted' | 'solo', on: boolean) => void;
+  /** change every melodic channel at once — glide, snap to scale… (drums have neither); one undo step */
+  patchMelodic: (patch: Partial<Pick<Track, 'playMode' | 'quantize'>>) => void;
   /** copied nodes (with their wires and the sliders they read), ready to paste into any track */
   clipboard: NodeClip | null;
   /** copy nodes of a track; returns how many */
@@ -172,7 +174,7 @@ export const useStore = create<State>()(
         },
         applyGraphEdit: (trackId, edit) => {
           const t = get().project.tracks.find((x) => x.id === trackId);
-          if (!t) return 'No track';
+          if (!t) return 'No channel';
           const r = edit(t.graph);
           if ('error' in r) return r.error;
           commit(mapTrack(trackId, (x) => ({ ...x, graph: r.graph })));
@@ -228,6 +230,7 @@ export const useStore = create<State>()(
           });
           set({ selectedTrackId: tracks[0].id });
         },
+        patchMelodic: (patch) => commit((p) => ({ ...p, tracks: p.tracks.map((t) => (isDrum(t.waveform) ? t : { ...t, ...patch })) })),
         setAllTracks: (flag, on) => commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, [flag]: on })) })),
         clipboard: null,
         copyNodes: (trackId, ids) => {
@@ -243,7 +246,7 @@ export const useStore = create<State>()(
           const clip = get().clipboard;
           const t = get().project.tracks.find((x) => x.id === trackId);
           if (!clip) return 'Nothing copied yet — select nodes and press ⌘C';
-          if (!t) return 'No track';
+          if (!t) return 'No channel';
           // wires into Note Out only where this track's Note Out is still free
           const out = t.graph.nodes.find((n) => n.type === 'output');
           const busy = new Set(t.graph.edges.filter((e) => e.target === out?.id).map((e) => String(e.targetHandle)));

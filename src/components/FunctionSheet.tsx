@@ -96,8 +96,8 @@ export function FunctionSheet() {
                 value={scope}
                 onChange={setScope}
                 options={[
-                  { value: 'track', label: 'Track' },
-                  { value: 'garden', label: 'Garden' },
+                  { value: 'track', label: 'Channel' },
+                  { value: 'garden', label: 'Track' },
                 ]}
               />
             </div>

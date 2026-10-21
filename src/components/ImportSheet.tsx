@@ -176,15 +176,32 @@ export function ImportSheet() {
         </header>
 
         <div className="sheet-body import-body">
-          <textarea
-            className="formula import-src"
-            autoFocus
-            spellCheck={false}
-            placeholder="y = ⌊(12·mod(3⌊x/2⌋ + 5, 7) + 2)/7⌋/12 + e^(−12 frac(4x))/6"
-            value={src}
-            onChange={(e) => setSrc(e.target.value)}
-            rows={4}
-          />
+          <div className="import-src-wrap">
+            <textarea
+              className="formula import-src"
+              autoFocus
+              spellCheck={false}
+              placeholder="y = ⌊(12·mod(3⌊x/2⌋ + 5, 7) + 2)/7⌋/12 + e^(−12 frac(4x))/6"
+              value={src}
+              onChange={(e) => setSrc(e.target.value)}
+              rows={4}
+            />
+            <button
+              className="btn small import-paste"
+              title="Paste from the clipboard — replaces what is in the box"
+              onClick={async () => {
+                try {
+                  const text = await navigator.clipboard.readText();
+                  if (!text.trim()) return toast('The clipboard is empty');
+                  setSrc(text);
+                } catch {
+                  toast('The browser blocked reading the clipboard — click in the box and press ⌘V');
+                }
+              }}
+            >
+              <Icon name="copy" size={12} /> Paste
+            </button>
+          </div>
           <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
             <span className="muted" style={{ fontSize: 11 }}>Try:</span>
             {EXAMPLES.map((ex) => (
@@ -194,21 +211,34 @@ export function ImportSheet() {
             ))}
           </div>
 
-          {parsed.error && <p className="import-error">{parsed.error}</p>}
-          {parsed.ok && (
-            <>
-              <div className="fn-line">
-                <span className="fn-label">read as</span>
-                {/* shown with the source's own time variable (h, x, θ…), not SoundFunc's t */}
-                <Tex tex={`y = ${toTex(substitute(parsed.ok.raw, { t: { k: 'var', name: parsed.ok.timeVar } }))}`} katex={katex} />
+          {/* the preview keeps one size whatever is in it, so the sheet never jumps */}
+          <div className="import-preview">
+            <div className="import-read">
+              <span className="fn-label">read as</span>
+              <div className="import-read-tex">
+                {parsed.ok ? (
+                  /* shown with the source's own time variable (h, x, θ…), not SoundFunc's t */
+                  <Tex tex={`y = ${toTex(substitute(parsed.ok.raw, { t: { k: 'var', name: parsed.ok.timeVar } }))}`} katex={katex} />
+                ) : (
+                  <span className="muted">{parsed.error ? '—' : 'Paste or type a function above'}</span>
+                )}
               </div>
-              {plot && (
+            </div>
+            <div className="import-plot-box">
+              {parsed.ok && plot ? (
                 <svg className="import-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
                   <line x1="0" x2={W} y1={H - 8 - ((0 - plot.lo) / (plot.hi - plot.lo)) * (H - 16)} y2={H - 8 - ((0 - plot.lo) / (plot.hi - plot.lo)) * (H - 16)} stroke="var(--line)" strokeDasharray="2 4" />
                   <path d={path} fill="none" stroke="var(--ink)" strokeWidth={1.6} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
                 </svg>
+              ) : (
+                <div className="import-plot empty" />
               )}
-              {plot?.silent && <p className="import-error">The function is undefined (silent) over the whole length.</p>}
+              {parsed.error && <p className="import-error import-overlay">{parsed.error}</p>}
+              {parsed.ok && plot?.silent && <p className="import-error import-overlay">The function is undefined (silent) over the whole length.</p>}
+            </div>
+          </div>
+          {parsed.ok && (
+            <>
               {parsed.ok.warnings.map((w) => (
                 <p key={w} className="import-warn">
                   {w}
@@ -240,7 +270,7 @@ export function ImportSheet() {
                   </div>
                 )}
                 <label className="field">
-                  <span>Track name</span>
+                  <span>Channel name</span>
                   <TextField className="input" value={name} onValue={setName} />
                 </label>
                 <div className="field">
@@ -279,7 +309,7 @@ export function ImportSheet() {
                   />
                 </div>
                 <div className="row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <label className="field" style={{ width: 90 }} title="Where the track begins along x — for functions that start at negative x">
+                  <label className="field" style={{ width: 90 }} title="Where the channel begins along x — for functions that start at negative x">
                     <span>{parsed.ok.timeVar} starts at</span>
                     <NumberField className="input" value={xStart} onValue={setXStart} />
                   </label>
@@ -319,7 +349,7 @@ export function ImportSheet() {
               : 'Your function stays exact: it becomes a Formula node you can keep editing.'}
           </span>
           <button className="btn primary" disabled={!parsed.ok} onClick={plant}>
-            <Icon name="plus" size={13} /> Plant as a track
+            <Icon name="plus" size={13} /> Plant as a channel
           </button>
         </footer>
       </div>

@@ -38,6 +38,7 @@ const paths: Record<string, ReactNode> = {
   fit: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
   save: <path d="M5.5 4h10.5l3.5 3.5v11a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 4.5 18.5v-13A1.5 1.5 0 0 1 6 4zM8 4v4.5h7V4M7.5 20v-6h9v6" />,
   send: <path d="M9 9h10v10H9zM5 15V5h10M13 14h4M15 12l2 2-2 2" />,
+  info: <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v6M12 7.5v.5" />,
   sigma: <path d="M17 5H6.5l6 7-6 7H17" />,
   caret: <path d="M8 10l4 4 4-4" />,
   book: <path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 21V5" />,
@@ -281,5 +282,44 @@ export function Stepper({ value, min, max, onValue, label, title, className = ''
         </button>
       </span>
     </div>
+  );
+}
+
+/**
+ * A small ⓘ that shows its explanation on hover, focus or click — instead of a paragraph of text.
+ * The note floats above everything (fixed to the window), so no panel edge can clip it.
+ */
+export function Info({ children, label = 'More about this' }: { children: ReactNode; label?: string }) {
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [pinned, setPinned] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const W = 260;
+  const show = () => {
+    const r = btn.current?.getBoundingClientRect();
+    if (!r) return;
+    const left = Math.min(Math.max(8, r.left + r.width / 2 - W / 2), window.innerWidth - W - 8);
+    setPos({ left, top: r.bottom + 8 });
+  };
+  const hide = () => !pinned && setPos(null);
+  return (
+    <span className="info" onMouseEnter={show} onMouseLeave={hide}>
+      <button
+        ref={btn}
+        type="button"
+        className={`info-btn ${pos ? 'on' : ''}`}
+        aria-label={label}
+        aria-expanded={!!pos}
+        onFocus={show}
+        onBlur={() => (setPinned(false), setPos(null))}
+        onClick={() => (pinned ? (setPinned(false), setPos(null)) : (setPinned(true), show()))}
+      >
+        <Icon name="info" size={14} />
+      </button>
+      {pos && (
+        <span className="info-pop" role="tooltip" style={{ left: pos.left, top: pos.top, width: W }}>
+          {children}
+        </span>
+      )}
+    </span>
   );
 }

@@ -8,7 +8,7 @@ import { compose, toSource, toTex, trackCode } from './symbolic';
 import { compileGraph, euclid, NODE_DEFS } from './graph';
 import { docFor } from './nodeDocs';
 import { exportMidi, collectNotes } from './midi';
-import { songWindows } from './project';
+import { patternBeats, songWindows, stretchOf } from './project';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
 import { KITS, PRESETS, defaultProject, trackFromPreset, trackFromTemplate } from './presets';
 import { harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
@@ -1010,5 +1010,48 @@ describe('duplicate, copy & paste, and one-node mutation', () => {
     }
     expect(SCALES.chromatic.label).toBe('None');
     expect(degreeToMidi(13, 0, SCALES.chromatic.steps, 4)).toBe(60 + 13);
+  });
+});
+
+describe('stretch: a channel played out over more or less time', () => {
+  const base = () => trackFromPreset(PRESETS.find((x) => x.id === 'fib')!, 0);
+  const song = { ...defaultProject().song, harmony: 'pick(bar, 0, 3, 4, 5)' };
+  it('same notes, same order — every time and length scaled; one pass lasts stretch × as long', () => {
+    const t = base();
+    const one = renderTrack(t, song, 0, false);
+    for (const s of [2, 0.5, 1.5]) {
+      const st = { ...t, stretch: s };
+      const r = renderTrack(st, song, 0, false);
+      expect(patternBeats(st)).toBeCloseTo(patternBeats(t) * s, 9);
+      expect(r.pitchCurve).toEqual(one.pitchCurve);
+      expect(r.notes.length).toBe(one.notes.length);
+      r.notes.forEach((n, i) => {
+        expect(n.beat).toBeCloseTo(one.notes[i].beat * s, 9);
+        expect(n.duration).toBeCloseTo(one.notes[i].duration * s, 9);
+      });
+      r.curve.beat.forEach((b, i) => expect(b).toBeCloseTo(one.curve.beat[i] * s, 9));
+    }
+  });
+  it('the harmony follows real time, so a stretched channel still meets the song’s chords', () => {
+    const t = { ...base(), stretch: 2 };
+    const r = renderTrack(t, song, 0, false);
+    for (const n of r.notes) expect(n.h).toBe(harmonyAt(song, n.beat - (n.beat % (t.stepBeats * 2))));
+  });
+  it('free songs last as long as the longest stretched channel; bad values fall back to ×1', () => {
+    const t = base();
+    expect(songBeats([t, { ...t, stretch: 3 }], { ...song, lengthMode: 'free' })).toBeCloseTo(patternBeats(t) * 3, 9);
+    expect(stretchOf({ ...t, stretch: 0 })).toBe(1);
+    expect(stretchOf({ ...t, stretch: NaN })).toBe(1);
+    expect(stretchOf({ ...t, stretch: 100 })).toBe(16);
+  });
+  it('the written-out code still matches the engine when stretched', () => {
+    const t = trackFromPreset(PRESETS.find((p) => p.id === 'form')!, 0);
+    t.stretch = 1.5;
+    const code = trackCode([compose(t)], song, 'js').replace(/^export /gm, '');
+    const fn = new Function(`${code}\nreturn songForm;`)() as (n: number, k: number) => Record<string, number>;
+    for (const k of [0, 1, 3]) {
+      const r = renderTrack(t, song, k, false);
+      for (let n = 0; n < t.steps; n++) expect(fn(n, k).pitch, `k=${k} n=${n}`).toBeCloseTo(r.pitchCurve[n], 9);
+    }
   });
 });

@@ -148,7 +148,7 @@ export function FormulaEditor({
       if (!num) return toast('Put the cursor on a number, then Alt+S makes it a slider');
       const name = useStore.getState().addSlider(sliders, num.value);
       replace(num.start, num.end, name, num.start + name.length);
-      toast(`“${name}” is now a slider on this track — rename or play it in the Sliders bar`);
+      toast(`“${name}” is now a slider on this channel — rename or play it in the Sliders bar`);
       return;
     }
     // Alt+↑/↓ nudges the number under the caret — Shift ×10, Ctrl/⌘ ×0.1
