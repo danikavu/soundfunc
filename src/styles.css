@@ -81,7 +81,8 @@ textarea {
 
 .main {
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr) 288px;
+  /* the side panels never change width — not with the window, not with their content */
+  grid-template-columns: var(--left-w) minmax(0, 1fr) var(--right-w);
   min-height: 0;
 }
 
@@ -96,6 +97,9 @@ textarea {
 
 .panel {
   overflow-y: auto;
+  /* room for the scrollbar is kept even when there is nothing to scroll, so the inside never shifts */
+  scrollbar-gutter: stable;
+  min-width: 0;
   min-height: 0;
   padding: 18px 16px 32px;
   scrollbar-width: thin;
@@ -964,9 +968,6 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 
 @media (max-width: 1100px) {
-  .main {
-    grid-template-columns: 200px minmax(0, 1fr) 250px;
-  }
   .topbar .hide-narrow {
     display: none;
   }
@@ -3421,4 +3422,40 @@ aside.panel:last-of-type .info-pop {
 .stretch-input::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+
+:root {
+  --left-w: 264px;
+  --right-w: 316px;
+}
+
+/* the progressions box: the progression's name, as wide as the bar allows (narrower rules last) */
+.topbar .w-prog {
+  width: 150px;
+}
+.topbar .w-prog .dropdown-value b {
+  display: inline;
+}
+.topbar .w-prog .prog-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+}
+@media (max-width: 1440px) {
+  .topbar .w-prog {
+    width: 128px;
+  }
+}
+@media (max-width: 1280px) {
+  .topbar .w-prog {
+    width: 104px;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .w-prog {
+    width: 84px;
+  }
 }

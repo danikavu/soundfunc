@@ -253,7 +253,16 @@ export function TopBar() {
               <Dropdown
                 compact
                 label="Chord progressions"
-                value={<b title={PROGRESSIONS.find((p) => p.formula === song.harmony)?.label ?? 'custom progression'}>{PROGRESSIONS.find((p) => p.formula === song.harmony)?.label.split(/\s+/)[0] ?? 'custom'}</b>}
+                value={(() => {
+                  const prog = PROGRESSIONS.find((p) => p.formula === song.harmony);
+                  // "Royal Road  IV–V–iii–vi" → "Royal Road"; a constant harmony is a drone
+                  const name = prog ? prog.label.split(/\s{2,}/)[0] : /^\s*-?\d+(\.\d+)?\s*$/.test(song.harmony) ? 'Drone' : 'Custom';
+                  return (
+                    <b className="prog-name" title={prog?.label ?? (name === 'Drone' ? 'One chord all the way' : 'Your own progression')}>
+                      {name}
+                    </b>
+                  );
+                })()}
                 groups={[
                   {
                     title: 'Progressions',
@@ -270,10 +279,10 @@ export function TopBar() {
             </div>
           </div>
         </div>
-        <label className="field-inline hide-narrow w-space">
-          <span>Space</span>
+        <label className="field-inline hide-narrow w-space" title="Reverb — how much of the whole track rings in the room">
+          <span>Reverb</span>
           <span className="space-slider">
-            <input type="range" min={0} max={1} step={0.01} value={song.reverb} onChange={(e) => setSong({ reverb: Number(e.target.value) })} aria-label="Space (reverb)" />
+            <input type="range" min={0} max={1} step={0.01} value={song.reverb} onChange={(e) => setSong({ reverb: Number(e.target.value) })} aria-label="Reverb" />
           </span>
         </label>
       </div>

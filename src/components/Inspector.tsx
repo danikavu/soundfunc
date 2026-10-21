@@ -347,7 +347,7 @@ function SoundTab() {
       <div className="eyebrow">Voice</div>
       <VoicePicker />
       {track.waveform === 'custom' && <TimbreEditor />}
-      <SaveVoice />
+      {track.waveform === 'custom' && <SaveVoice />}
 
       {!drum && (
         <>
@@ -384,7 +384,7 @@ function SoundTab() {
       <div className="eyebrow">Mix</div>
       <Slider label="Volume" value={track.volume} min={0} max={1} onChange={(volume) => up({ volume })} />
       <Slider label="Pan" value={track.pan} min={-1} max={1} format={(v) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `L${Math.round(-v * 100)}` : `R${Math.round(v * 100)}`)} onChange={(pan) => up({ pan })} />
-      <Slider label="Space" value={track.send} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(send) => up({ send })} />
+      <Slider label="Reverb" value={track.send} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(send) => up({ send })} />
       {!drum && (
         <>
           <Slider label="Attack" value={track.attack} min={0.003} max={1.5} format={(v) => `${Math.round(v * 1000)}ms`} onChange={(attack) => up({ attack })} />
