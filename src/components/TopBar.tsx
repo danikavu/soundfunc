@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { exportMidi, exportNotesCsv } from '../engine/midi';
-import { NOTE_NAMES, PROGRESSIONS, SCALES } from '../engine/music';
+import { NOTE_NAMES, PROGRESSIONS, SCALE_GROUPS, SCALES, type ScaleGroup } from '../engine/music';
 import { tryCompile } from '../engine/expr';
 import { useStore } from '../state/store';
 import { togglePlay } from '../state/transport';
 import { GardenMenu } from './GardenMenu';
 import { StepPicker } from './StepPicker';
-import { FIXED_LENGTHS, stepLabel } from '../engine/steps';
+import { FIXED_LENGTHS, MAX_STEPS, shortBeats, stepLabel } from '../engine/steps';
 import { Dropdown } from './Dropdown';
-import { isDrum } from '../engine/project';
+import { HARMONY_VARS, isDrum } from '../engine/project';
 import { useSelectedTrack } from '../state/store';
-import { Enso, Icon, NumberField, TextField, download, fileSafe, isProject } from './ui';
+import { Icon, NumberField, Stepper, TextField, download, fileSafe, isProject } from './ui';
 
 export function toast(msg: string) {
   window.dispatchEvent(new CustomEvent('sf-toast', { detail: msg }));
@@ -102,19 +102,121 @@ function FileMenu() {
   );
 }
 
-/** The selected track's grid — how many steps, and how long each one is. */
+/** The song's length: every track fills it — or free, where each track loops on its own. */
+function SongLengthField() {
+  const song = useStore((s) => s.project.song);
+  const setSongLength = useStore((s) => s.setSongLength);
+  const setSong = useStore((s) => s.setSong);
+  const exact = song.repeat === 'exact';
+  const longest = useStore((s) => Math.max(0, ...s.project.tracks.map((t) => t.steps * t.stepBeats)));
+  const free = song.lengthMode === 'free';
+  return (
+    <div
+      className="field-inline w-song"
+      title={`${free ? `Free — each track loops on its own; the song is its longest track (${shortBeats(longest)})` : `Every track is ${song.lengthBeats} beats long`} · ${exact ? 'repeats exactly, note for note' : 'evolves — k, bar and the harmony run on from pass to pass'}`}
+    >
+      <span>Length</span>
+      <Dropdown
+        compact
+        label="Song length"
+        value={
+          <b>
+            {free ? 'free' : song.lengthBeats}
+            {exact ? (
+              <span className="repeat-mark" aria-label="repeats exactly">
+                {' '}
+                ⟲
+              </span>
+            ) : (
+              !free && <span className="unit"> beats</span>
+            )}
+          </b>
+        }
+        groups={[
+          {
+            title: 'Every track this long',
+            items: FIXED_LENGTHS.map((L) => ({
+              key: `S${L}`,
+              label: `${L} beats`,
+              hint: `${L / 4} bar${L === 4 ? '' : 's'}`,
+              selected: !free && song.lengthBeats === L,
+              onSelect: () => setSongLength(L),
+            })),
+          },
+          {
+            title: 'Free',
+            items: [
+              {
+                key: 'free',
+                label: 'Free',
+                hint: 'each track loops on its own — for polyrhythms',
+                selected: free,
+                onSelect: () => setSongLength('free'),
+              },
+            ],
+          },
+          {
+            title: 'Each pass',
+            items: [
+              {
+                key: 'evolve',
+                label: 'Evolves',
+                hint: 'k, bar and the harmony run on — every pass can differ',
+                selected: !exact,
+                onSelect: () => setSong({ repeat: 'evolve' }),
+              },
+              {
+                key: 'exact',
+                label: 'Repeats exactly',
+                hint: 'the clock starts again each pass — note for note',
+                selected: exact,
+                onSelect: () => setSong({ repeat: 'exact' }),
+              },
+            ],
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
+/** a field that keeps its place in the bar when it has nothing to show */
+function Placeholder({ label, width, title }: { label: string; width: string; title: string }) {
+  return (
+    <div className={`field-inline ${width}`} title={title}>
+      <span>{label}</span>
+      <span className="field-placeholder">–</span>
+    </div>
+  );
+}
+
+/**
+ * The selected track: steps × step length, and octave. Its length is the song's —
+ * set by Length on the left. Every field has a fixed width, so nothing shifts.
+ */
 function GridField() {
   const track = useSelectedTrack();
   const updateTrack = useStore((s) => s.updateTrack);
   const setGrid = useStore((s) => s.setGrid);
   const setStepBeatsAll = useStore((s) => s.setStepBeatsAll);
-  const setLengthAll = useStore((s) => s.setLengthAll);
   const trackCount = useStore((s) => s.project.tracks.length);
-  if (!track) return null;
+  const song = useStore((s) => s.project.song);
+  if (!track) {
+    return (
+      <>
+        <Placeholder label="Steps" width="w-grid" title="Select a track to set its steps" />
+        <Placeholder label="Octave" width="w-octave" title="Select a track to set its octave" />
+      </>
+    );
+  }
+  const free = song.lengthMode === 'free';
   return (
     <>
-      <div className="field-inline grid-field">
-        <span title={`Steps and step length of “${track.name}”`}>
+      <div
+        className="field-inline grid-field w-grid"
+        title={free ? `“${track.name}” loops every ${shortBeats(track.steps * track.stepBeats)}` : `“${track.name}” fills the song’s ${song.lengthBeats} beats`}
+      >
+        <span>
           <i className="grid-dot" style={{ background: track.color }} />
           <span className="grid-name">{track.name}</span>
         </span>
@@ -123,11 +225,11 @@ function GridField() {
             className="input num"
             integer
             min={1}
-            max={256}
+            max={MAX_STEPS}
             value={track.steps}
             onValue={(steps) => setGrid(track.id, { steps })}
             aria-label="Steps"
-            title={track.lengthMode === 'fixed' ? `Steps — divides the ${track.lengthBeats}-beat loop evenly` : 'Steps'}
+            title={free ? 'Steps' : `Steps — divides the song’s ${song.lengthBeats} beats evenly`}
           />
           <span className="muted grid-times">×</span>
           <StepPicker
@@ -145,68 +247,13 @@ function GridField() {
           />
         </div>
       </div>
-      <div className="field-inline">
-        <span>Length</span>
-        <Dropdown
-          compact
-          label="Loop length"
-          value={
-            track.lengthMode === 'fixed' ? (
-              <>
-                <b>{track.lengthBeats} beats</b>
-                <small>{track.lengthBeats / 4} bar{track.lengthBeats === 4 ? '' : 's'}</small>
-              </>
-            ) : (
-              <>
-                <b>free</b>
-                <small>{Number((track.steps * track.stepBeats).toFixed(3))} beats</small>
-              </>
-            )
-          }
-          groups={[
-            {
-              title: 'Fixed — always lands on the bar',
-              items: FIXED_LENGTHS.map((L) => ({
-                key: `L${L}`,
-                label: `${L} beats`,
-                hint: `${L / 4} bar${L === 4 ? '' : 's'} · ${Math.max(1, Math.min(256, Math.round(L / track.stepBeats)))} steps`,
-                selected: track.lengthMode === 'fixed' && track.lengthBeats === L,
-                onSelect: () => setGrid(track.id, { lengthMode: 'fixed', lengthBeats: L }),
-              })),
-            },
-            {
-              title: 'Free — experimental',
-              items: [
-                {
-                  key: 'free',
-                  label: 'Free',
-                  hint: 'steps × step length, whatever that adds up to',
-                  selected: track.lengthMode === 'free',
-                  onSelect: () => setGrid(track.id, { lengthMode: 'free' }),
-                },
-              ],
-            },
-          ]}
-          footer={
-            trackCount > 1 ? (
-              <button
-                className="btn small ghost step-all"
-                onClick={() => {
-                  setLengthAll(track.lengthMode === 'fixed' ? { lengthMode: 'fixed', lengthBeats: track.lengthBeats } : { lengthMode: 'free' });
-                  toast(`Every track is now ${track.lengthMode === 'fixed' ? `${track.lengthBeats} beats long` : 'free'} — ⌘Z to undo`);
-                }}
-              >
-                {track.lengthMode === 'fixed' ? `Make every track ${track.lengthBeats} beats` : 'Make every track free'}
-              </button>
-            ) : undefined
-          }
-        />
-      </div>
-      {!isDrum(track.waveform) && (
-        <label className="field-inline" title="Octave — where pitch 0 sits (4 = middle C’s octave)">
+      {isDrum(track.waveform) ? (
+        <Placeholder label="Octave" width="w-octave" title="Drums have no octave — their pitch input tunes the hit" />
+      ) : (
+        <div className="field-inline w-octave" title="Octave — where pitch 0 sits: 4 is middle C’s octave, −1 the lowest MIDI octave (−4…9; notes beyond MIDI’s range stay at its edge)">
           <span>Octave</span>
-          <NumberField className="input num grid-oct" integer min={0} max={8} value={track.octave} onValue={(octave) => updateTrack(track.id, { octave })} />
-        </label>
+          <Stepper label="Octave" min={-4} max={9} value={track.octave} onValue={(octave) => updateTrack(track.id, { octave })} />
+        </div>
       )}
     </>
   );
@@ -218,45 +265,50 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <div className="brand">
-        <Enso />
-        <span className="brand-name">SoundFunc</span>
-        <small className="hide-narrow">音 · 数</small>
-      </div>
-      <div className="row hide-narrow" style={{ gap: 2 }}>
-        <TextField className="project-name" value={project.name} onValue={setProjectName} aria-label="Project name" />
-        <GardenMenu />
-      </div>
 
       <div className="transport">
         <button className={`play ${playing ? 'on' : ''}`} onClick={() => void togglePlay()} title="Play / stop (space)">
           <Icon name={playing ? 'stop' : 'play'} size={18} />
         </button>
-        <label className="field-inline">
+        <div className="field-inline w-tempo">
           <span>Tempo</span>
-          <NumberField className="input num" min={20} max={300} value={song.bpm} onValue={(bpm) => setSong({ bpm })} />
-        </label>
-        <GridField />
-        <label className="field-inline">
+          <Stepper className="tempo" label="Tempo" title="Beats per minute (20–300) — type it, use the arrows, or ↑/↓" min={20} max={300} value={song.bpm} onValue={(bpm) => setSong({ bpm })} />
+        </div>
+        <SongLengthField />
+        <div className="field-inline w-key">
           <span>Key</span>
-          <select className="select" value={song.root} onChange={(e) => setSong({ root: Number(e.target.value) })}>
-            {NOTE_NAMES.map((n, i) => (
-              <option key={n} value={i}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field-inline">
+          <Dropdown
+            compact
+            label="Key"
+            value={<b>{NOTE_NAMES[song.root]}</b>}
+            groups={[
+              {
+                title: 'Key — the root note',
+                items: NOTE_NAMES.map((n, i) => ({ key: n, label: n, selected: song.root === i, onSelect: () => setSong({ root: i }) })),
+              },
+            ]}
+          />
+        </div>
+        <div className="field-inline w-scale">
           <span>Scale</span>
-          <select className="select" value={song.scale} onChange={(e) => setSong({ scale: e.target.value })}>
-            {Object.entries(SCALES).map(([k, s]) => (
-              <option key={k} value={k}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <Dropdown
+            compact
+            label="Scale"
+            value={<b>{(SCALES[song.scale] ?? SCALES.major).label}</b>}
+            groups={(Object.keys(SCALE_GROUPS) as ScaleGroup[]).map((g) => ({
+              title: SCALE_GROUPS[g],
+              items: Object.entries(SCALES)
+                .filter(([, sc]) => sc.group === g)
+                .map(([k, sc]) => ({
+                  key: k,
+                  label: sc.label,
+                  hint: sc.hint ? `${sc.steps.length} notes · ${sc.hint}` : `${sc.steps.length} notes`,
+                  selected: song.scale === k,
+                  onSelect: () => setSong({ scale: k }),
+                })),
+            }))}
+          />
+        </div>
         <div className="field-inline">
           <span title="The chord of each bar, as a function of bar">Harmony</span>
           <div className="harmony">
@@ -266,7 +318,7 @@ export function TopBar() {
               spellCheck={false}
               onFocus={checkpoint}
               onValue={(harmony) => setSong({ harmony }, false)}
-              style={tryCompile(song.harmony, ['bar', 'k', 'L', ...song.sliders.map((x) => x.name)]).error ? { borderBottomColor: 'var(--accent)' } : undefined}
+              style={tryCompile(song.harmony, HARMONY_VARS).error ? { borderBottomColor: 'var(--accent)' } : undefined}
               title="The chord (scale degree) as a function of bar. Tracks read it as h."
             />
             <button
@@ -278,26 +330,46 @@ export function TopBar() {
             >
               <Icon name={song.harmonyLocked ? 'lock' : 'unlock'} size={12} />
             </button>
-            <select className="select" value="" onChange={(e) => e.target.value && setSong({ harmony: e.target.value })} title="Chord progressions" aria-label="Chord progressions">
-              <option value="" disabled>
-                Progressions
-              </option>
-              {PROGRESSIONS.map((p) => (
-                <option key={p.formula} value={p.formula}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+            <div className="w-prog">
+              <Dropdown
+                compact
+                label="Chord progressions"
+                value={<b title={PROGRESSIONS.find((p) => p.formula === song.harmony)?.label ?? 'custom progression'}>{PROGRESSIONS.find((p) => p.formula === song.harmony)?.label.split(/\s+/)[0] ?? 'custom'}</b>}
+                groups={[
+                  {
+                    title: 'Progressions',
+                    items: PROGRESSIONS.map((p) => ({
+                      key: p.formula,
+                      label: p.label,
+                      hint: p.formula,
+                      selected: p.formula === song.harmony,
+                      onSelect: () => setSong({ harmony: p.formula }),
+                    })),
+                  },
+                ]}
+              />
+            </div>
           </div>
         </div>
-        <label className="field-inline hide-narrow" style={{ width: 80 }}>
+        <label className="field-inline hide-narrow w-space">
           <span>Space</span>
-          <input type="range" min={0} max={1} step={0.01} value={song.reverb} onChange={(e) => setSong({ reverb: Number(e.target.value) })} />
+          <span className="space-slider">
+            <input type="range" min={0} max={1} step={0.01} value={song.reverb} onChange={(e) => setSong({ reverb: Number(e.target.value) })} aria-label="Space (reverb)" />
+          </span>
         </label>
+      </div>
+
+      {/* everything above is the whole song; this panel is only the selected track */}
+      <div className="track-panel" aria-label="Selected track">
+        <GridField />
       </div>
 
       <div className="spacer" />
 
+      <div className="row garden-title">
+        <TextField className="project-name" value={project.name} onValue={setProjectName} aria-label="Garden name" title={`${project.name} — click to rename`} />
+        <GardenMenu />
+      </div>
       <div className="row" style={{ gap: 2 }}>
         <button className="icon-btn" onClick={undo} disabled={!past.length} title="Undo (⌘Z)">
           <Icon name="undo" />

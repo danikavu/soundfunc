@@ -5,7 +5,7 @@
  * silence (a velocity gate) instead of sound.
  */
 import { compileAst, FUNCTIONS, type Ast, type BinOp } from './expr';
-import { simplify, substitute, toSource } from './symbolic';
+import { simplify, substitute, toSource, varsOf } from './symbolic';
 
 const UNDEF: Ast = { k: 'var', name: '__undefined' };
 
@@ -18,11 +18,23 @@ type Tok =
 
 export class ImportError extends Error {}
 
+/** Greek letters read as ordinary names — σ is "sigma", as in Desmos (π, τ, φ stay constants) */
+const GREEK = [
+  'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'omicron', 'rho', 'sigma', 'upsilon', 'chi', 'psi', 'omega',
+  'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Sigma', 'Upsilon', 'Psi', 'Omega',
+];
+export const GREEK_NAMES = new Set(GREEK);
+const GREEK_VARIANTS: Record<string, string> = { varepsilon: 'epsilon', vartheta: 'theta', varrho: 'rho', varsigma: 'sigma', varkappa: 'kappa', varpi: 'pi', Pi: 'pi' };
+const GREEK_UNICODE: Record<string, string> = {
+  α: 'alpha', β: 'beta', γ: 'gamma', δ: 'delta', ε: 'epsilon', ζ: 'zeta', η: 'eta', θ: 'theta', ι: 'iota', κ: 'kappa', λ: 'lambda', μ: 'mu', ν: 'nu', ξ: 'xi',
+  ρ: 'rho', σ: 'sigma', υ: 'upsilon', χ: 'chi', ψ: 'psi', ω: 'omega', Γ: 'Gamma', Δ: 'Delta', Θ: 'Theta', Λ: 'Lambda', Σ: 'Sigma', Ω: 'Omega',
+};
+
 /** words that are functions or keywords when typed as plain text */
 const WORDS = new Set([
   'mod', 'frac', 'floor', 'ceil', 'round', 'abs', 'sign', 'max', 'min', 'exp', 'ln', 'log', 'sqrt',
   'sin', 'cos', 'tan', 'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh',
-  'if', 'otherwise', 'else', 'and', 'or', 'for', 'when', 'pi', 'tau', 'phi',
+  'if', 'otherwise', 'else', 'and', 'or', 'for', 'when', 'pi', 'tau', 'phi', ...GREEK, 'sgn',
   ...Object.keys(FUNCTIONS),
 ]);
 
@@ -72,6 +84,7 @@ function tokenize(input: string): Tok[] {
     .replace(/⌋/g, '\\rfloor ')
     .replace(/⌈/g, '\\lceil ')
     .replace(/⌉/g, '\\rceil ')
+    .replace(/[αβγδεζηθικλμνξρσυχψωΓΔΘΛΣΩ]/g, (c) => ` ${GREEK_UNICODE[c]} `)
     .replace(/π/g, ' pi ')
     .replace(/τ/g, ' tau ')
     .replace(/[φϕ]/g, ' phi ')
@@ -82,8 +95,8 @@ function tokenize(input: string): Tok[] {
     // \operatorname{mod}, \mathrm{floor}, \text{if} → words / text
     .replace(/\\(?:operatorname|mathrm|mathit|mathsf)\*?\s*\{\s*([a-zA-Z]+)\s*\}/g, ' $1 ')
     .replace(/\\(?:text|textrm|textit|mbox|textbf)\s*\{([^}]*)\}/g, (_, t: string) => ` \u0001${t.trim()}\u0002 `);
-  // strip "y =" / "f(x) =" at the start
-  s = s.replace(/^\s*(?:y|f\s*(?:\\left)?\(\s*x\s*(?:\\right)?\))\s*=(?!=)/, '');
+  // the function's own name at the start — y =, p =, t_i =, f(x) =, g\left(x\right) = — is not part of it
+  s = s.replace(/^\s*(?:[A-Za-z]|\\[A-Za-z]+)(?:_(?:\{[^}]*\}|[A-Za-z0-9]))?\s*(?:(?:\\left)?\(\s*[^()=]*?(?:\\right)?\))?\s*=(?!=)/, '');
 
   const out: Tok[] = [];
   let i = 0;
@@ -113,6 +126,7 @@ function tokenize(input: string): Tok[] {
         if (env) i += env[0].length;
         out.push({ t: 'cmd', v: `${name}:${env?.[1] ?? ''}` });
       } else if (CMD_ALIASES[name]) out.push(CMD_ALIASES[name]);
+      else if (GREEK_NAMES.has(name) || GREEK_VARIANTS[name]) out.push({ t: 'word', v: GREEK_VARIANTS[name] ?? name });
       else out.push({ t: 'cmd', v: name });
       continue;
     }
@@ -152,7 +166,7 @@ function tokenize(input: string): Tok[] {
 // ---------- parser ----------
 
 const FN_MAP: Record<string, string> = {
-  frac: 'fract', ln: 'log', arcsin: 'asin', arccos: 'acos', arctan: 'atan', cosh: 'cosh',
+  frac: 'fract', ln: 'log', arcsin: 'asin', arccos: 'acos', arctan: 'atan', cosh: 'cosh', sgn: 'sign',
 };
 
 export interface ImportOptions {
@@ -172,9 +186,21 @@ interface ReadContext {
   warnings: Set<string>;
   userNames: Set<string>;
   callUser: (name: string, args: Ast[]) => Ast | null;
+  /** names that aren't the time variable — they become sliders */
+  params: Set<string>;
+  /** constant definitions (k = 2.5): numbers become slider values, expressions are written in */
+  constants: Map<string, Ast>;
+  /** every free name as the source wrote it, in order — for guessing the time variable */
+  seen: string[];
 }
 
 export interface Imported {
+  /** the source's time variable (x, t, h…) */
+  timeVar: string;
+  /** names that aren't time — sliders, with their starting values */
+  params: { name: string; value: number }[];
+  /** every variable name the source uses, as written — any of them could be time */
+  names: string[];
   /** as read, with undefined regions kept (for display) */
   raw: Ast;
   /** the function's value, undefined regions as 0 */
@@ -185,6 +211,12 @@ export interface Imported {
 }
 
 function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
+  // "f, \sigma > 0": everything after a top-level comma is a side condition, not the function
+  const parts = splitTopLevel(src);
+  if (parts.length > 1) {
+    for (const extra of parts.slice(1)) ctx.warnings.add(`Read “${extra.trim()}” as a condition on the function — it isn't part of the sound.`);
+    src = parts[0];
+  }
   const timeVar = opts.timeVar ?? 'x';
   const timeAs = opts.timeAs ?? 't';
   const modSum = (opts.modReading ?? 'sum') === 'sum';
@@ -435,6 +467,36 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
     }
     return out;
   }
+  /** a variable name, with its subscript (p_0, t_{max}, σ_1): time, a constant, or a parameter */
+  function nameAtom(w: string): Ast {
+    let name = w;
+    if (sym('_')) {
+      k++;
+      let sub = '';
+      const t = peek();
+      if (t && (t.t === 'num' || t.t === 'word')) {
+        k++;
+        sub = String(t.v);
+      } else if (sym('{')) {
+        k++;
+        while (!sym('}') && peek()) sub += String((toks[k++] as { v: unknown }).v);
+        expect('}');
+      }
+      name = `${w}_${sub.replace(/[^A-Za-z0-9]/g, '')}`;
+    }
+    if (name === timeVar) return { k: 'var', name: timeAs };
+    if (ctx.constants.has(name)) {
+      // a constant written in brings along any sliders it is made of (c = 2a uses a)
+      const ast = ctx.constants.get(name)!;
+      for (const v of varsOf(ast)) if (v !== timeAs && v !== '__arg') ctx.params.add(v);
+      return ast;
+    }
+    if (!ctx.seen.includes(name)) ctx.seen.push(name);
+    const safe = safeName(name);
+    if (safe !== name) ctx.warnings.add(`“${name}” is already a SoundFunc name (${name === 'k' ? 'the loop count' : name === 't' ? 'time in beats' : name === 'h' ? 'the current chord' : 'a built-in'}), so your ${name} is the slider “${safe}”.`);
+    ctx.params.add(safe);
+    return { k: 'var', name: safe };
+  }
   function atom(): Ast {
     const x = peek();
     if (!x) throw new ImportError('The formula ends too early');
@@ -521,27 +583,13 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
       if (w === 'pi' || w === 'tau' || w === 'phi') return { k: 'const', name: w };
       if (w === 'e' && sym('^')) return { k: 'const', name: 'e' };
       if (w === 'e') return { k: 'const', name: 'e' };
-      if (w === timeVar && !sym('(')) return { k: 'var', name: timeAs };
+      if (GREEK_NAMES.has(w) && !(ctx.userNames.has(w) && sym('('))) return nameAtom(w);
+      if (w === timeVar && !sym('(') && !sym('_')) return { k: 'var', name: timeAs };
       if (w.length > 1 || FUNCTION_NAMES.has(w) || (ctx.userNames.has(w) && sym('('))) {
         // e.g. "floor(x/2)", "frac 4x", "\operatorname{mod}(a, b)"
         return fn(w);
       }
-      // subscripts like a_1 are part of the name
-      let name = w;
-      if (sym('_')) {
-        k++;
-        const sub = peek();
-        if (sub && (sub.t === 'num' || sub.t === 'word')) {
-          k++;
-          name += String(sub.v);
-        } else if (sym('{')) {
-          k++;
-          while (!sym('}') && peek()) name += String((toks[k++] as { v: unknown }).v);
-          expect('}');
-        }
-      }
-      warnings.add(`“${name}” isn't the time variable — it was set to 0. Replace it with a number, or rename your time variable to ${timeVar}.`);
-      return { k: 'num', v: 0 };
+      return nameAtom(w);
     }
     throw new ImportError(`Unexpected “${(x as { v: unknown }).v}”`);
   }
@@ -558,21 +606,79 @@ const MOD_TERM_NOTE = 'Infix “mod” was read with the precedence of ×: a + b
 const noUser: ReadContext['callUser'] = () => null;
 
 export function importMath(src: string, opts: ImportOptions = {}): Imported {
-  const warnings = new Set<string>();
-  const ast = looksStructured(src) ? readProgram(src, opts, warnings) : readExpr(src, opts, { warnings, userNames: new Set(), callUser: noUser });
-  return finish(ast, warnings);
+  const read = (o: ImportOptions) => {
+    const ctx: ReadContext = { warnings: new Set(), userNames: new Set(), callUser: noUser, params: new Set(), constants: new Map(), seen: [] };
+    const values = new Map<string, number>();
+    const ast = looksStructured(src) ? readProgram(src, o, ctx, values) : readExpr(src, o, ctx);
+    return { ast, ctx, values };
+  };
+  let timeVar = opts.timeVar ?? 'x';
+  let r = read({ ...opts, timeVar });
+  // no x? then t, or the one plain lowercase name left over (h in p = p_0 e^{-h/H}), is time
+  if (!opts.timeVar && !usesVar(r.ast, opts.timeAs ?? 't') && r.ctx.seen.length) {
+    // judged on the names as written: t first, then a plain lowercase letter (not p_0), then a Greek one
+    const names = r.ctx.seen;
+    const guess = names.find((n) => n === 't') ?? names.find((n) => /^[a-z]$/.test(n)) ?? names.find((n) => GREEK_NAMES.has(n)) ?? names[0];
+    timeVar = guess;
+    r = read({ ...opts, timeVar });
+    r.ctx.warnings.add(`There is no x, so “${guess}” is read as time. Choose another time variable below if that’s wrong.`);
+  }
+  const params = [...r.ctx.params].map((name) => ({ name, value: r.values.get(name) ?? 1 }));
+  const names = [...new Set([...(usesVar(r.ast, opts.timeAs ?? 't') ? [timeVar] : []), ...r.ctx.seen])];
+  return { ...finish(r.ast, r.ctx.warnings, timeVar, params), names };
 }
 
-function finish(ast: Ast, warnings: Set<string>): Imported {
+function usesVar(ast: Ast, name: string): boolean {
+  switch (ast.k) {
+    case 'var':
+      return ast.name === name;
+    case 'neg':
+    case 'not':
+      return usesVar(ast.a, name);
+    case 'bin':
+      return usesVar(ast.a, name) || usesVar(ast.b, name);
+    case 'cond':
+      return usesVar(ast.c, name) || usesVar(ast.a, name) || usesVar(ast.b, name);
+    case 'call':
+      return ast.args.some((x) => usesVar(x, name));
+    default:
+      return false;
+  }
+}
+
+/** split at commas that aren't inside any brackets */
+function splitTopLevel(src: string): string[] {
+  const out: string[] = [];
+  let depth = 0, from = 0;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if ('([{'.includes(c)) depth++;
+    else if (')]}'.includes(c)) depth--;
+    else if (c === ',' && depth === 0) {
+      out.push(src.slice(from, i));
+      from = i + 1;
+    }
+  }
+  out.push(src.slice(from));
+  return out.filter((p) => p.trim());
+}
+
+function finish(ast: Ast, warnings: Set<string>, timeVar: string, params: Imported['params']): Omit<Imported, 'names'> {
   const value = simplify(replaceUndef(ast));
   const gate = simplify(definedness(ast));
   return {
+    timeVar,
+    params,
     raw: simplify(ast),
     value,
     gate: gate.k === 'num' && gate.v === 1 ? null : gate,
     warnings: [...warnings],
   };
 }
+
+/** names SoundFunc already uses — a parameter with one of these names is renamed with a trailing _ */
+const TAKEN = new Set(['n', 'x', 't', 'k', 'h', 'bar', 'L', 'steps', 'beat', 'a', 'b', 'c', 'p', 'e', 'pi', 'tau', 'phi', ...Object.keys(FUNCTIONS)]);
+const safeName = (name: string) => (TAKEN.has(name) ? `${name}_` : name);
 
 const FUNCTION_NAMES = new Set([...Object.keys(FUNCTIONS), 'mod', 'frac', 'ln', 'log', 'exp', 'max', 'min', 'sqrt', 'arcsin', 'arccos', 'arctan', 'cosh']);
 
@@ -652,7 +758,7 @@ interface Definition {
   reading?: boolean;
 }
 
-function readProgram(src: string, opts: ImportOptions, warnings: Set<string>): Ast {
+function readProgram(src: string, opts: ImportOptions, ctx: ReadContext, values: Map<string, number>): Ast {
   const lines: Line[] = src
     .replace(/\t/g, '  ')
     .split('\n')
@@ -680,11 +786,9 @@ function readProgram(src: string, opts: ImportOptions, warnings: Set<string>): A
     }
   }
 
-  const userNames = new Set([...defs.values()].filter((d) => d.param).map((d) => d.name));
-  const ctx: ReadContext = {
-    warnings,
-    userNames,
-    callUser: (name, args) => {
+  for (const d of defs.values()) if (d.param) ctx.userNames.add(d.name);
+  Object.assign(ctx, {
+    callUser: (name: string, args: Ast[]): Ast | null => {
       const d = defs.get(name);
       if (!d || !d.param) return null;
       if (d.reading) throw new ImportError(`“${name}” is defined in terms of itself`);
@@ -700,12 +804,21 @@ function readProgram(src: string, opts: ImportOptions, warnings: Set<string>): A
       if (FUNCTIONS[builtin] && sameAsBuiltin(d.ast, builtin)) return { k: 'call', fn: builtin, args: [arg] };
       return substitute(d.ast, { __arg: arg });
     },
-  };
+  });
 
-  // the function to play: y, or f, or the last definition nobody else calls
-  const main = defs.get('y') ?? defs.get('f') ?? order[order.length - 1];
+  // the function to play: y, or f, or the last one that is a function, or the last line
+  const main = defs.get('y') ?? defs.get('f') ?? [...order].reverse().find((d) => d.param) ?? order[order.length - 1];
   if (!main) throw new ImportError('Nothing to read');
-  if (main.param && main.param !== (opts.timeVar ?? 'x')) warnings.add(`The main function takes “${main.param}”, read as time.`);
+  // other lines without a parameter are constants: k = 2.5 becomes a slider starting at 2.5;
+  // c = 2k is written into the function wherever c appears
+  for (const d of order) {
+    if (d === main || d.param) continue;
+    const ast = simplify(readBlock(d.lines, { ...opts, timeVar: '__none' }, ctx, d.name));
+    if (ast.k === 'num') values.set(safeName(d.name), ast.v);
+    else ctx.constants.set(d.name, ast);
+  }
+  ctx.params.clear(); // from here on: only the names the main function actually uses
+  if (main.param && main.param !== (opts.timeVar ?? 'x')) ctx.warnings.add(`The main function takes “${main.param}”, read as time.`);
   return readBlock(main.lines, { ...opts, timeVar: main.param ?? opts.timeVar ?? 'x' }, ctx, main.name);
 }
 

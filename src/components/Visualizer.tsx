@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { engine } from '../engine/audio';
-import { SCALES, chordName, midiToName, valueToPitch } from '../engine/music';
-import { BEATS_PER_BAR, audibleTracks, harmonyAt, isDrum, patternBeats, renderTrack, songBeats, voiceLabel, type Note, type Track } from '../engine/project';
+import { SCALES, chordName, limitPitch, midiToName, valueToPitch } from '../engine/music';
+import { BEATS_PER_BAR, audibleTracks, harmonyAt, isDrum, patternBeats, renderTrack, scaleLength, songBeats, voiceLabel, type Note, type Song, type Track, type TrackRender } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Seg, getRender } from './ui';
+import { RangeControl } from './RangeControl';
 
 type Mode = 'score' | 'function' | 'ripple';
 
@@ -77,6 +78,21 @@ interface ScoreItem {
   glide: [number, number, number][];
 }
 
+/**
+ * One pass of the song, as playback hears it: the track's loops k that overlap
+ * [offset, offset + total) — loop count, bar and harmony keep running from pass to pass.
+ * `at` maps each loop to its start within the pass (it can be negative when lengths don't divide).
+ */
+function passLoops(track: Track, song: Song, offset: number, total: number, withTraces?: TrackRender) {
+  const len = patternBeats(track);
+  const out: { k: number; at: number; r: TrackRender }[] = [];
+  if (len <= 0) return out;
+  for (let k = Math.floor(offset / len + 1e-9); k * len < offset + total - 1e-9; k++) {
+    out.push({ k, at: k * len - offset, r: k === 0 && withTraces ? withTraces : renderTrack(track, song, k, false) });
+  }
+  return out;
+}
+
 // plot layout for the Function view, shared by drawing and scrubbing
 const PLOT = { padL: 54, padR: 46, padT: 48, padB: 18 };
 
@@ -101,22 +117,37 @@ export function Visualizer() {
   /** where the plot sits on the canvas, for mapping the pointer (set while drawing) */
   const geom = useRef({ padL: 16, iw: 1 });
   const [, setViewTick] = useState(0);
+  /** which pass of the song the playhead is in (0 when stopped) — the views draw what is playing */
+  const [pass, setPass] = useState(0);
+  const passRef = useRef(0);
+  /**
+   * the pitch span seen so far this play-through, so the views keep their scale from pass
+   * to pass and only ever widen; it starts again when you stop or change the garden
+   */
+  const spanRef = useRef<{ score?: { of: unknown; lo: number; hi: number }; fn?: { of: unknown; lo: number; hi: number } }>({});
+  const sticky = (which: 'score' | 'fn', of: unknown, lo: number, hi: number) => {
+    const prev = spanRef.current[which];
+    if (pass > 0 && prev && prev.of === of) (lo = Math.min(lo, prev.lo)), (hi = Math.max(hi, prev.hi));
+    spanRef.current[which] = { of, lo, hi };
+    return [lo, hi];
+  };
 
   // every audible track tiled across the longest pattern — loop k matters for evolving tracks
+  const songTotal = songBeats(audibleTracks(project.tracks), project.song);
+  /** where this pass starts, in beats since play began */
+  const offset = pass * songTotal;
   const score = useMemo(() => {
     const tracks = audibleTracks(project.tracks);
-    const total = songBeats(tracks, project.song);
+    const total = songTotal;
     const items: ScoreItem[] = tracks.map((track) => {
-      const len = patternBeats(track);
       const notes: Note[] = [];
       const glide: ScoreItem['glide'] = [];
       const isGlide = track.playMode === 'glide' && !isDrum(track.waveform);
-      const loops = Math.ceil(total / len - 1e-9);
-      for (let k = 0; k < loops; k++) {
-        const r = k === 0 ? getRender(track, project.song) : renderTrack(track, project.song, k, false);
+      for (const { at, r } of passLoops(track, project.song, offset, total, getRender(track, project.song))) {
+        const inPass = (b: number) => at + b >= -1e-9 && at + b < total - 1e-9;
         if (isGlide) {
-          r.curve.beat.forEach((b, i) => k * len + b < total && glide.push([k * len + b, r.curve.midi[i], r.curve.velocity[i]]));
-        } else for (const n of r.notes) if (k * len + n.beat < total) notes.push({ ...n, beat: k * len + n.beat });
+          r.curve.beat.forEach((b, i) => inPass(b) && glide.push([at + b, r.curve.midi[i], r.curve.velocity[i]]));
+        } else for (const n of r.notes) if (inPass(n.beat)) notes.push({ ...n, beat: at + n.beat });
       }
       return { track, notes, glide };
     });
@@ -128,35 +159,34 @@ export function Visualizer() {
       for (const [, m, v] of it.glide) if (v >= 0.01) (lo = Math.min(lo, Math.floor(m))), (hi = Math.max(hi, Math.ceil(m)));
     }
     if (lo > hi) (lo = 48), (hi = 72);
+    [lo, hi] = sticky('score', project, lo, hi);
     return { melodic, drums, total, lo: lo - 2, hi: hi + 2 };
-  }, [project]);
+  }, [project, songTotal, offset]);
 
   const fn = useMemo(() => (selected ? getRender(selected, project.song) : null), [selected, project.song]);
 
   // the selected track across the whole song loop (as long as the Score), loop k included
   const fnFull = useMemo(() => {
     if (!selected || !fn) return null;
-    const len = patternBeats(selected);
     const total = score.total;
-    const loops = Math.max(1, Math.ceil(total / len - 1e-9));
     const raw: number[] = [], vel: number[] = [], midi: number[] = [];
     const steps: { beat: number; raw: number; vel: number }[] = [];
-    for (let k = 0; k < loops; k++) {
-      const r = k === 0 ? fn : renderTrack(selected, project.song, k, false);
+    const inPass = (b: number) => b >= -1e-9 && b < total - 1e-9;
+    for (const { at, r } of passLoops(selected, project.song, offset, total, fn)) {
       r.curve.beat.forEach((b, i) => {
-        if (k * len + b >= total - 1e-9) return;
+        if (!inPass(at + b)) return;
         raw.push(r.curve.raw[i]);
         vel.push(r.curve.velocity[i]);
         midi.push(r.curve.midi[i]);
       });
       r.pitchCurve.forEach((v, n) => {
-        const beat = k * len + n * selected.stepBeats;
-        if (beat < total - 1e-9) steps.push({ beat, raw: v, vel: r.velocityCurve[n] });
+        const beat = at + n * selected.stepBeats;
+        if (inPass(beat)) steps.push({ beat, raw: v, vel: r.velocityCurve[n] });
       });
     }
     // curve samples are evenly spaced: dt beats apart
     return { raw, vel, midi, steps, dt: selected.stepBeats / fn.curve.res, total };
-  }, [selected, fn, project.song, score.total]);
+  }, [selected, fn, project.song, score.total, offset]);
 
   /** the visible window, clamped to the song */
   const view = () => {
@@ -200,15 +230,32 @@ export function Visualizer() {
   }, []);
 
   // y-range of the Function plot (raw values), shared with scrubbing
+  // y-range of the Function plot (raw values). With a pitch range on, the plot
+  // stays within the values that range allows, so a stray −8373 can't flatten it.
   const fnRange = useMemo(() => {
-    if (!fnFull) return { lo: -1, hi: 1 };
+    const out = { lo: -1, hi: 1, edges: null as null | { lo: number; hi: number }, outside: 0 };
+    if (!fnFull || !selected) return out;
     let lo = Infinity, hi = -Infinity;
     for (const v of fnFull.raw) (lo = Math.min(lo, v)), (hi = Math.max(hi, v));
     if (!isFinite(lo) || !isFinite(hi)) (lo = -1), (hi = 1);
+    [lo, hi] = sticky('fn', fn, lo, hi);
+    const range = project.song.pitchRange;
+    if (range && range.mode !== 'off' && !isDrum(selected.waveform)) {
+      // the raw values that land on the range's edges, for this track's pitch mapping
+      const base = 12 * (selected.octave + 1) + project.song.root;
+      const L = scaleLength(project.song);
+      const toRaw = (m: number) => (selected.pitchMode === 'semitone' ? m - base : selected.pitchMode === 'degree' ? ((m - base) * L) / 12 : (m - base) / 12);
+      const eLo = toRaw(range.low), eHi = toRaw(range.high);
+      out.edges = { lo: eLo, hi: eHi };
+      out.outside = fnFull.raw.filter((v, i) => fnFull.vel[i] >= 0.01 && (v < eLo - 1e-9 || v > eHi + 1e-9)).length / Math.max(1, fnFull.vel.filter((v) => v >= 0.01).length);
+      lo = Math.max(lo, eLo);
+      hi = Math.min(hi, eHi);
+      if (lo > hi) (lo = eLo), (hi = eHi);
+    }
     if (hi - lo < 1e-6) (lo -= 1), (hi += 1);
     const span = hi - lo;
-    return { lo: lo - span * 0.08, hi: hi + span * 0.08 };
-  }, [fnFull]);
+    return { ...out, lo: lo - span * 0.08, hi: hi + span * 0.08 };
+  }, [fnFull, selected, project.song, fn]);
 
   // ⌘/Ctrl + scroll (or a trackpad pinch) zooms around the pointer; scrolling pans while zoomed
   useEffect(() => {
@@ -239,6 +286,12 @@ export function Visualizer() {
     const draw = () => {
       raf = requestAnimationFrame(draw);
       const pos = engine.position();
+      // repeating exactly, every pass is the first one
+      const nowPass = pos === null || !(songTotal > 0) || project.song.repeat === 'exact' ? 0 : Math.floor(pos / songTotal + 1e-9);
+      if (nowPass !== passRef.current) {
+        passRef.current = nowPass;
+        setPass(nowPass);
+      }
       if (!dirty.current && pos === null && mode !== 'ripple') return;
       dirty.current = false;
       const canvas = canvasRef.current!;
@@ -259,11 +312,12 @@ export function Visualizer() {
           setViewTick((t) => t + 1); // keep the "bars a–b" label in step
         }
       }
+      const offsetBars = Math.round(offset / BEATS_PER_BAR);
       /** bar ticks and numbers along the bottom, spaced to the zoom */
       const timeAxis = (bx: (b: number) => number, y: number, left: number, right: number) => {
         const ppb = (right - left) / vw.span;
         g.fillStyle = P.ink3;
-        g.font = '9.5px JetBrains Mono, monospace';
+        g.font = '10.5px Ubuntu Mono, monospace';
         g.textAlign = 'left';
         const labelEvery = Math.max(1, Math.ceil(36 / (ppb * BEATS_PER_BAR)));
         for (let b = Math.floor(vw.start); b <= vw.start + vw.span + 1e-9; b++) {
@@ -276,7 +330,7 @@ export function Visualizer() {
           const bar = b / BEATS_PER_BAR;
           if (isBar && bar % labelEvery === 0) {
             g.globalAlpha = 0.65;
-            g.fillText(String(bar + 1), x + 3, y + 13);
+            g.fillText(String(bar + offsetBars + 1), x + 3, y + 13);
           }
         }
         g.globalAlpha = 1;
@@ -316,11 +370,11 @@ export function Visualizer() {
         {
           const song = project.song;
           let prev = '';
-          g.font = '11px Shippori Mincho, serif';
+          g.font = '11px Ubuntu, sans-serif';
           g.textAlign = 'left';
           const first = Math.max(0, Math.floor(vw.start / BEATS_PER_BAR));
           for (let bar = first; bar * BEATS_PER_BAR < Math.min(total, vw.start + vw.span); bar++) {
-            const c = chordName(harmonyAt(song, bar * BEATS_PER_BAR), song.root, song.scale);
+            const c = chordName(harmonyAt(song, offset + bar * BEATS_PER_BAR), song.root, song.scale);
             const label = `${c.roman}  ${c.name}`;
             const x0 = bx(bar * BEATS_PER_BAR);
             const x = Math.max(padL, x0);
@@ -401,7 +455,7 @@ export function Visualizer() {
           const y0 = drumTop + li * laneH;
           g.globalAlpha = 1;
           g.fillStyle = P.ink3;
-          g.font = '9.5px Inter, sans-serif';
+          g.font = '9.5px Ubuntu, sans-serif';
           g.textAlign = 'left';
           g.strokeStyle = P.rake;
           g.beginPath();
@@ -450,11 +504,12 @@ export function Visualizer() {
         const velH = Math.min(34, (H - padT - padB) * 0.2);
         const ch = H - padT - padB - velH - 12;
         const sx = (beat: number) => padL + ((beat - vw.start) / vw.span) * iw;
-        const sy = (v: number) => padT + (1 - (v - lo) / (hi - lo)) * ch;
+        // values beyond the plot (outside the pitch range) ride along its edge
+        const sy = (v: number) => padT + (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * ch;
         const vBase = H - padB;
 
         // axes: raw value on the left, the note it becomes on the right, x along the bottom
-        g.font = '10px JetBrains Mono, monospace';
+        g.font = '11px Ubuntu Mono, monospace';
         let lastNote = '';
         for (let i = 0; i <= 4; i++) {
           const v = lo + ((hi - lo) * i) / 4;
@@ -468,7 +523,8 @@ export function Visualizer() {
           g.textAlign = 'right';
           g.fillText(v.toFixed(1), padL - 8, y + 3);
           if (!isDrum(selected.waveform)) {
-            const m = valueToPitch(v, selected.pitchMode, project.song.root, project.song.scale, selected.octave, !glide || selected.quantize);
+            // the note you will hear at this height — after the pitch range
+            const m = limitPitch(valueToPitch(v, selected.pitchMode, project.song.root, project.song.scale, selected.octave, !glide || selected.quantize, false), project.song.pitchRange);
             const name = midiToName(Math.round(m));
             g.textAlign = 'left';
             if (name !== lastNote) g.fillText(name, W - padR + 8, y + 3);
@@ -485,6 +541,20 @@ export function Visualizer() {
           g.setLineDash([]);
         }
         timeAxis(sx, padT + ch + 3, padL, W - padR);
+        if (fnRange.edges) {
+          g.strokeStyle = P.accent;
+          g.globalAlpha = 0.35;
+          g.setLineDash([4, 4]);
+          for (const e of [fnRange.edges.lo, fnRange.edges.hi]) {
+            if (e < lo || e > hi) continue;
+            g.beginPath();
+            g.moveTo(padL, sy(e));
+            g.lineTo(W - padR, sy(e));
+            g.stroke();
+          }
+          g.setLineDash([]);
+          g.globalAlpha = 1;
+        }
         g.fillStyle = P.ink3;
         g.textAlign = 'left';
         g.fillText('y', padL - 30, padT - 14);
@@ -493,8 +563,8 @@ export function Visualizer() {
         if (len < fnFull.total - 1e-9) {
           g.strokeStyle = P.line;
           g.setLineDash([1, 5]);
-          for (let b = len; b < fnFull.total; b += len) {
-            if (b < vw.start || b > vw.start + vw.span) continue;
+          for (let b = Math.ceil(offset / len + 1e-9) * len - offset; b < fnFull.total; b += len) {
+            if (b < 1e-9 || b < vw.start || b > vw.start + vw.span) continue;
             g.beginPath();
             g.moveTo(sx(b), padT);
             g.lineTo(sx(b), padT + ch);
@@ -628,7 +698,7 @@ export function Visualizer() {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [mode, score, fnFull, fnRange, selected, project.song]);
+  }, [mode, score, fnFull, fnRange, selected, project.song, offset]);
 
   const hit = (e: React.MouseEvent) => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -654,7 +724,8 @@ export function Visualizer() {
     scrubRef.current = beat;
     dirty.current = true;
     engine.scrub(selected, fnFull.midi[i], fnFull.vel[i]);
-    const bar = Math.floor(beat / BEATS_PER_BAR) + 1, inBar = beat - (bar - 1) * BEATS_PER_BAR;
+    const bar0 = Math.floor(beat / BEATS_PER_BAR), inBar = beat - bar0 * BEATS_PER_BAR;
+    const bar = bar0 + Math.round(offset / BEATS_PER_BAR) + 1;
     setTip({
       x: e.clientX - r.left,
       y: 64,
@@ -728,16 +799,23 @@ export function Visualizer() {
       <div className="viz-legend">
         <h2>{mode === 'score' ? 'The Garden' : mode === 'function' ? selected?.name ?? '—' : 'Ripple'}</h2>
         <span className="muted">
+          {mode !== 'ripple' && (project.song.repeat === 'exact' ? '⟲ repeats exactly · ' : pass > 0 ? `pass ${pass + 1} · ` : '')}
           {mode === 'score' && `${Number(score.total.toFixed(3))} beats · ${midiToName(score.lo + 2)}–${midiToName(score.hi - 2)}${score.drums.length ? ` · ${score.drums.length} drum lanes` : ''}`}
-          {mode === 'function' && `y = f(x) over the whole ${Number(score.total.toFixed(3))}-beat loop · drag across it to hear it`}
+          {mode === 'function' &&
+            `y = f(x) · ${Number(score.total.toFixed(3))} beats · drag to hear it${
+              fnRange.outside > 0
+                ? ` · ${Math.max(1, Math.round(fnRange.outside * 100))}% ${project.song.pitchRange.mode === 'wrap' ? 'wrapped' : 'clamped'} into ${midiToName(project.song.pitchRange.low)}–${midiToName(project.song.pitchRange.high)}`
+                : ''
+            }`}
           {mode === 'ripple' && (playing ? 'live waveform' : 'press space to listen')}
         </span>
       </div>
+      {mode !== 'ripple' && <RangeControl />}
       {mode !== 'ripple' && (
         <div className="viz-zoom">
           {view().zoomed && (
             <span className="muted">
-              bars {Math.floor(view().start / BEATS_PER_BAR) + 1}–{Math.ceil((view().start + view().span) / BEATS_PER_BAR)} of {Math.ceil(score.total / BEATS_PER_BAR)}
+              bars {Math.floor((offset + view().start) / BEATS_PER_BAR) + 1}–{Math.ceil((offset + view().start + view().span) / BEATS_PER_BAR)}
             </span>
           )}
           <button className="icon-btn" onClick={() => zoomAt(1 / 1.6)} title="Zoom in (⌘/Ctrl + scroll, or pinch)">

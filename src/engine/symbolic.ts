@@ -4,7 +4,7 @@
  * prints as SoundFunc formulas, LaTeX, JavaScript and Python.
  */
 import { compileAst, parse, type Ast, type BinOp } from './expr';
-import { NODE_DEFS, parseList, parsePattern, sectionLengths, type GNode, type Graph } from './graph';
+import { COMPARE_OPS, NODE_DEFS, parseList, parsePattern, sectionLengths, type GNode, type Graph } from './graph';
 import { NOTE_NAMES, PITCH_MODES, SCALES } from './music';
 import { BEATS_PER_BAR, isDrum, scaleLength, voiceLabel, type Song, type Track } from './project';
 
@@ -152,7 +152,7 @@ function fold(ast: Ast): Ast {
 // ---------- graph → expressions ----------
 
 const PREFIX: Record<string, string> = {
-  expr: 'f', math: 'm', func: 'g', map: 'r', wave: 'w', series: 's', euclid: 'E', chance: 'C', pattern: 'P', list: 'v', sections: 'S',
+  expr: 'f', math: 'm', func: 'g', compare: 'q', switch: 'i', map: 'r', wave: 'w', series: 's', euclid: 'E', chance: 'C', pattern: 'P', list: 'v', sections: 'S',
 };
 
 /** symbolic value of an unconnected input */
@@ -170,6 +170,12 @@ export function fallback(type: string, port: string, data: GNode['data']): Ast {
       return bin('+', v('n'), bin('*', v('k'), v('steps')));
     case 'math.b':
       return num(n(data.b, 1));
+    case 'compare.b':
+      return num(n(data.b, 0));
+    case 'switch.then':
+      return num(n(data.then, 1));
+    case 'switch.else':
+      return num(n(data.else, 0));
     case 'output.velocity':
       return num(0.8);
     case 'output.length':
@@ -230,6 +236,10 @@ export function nodeAst(node: GNode, handle: string, ins: Ast[]): Ast {
     }
     case 'func':
       return call(String(d.fn ?? 'abs'), ins[0]);
+    case 'compare':
+      return bin((COMPARE_OPS[String(d.op)] ? String(d.op) : '<') as BinOp, ins[0], ins[1]);
+    case 'switch':
+      return { k: 'cond', c: ins[0], a: ins[1], b: ins[2] };
     case 'map': {
       const a = n(d.inMin), b = n(d.inMax, 1), c = n(d.outMin), e = n(d.outMax, 1);
       let u: Ast = bin('/', bin('-', ins[0], num(a)), num(b - a));
@@ -421,8 +431,18 @@ const TEX_FN: Record<string, string> = {
   log: '\\ln', log2: '\\log_2', min: '\\min', max: '\\max', gcd: '\\gcd',
 };
 
+const TEX_GREEK = new Set([
+  'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'omicron', 'rho', 'sigma', 'upsilon', 'chi', 'psi', 'omega',
+  'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Sigma', 'Upsilon', 'Psi', 'Omega',
+]);
+
 function texName(name: string): string {
   if (TEX_VARS[name]) return TEX_VARS[name];
+  // a name renamed to dodge a SoundFunc one (k → k_) shows as k′
+  if (/^[A-Za-z]+_$/.test(name)) return `${texName(name.slice(0, -1))}'`;
+  const sub = /^([A-Za-z]+)_([A-Za-z0-9]+)$/.exec(name);
+  if (sub) return `${texName(sub[1])}_{${sub[2].length > 1 && !/^\d+$/.test(sub[2]) ? `\\mathrm{${sub[2]}}` : sub[2]}}`;
+  if (TEX_GREEK.has(name)) return `\\${name}`;
   const m = /^([a-zA-Z]+)(\d+)$/.exec(name);
   if (m) return `${m[1]}_{${m[2]}}`;
   return name.length > 1 ? `\\mathit{${name}}` : name;
@@ -751,7 +771,7 @@ export function trackTex(c: Composed, song: Song): { label: string; tex: string 
   if (vars.has('L')) defs.push(`L = ${scaleLength(song)}`);
   if (vars.has('h') || vars.has('bar')) defs.push(`\\mathrm{bar} = ${toTex(barAst(track))}`);
   if (vars.has('beat')) defs.push(`\\mathit{beat} = ${toTex(beatAst(track))}`);
-  for (const sl of song.sliders ?? []) if (vars.has(sl.name)) defs.push(`${texName(sl.name)} = ${fmtNum(sl.value)}\\ \\text{(slider)}`);
+  for (const sl of track.sliders ?? []) if (vars.has(sl.name)) defs.push(`${texName(sl.name)} = ${fmtNum(sl.value)}\\ \\text{(slider)}`);
   if (vars.has('h')) defs.push(`h = ${toTex(harmonyAst(song))}`);
   if (defs.length) lines.push({ label: 'clock, harmony & sliders', tex: defs.join(',\\quad ') });
   lines.push({ label: 'n runs over', tex: `n \\in \\{0, 1, \\dots, ${track.steps - 1}\\},\\quad k = \\text{loop count}` });
@@ -801,11 +821,6 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
           `SONG = {"bpm": ${song.bpm}, "root": ${song.root}, "scale": [${scale.steps.join(', ')}]}  # root ${NOTE_NAMES[song.root]}`,
           'PHI = (1 + math.sqrt(5)) / 2',
         ];
-  const sliders = (song.sliders ?? []).filter((sl) => cs.some((c) => c.math.vars.has(sl.name) || c.math.bindings.some((b) => varsOf(b.ast).has(sl.name))) || (anyHarmony && varsOf(harmony).has(sl.name)));
-  if (sliders.length) {
-    const cm = lang === 'js' ? '//' : '#';
-    body.push(`\n${lang === 'js' ? '\n' : ''}${cm} sliders — change these to change the music\n${sliders.map((sl) => `${lang === 'js' ? 'export const ' : ''}${sl.name} = ${fmtNum(sl.value)}${lang === 'js' ? ';' : ''}  ${cm} ${fmtNum(sl.min)} … ${fmtNum(sl.max)}`).join('\n')}`);
-  }
   if (anyHarmony) {
     body.push(
       lang === 'js'
@@ -837,6 +852,9 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
     }
     if (vars.has('h')) clock.push(`${pre}h = harmony(bar)${end}`);
     if (vars.has('L')) clock.push(`${pre}L = ${L}${end}  ${lang === 'js' ? '//' : '#'} scale degrees per octave`);
+    // this track's sliders — change these to change the music
+    const sliders = (track.sliders ?? []).filter((sl) => vars.has(sl.name)).map((sl) => `${pre}${sl.name} = ${fmtNum(sl.value)}${end}  ${lang === 'js' ? '//' : '#'} slider ${fmtNum(sl.min)} … ${fmtNum(sl.max)}`);
+    clock.unshift(...sliders);
     const binds = math.bindings.map((b) => `${pre}${b.name} = ${toCode(b.ast, lang)}${end}  ${lang === 'js' ? '//' : '#'} ${b.label}`);
     const mode = `${describeTrack(track, song)} · ${track.steps} steps of ${track.stepBeats} beats`;
     if (lang === 'js') {

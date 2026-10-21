@@ -77,10 +77,19 @@ export function stepLabel(beats: number): string {
   return `${Number(beats.toFixed(4))} beats`;
 }
 
+/** a length in beats for tight spaces: at most two decimals — "9.89 beats", "4 beats" */
+export const shortBeats = (beats: number) => `${Number(beats.toFixed(2))} beats`;
+
+/** the step length for tight spaces: its note name, or "0.41 b" */
+export const shortStepLabel = (beats: number) => {
+  const named = ALL_STEPS.find((x) => Math.abs(x.beats - beats) < 1e-9);
+  return named ? named.label : `${Number(beats.toFixed(2))} b`;
+};
+
 /** steps per 4-beat bar, for display */
 export const perBar = (beats: number) => {
   const v = 4 / beats;
-  return Math.abs(v - Math.round(v)) < 1e-6 ? String(Math.round(v)) : v.toFixed(2);
+  return Math.abs(v - Math.round(v)) < 1e-6 ? String(Math.round(v)) : v.toFixed(1);
 };
 
 /**
@@ -97,42 +106,42 @@ export function parseStepLength(text: string): number | null {
   return Number.isFinite(v) && v >= 1 / 64 && v <= 32 ? v : null;
 }
 
-// ---------- loop length: fixed (4/8/16/32/64 beats) or free ----------
+// ---------- the song's length: fixed (4/8/16/32/64 beats) or free ----------
 
-export type LengthMode = 'free' | 'fixed';
+export type LengthMode = 'fixed' | 'free';
 
-/** the loop lengths a fixed grid can have, in beats */
+export const MAX_STEPS = 1024;
+
+/** the lengths a song can have, in beats */
 export const FIXED_LENGTHS = [4, 8, 16, 32, 64] as const;
 
 export interface Grid {
   steps: number;
   stepBeats: number;
-  lengthMode: LengthMode;
-  lengthBeats: number;
 }
 
 export const nearestFixedLength = (beats: number) =>
   FIXED_LENGTHS.reduce((best, l) => (Math.abs(Math.log2(l / beats)) < Math.abs(Math.log2(best / beats)) ? l : best), FIXED_LENGTHS[0] as number);
 
+/** the smallest fixed length that holds `beats` (64 at most) */
+export const fixedLengthFor = (beats: number) => FIXED_LENGTHS.find((l) => l >= beats - 1e-9) ?? 64;
+
 /**
- * Apply a change to a track's grid. In fixed mode the loop is always exactly
- * `lengthBeats` long: a chosen step length becomes a whole number of steps (nudged so
+ * Apply a change to a track's grid. With a song length (in beats) every track is
+ * exactly that long: a chosen step length becomes a whole number of steps (nudged so
  * the loop lands on the beat), and a typed step count divides the length evenly.
- * In free mode, steps × step length is whatever it is.
+ * With `null` (a free song) steps × step length is whatever it is.
  */
-export function applyGrid(current: Grid, patch: Partial<Grid>): Grid {
+export function applyGrid(current: Grid, patch: Partial<Grid>, length: number | null): Grid {
   const next: Grid = { ...current, ...patch };
-  if (next.lengthMode === 'free') {
-    next.steps = Math.max(1, Math.min(256, Math.round(next.steps)));
+  if (length === null) {
+    next.steps = Math.max(1, Math.min(MAX_STEPS, Math.round(next.steps)));
     return next;
   }
-  const L = next.lengthBeats;
-  let steps: number;
-  if (patch.steps !== undefined && patch.stepBeats === undefined) steps = patch.steps;
-  else steps = L / next.stepBeats;
-  next.steps = Math.max(1, Math.min(256, Math.round(steps)));
-  next.stepBeats = L / next.steps;
+  const steps = patch.steps !== undefined && patch.stepBeats === undefined ? patch.steps : length / next.stepBeats;
+  next.steps = Math.max(1, Math.min(MAX_STEPS, Math.round(steps)));
+  next.stepBeats = length / next.steps;
   return next;
 }
 
-export const gridOf = (t: Grid): Grid => ({ steps: t.steps, stepBeats: t.stepBeats, lengthMode: t.lengthMode, lengthBeats: t.lengthBeats });
+export const gridOf = (t: Grid): Grid => ({ steps: t.steps, stepBeats: t.stepBeats });

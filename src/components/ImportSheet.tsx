@@ -3,13 +3,12 @@ import { compileAst, type Ast } from '../engine/expr';
 import { importMath, ImportError, type Imported } from '../engine/importMath';
 import { TRACK_COLORS, layoutGraph, uid } from '../engine/presets';
 import { simplify, substitute, toSource, toTex } from '../engine/symbolic';
-import { TRACK_DEFAULTS, type Track, type Waveform } from '../engine/project';
+import { TRACK_DEFAULTS, type Slider, type Track, type Waveform } from '../engine/project';
 import { useStore } from '../state/store';
 import { toast } from './TopBar';
 import { Icon, NumberField, Seg, TextField } from './ui';
 import { Tex, useKatex } from './tex';
 import { StepPicker } from './StepPicker';
-import { FIXED_LENGTHS, nearestFixedLength } from '../engine/steps';
 
 type XMeans = 'beats' | 'steps' | 'loop';
 type YMeans = 'octaves' | 'semitones' | 'degrees';
@@ -35,6 +34,10 @@ export function ImportSheet() {
   const [articulate, setArticulate] = useState(true);
   const [modReading, setModReading] = useState<'sum' | 'term'>('sum');
   const [xStart, setXStart] = useState(0);
+  /** the time variable, when the reader's guess isn't right (null = let it guess) */
+  const [timeChoice, setTimeChoice] = useState<string | null>(null);
+  /** slider starting values the user typed, by name */
+  const [paramEdits, setParamEdits] = useState<Record<string, number>>({});
   const katex = useKatex(open);
 
   useEffect(() => {
@@ -44,14 +47,24 @@ export function ImportSheet() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, setOpen]);
 
+  // a new paste starts fresh: the reader guesses time again, sliders take the values as read
+  useEffect(() => {
+    setTimeChoice(null);
+    setParamEdits({});
+  }, [src]);
+
   const parsed = useMemo((): { ok: Imported | null; error: string | null } => {
     if (!src.trim()) return { ok: null, error: null };
     try {
-      return { ok: importMath(src, { modReading }), error: null };
+      return { ok: importMath(src, { modReading, ...(timeChoice ? { timeVar: timeChoice } : {}) }), error: null };
     } catch (e) {
       return { ok: null, error: e instanceof ImportError || e instanceof Error ? e.message : String(e) };
     }
-  }, [src, modReading]);
+  }, [src, modReading, timeChoice]);
+
+  /** the sliders this function will bring, with their values (as read, or as typed) */
+  const params = useMemo(() => (parsed.ok?.params ?? []).map((p) => ({ ...p, value: paramEdits[p.name] ?? p.value })), [parsed.ok, paramEdits]);
+  const paramScope = useMemo(() => Object.fromEntries(params.map((p) => [p.name, p.value])), [params]);
 
   /** x in the source → SoundFunc time (shifted so the track starts at x = xStart) */
   const timeAst = (): Ast => {
@@ -72,7 +85,8 @@ export function ImportSheet() {
     for (let i = 0; i < N; i++) {
       const beats = (i / N) * length;
       const x = xStart + (xMeans === 'beats' ? beats : xMeans === 'steps' ? beats / stepBeats : i / N);
-      const y = g({ t: x }) ? v({ t: x }) : NaN;
+      const scope = { ...paramScope, t: x };
+      const y = g(scope) ? v(scope) : NaN;
       if (Number.isFinite(y)) {
         pts.push(y);
         (lo = Math.min(lo, y)), (hi = Math.max(hi, y));
@@ -81,11 +95,11 @@ export function ImportSheet() {
     if (!Number.isFinite(lo)) return { pts, lo: -1, hi: 1, silent: true };
     if (hi - lo < 1e-9) (lo -= 1), (hi += 1);
     return { pts, lo, hi, silent: false };
-  }, [parsed.ok, length, xMeans, stepBeats, xStart]);
+  }, [parsed.ok, length, xMeans, stepBeats, xStart, paramScope]);
 
   if (!open) return null;
 
-  const steps = Math.max(1, Math.min(256, Math.round(length / stepBeats)));
+  const steps = Math.max(1, Math.min(1024, Math.round(length / stepBeats)));
 
   const plant = () => {
     const r = parsed.ok;
@@ -108,17 +122,18 @@ export function ImportSheet() {
       edges: edges.map(([source, sourceHandle, target, targetHandle]) => ({ id: `${source}.${sourceHandle}-${target}.${targetHandle}`, source, sourceHandle, target, targetHandle })),
     });
     const { project, plantTrack } = useStore.getState();
+    // the function's parameters become the new track's own sliders
+    const sliders: Slider[] = params.map(({ name: n, value: v }) => ({ name: n, value: v, ...(v > 0 ? { min: 0, max: v * 2 } : v < 0 ? { min: v * 2, max: 0 } : { min: -1, max: 1 }) }));
+    const made = sliders.map((sl) => sl.name);
     const track: Track = {
       ...TRACK_DEFAULTS,
       id: uid('track'),
       name: name.trim() || 'Imported f(x)',
       color: TRACK_COLORS[project.tracks.length % TRACK_COLORS.length],
       graph,
+      sliders,
       steps,
       stepBeats,
-      ...((FIXED_LENGTHS as readonly number[]).includes(length)
-        ? { lengthMode: 'fixed' as const, lengthBeats: length, stepBeats: length / steps }
-        : { lengthMode: 'free' as const, lengthBeats: nearestFixedLength(length) }),
       octave: 4,
       pitchMode: yMeans === 'degrees' ? 'degree' : 'semitone',
       playMode: glide ? 'glide' : 'notes',
@@ -131,7 +146,7 @@ export function ImportSheet() {
     };
     plantTrack(track);
     setOpen(false);
-    toast(`Planted “${track.name}” — ${steps} steps, ${glide ? 'glide' : 'notes'}`);
+    toast(`Planted “${track.name}” — ${steps} steps, ${glide ? 'glide' : 'notes'}${made.length ? ` · new slider${made.length > 1 ? 's' : ''}: ${made.join(', ')}` : ''}`);
   };
 
   const W = 640, H = 140;
@@ -184,7 +199,8 @@ export function ImportSheet() {
             <>
               <div className="fn-line">
                 <span className="fn-label">read as</span>
-                <Tex tex={`y = ${toTex(parsed.ok.raw)}`} katex={katex} />
+                {/* shown with the source's own time variable (h, x, θ…), not SoundFunc's t */}
+                <Tex tex={`y = ${toTex(substitute(parsed.ok.raw, { t: { k: 'var', name: parsed.ok.timeVar } }))}`} katex={katex} />
               </div>
               {plot && (
                 <svg className="import-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
@@ -200,12 +216,35 @@ export function ImportSheet() {
               ))}
 
               <div className="import-options">
+                {(parsed.ok.names.length > 1 || parsed.ok.timeVar !== 'x') && (
+                  <div className="field">
+                    <span>Time variable — the one that moves</span>
+                    <Seg<string>
+                      value={parsed.ok.timeVar}
+                      onChange={(v) => setTimeChoice(v)}
+                      options={[...new Set([parsed.ok.timeVar, ...parsed.ok.names])].map((n) => ({ value: n, label: n }))}
+                    />
+                  </div>
+                )}
+                {params.length > 0 && (
+                  <div className="field">
+                    <span>Sliders — every other name becomes one you can play with</span>
+                    <div className="import-params">
+                      {params.map((prm) => (
+                        <label key={prm.name} className="import-param">
+                          <code>{prm.name}</code>
+                          <NumberField className="input num" value={prm.value} onValue={(v) => setParamEdits((e) => ({ ...e, [prm.name]: v }))} aria-label={`${prm.name} starts at`} />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <label className="field">
                   <span>Track name</span>
                   <TextField className="input" value={name} onValue={setName} />
                 </label>
                 <div className="field">
-                  <span>x means</span>
+                  <span>{parsed.ok.timeVar} means</span>
                   <Seg<XMeans>
                     value={xMeans}
                     onChange={setXMeans}
@@ -241,7 +280,7 @@ export function ImportSheet() {
                 </div>
                 <div className="row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   <label className="field" style={{ width: 90 }} title="Where the track begins along x — for functions that start at negative x">
-                    <span>x starts at</span>
+                    <span>{parsed.ok.timeVar} starts at</span>
                     <NumberField className="input" value={xStart} onValue={setXStart} />
                   </label>
                   <label className="field" style={{ width: 90 }}>

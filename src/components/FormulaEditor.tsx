@@ -60,7 +60,7 @@ export function FormulaEditor({
   /** show typeset math while not editing */
   pretty = true,
   /** Alt+S turns the number under the caret into a song slider */
-  sliders = false,
+  sliders,
 }: {
   value: string;
   onValue: (v: string) => void;
@@ -68,7 +68,8 @@ export function FormulaEditor({
   onFocus?: () => void;
   className?: string;
   pretty?: boolean;
-  sliders?: boolean;
+  /** the track whose sliders this formula reads — enables Alt+S */
+  sliders?: string;
 }) {
   const [editing, setEditing] = useState(false);
   // the text belongs to the box while it is being edited (see TextField in ui.tsx)
@@ -145,9 +146,9 @@ export function FormulaEditor({
       const num = numberAt(draft, el.selectionStart);
       e.preventDefault();
       if (!num) return toast('Put the cursor on a number, then Alt+S makes it a slider');
-      const name = useStore.getState().addSlider(num.value);
+      const name = useStore.getState().addSlider(sliders, num.value);
       replace(num.start, num.end, name, num.start + name.length);
-      toast(`“${name}” is now a slider — rename or play it in the Sliders bar`);
+      toast(`“${name}” is now a slider on this track — rename or play it in the Sliders bar`);
       return;
     }
     // Alt+↑/↓ nudges the number under the caret — Shift ×10, Ctrl/⌘ ×0.1

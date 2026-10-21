@@ -13,9 +13,10 @@
   --moss: #6f8a63;
   --rake: rgba(43, 42, 39, 0.055);
   --shadow: 0 1px 2px rgba(43, 42, 39, 0.06), 0 8px 24px -12px rgba(43, 42, 39, 0.18);
-  --serif: 'Shippori Mincho', 'Hiragino Mincho ProN', Georgia, serif;
-  --sans: 'Inter', -apple-system, system-ui, sans-serif;
-  --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  /* one family throughout: Ubuntu for text and headings, Ubuntu Mono for numbers and code */
+  --serif: 'Ubuntu', -apple-system, system-ui, sans-serif;
+  --sans: 'Ubuntu', -apple-system, system-ui, sans-serif;
+  --mono: 'Ubuntu Mono', ui-monospace, Menlo, monospace;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   color-scheme: light;
 }
@@ -2093,4 +2094,1007 @@ button:focus-visible {
   .harmony .input {
     width: 92px;
   }
+}
+
+/* ---------- a top bar that never shifts ---------- */
+/* each grid field has a fixed width; long values truncate, digits are fixed-width */
+.topbar .field-inline.w-grid {
+  width: 178px;
+}
+.topbar .field-inline.w-length {
+  width: 118px;
+}
+.topbar .field-inline.w-octave {
+  width: 46px;
+}
+.grid-field > span {
+  max-width: 100%;
+}
+.grid-controls .dropdown.compact {
+  flex: 1;
+  min-width: 0;
+}
+.dropdown.compact .dropdown-field {
+  min-width: 0;
+  width: 100%;
+}
+.dropdown.compact .dropdown-value {
+  overflow: hidden;
+}
+.dropdown.compact .dropdown-value b,
+.dropdown.compact .dropdown-value small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dropdown.compact .dropdown-value b {
+  flex: none;
+  max-width: 62%;
+}
+.topbar .input.num,
+.dropdown.compact .dropdown-value {
+  font-variant-numeric: tabular-nums;
+}
+.field-placeholder {
+  display: block;
+  padding: 3px 0;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+@media (max-width: 1340px) {
+  .topbar .field-inline.w-grid {
+    width: 166px;
+  }
+  .topbar .field-inline.w-length {
+    width: 106px;
+  }
+}
+
+/* ---------- pitch range ---------- */
+.range-control {
+  position: absolute;
+  right: 12px;
+  top: 84px;
+  z-index: 3;
+}
+.range-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font: 10.5px var(--mono);
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.range-pill:hover {
+  border-color: var(--line);
+}
+.range-pill.off {
+  color: var(--ink-3);
+}
+.range-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  width: 330px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  animation: rise 0.18s var(--ease);
+}
+.range-pop > .muted {
+  font-size: 11.5px;
+  margin: 0 0 10px;
+}
+.range-explain {
+  font-size: 11px;
+  margin: 8px 0 10px !important;
+}
+.range-bounds {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+.range-bounds.dim {
+  opacity: 0.45;
+}
+.range-bounds .input.num {
+  width: 40px;
+}
+.range-bounds b {
+  font-weight: 400;
+  font-size: 14px;
+}
+
+/* the range popover may reach over the node editor; the legend stays clear of the tabs */
+.viz {
+  overflow: visible;
+  z-index: 6;
+}
+.viz canvas {
+  border-radius: 0;
+}
+.viz-legend {
+  right: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.viz-legend .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.range-pop {
+  z-index: 30;
+}
+
+.topbar .field-inline.w-song {
+  width: 96px;
+}
+
+/* ---------- room for the Song field ---------- */
+.grid-controls .input.num {
+  width: 36px;
+}
+@media (max-width: 1440px) {
+  .topbar {
+    gap: 12px;
+  }
+  .transport {
+    gap: 10px;
+  }
+}
+@media (max-width: 1340px) {
+  .topbar .field-inline.w-song {
+    width: 82px;
+  }
+  .topbar .field-inline.w-grid {
+    width: 150px;
+  }
+  .topbar .field-inline.w-length {
+    width: 94px;
+  }
+  .harmony .input {
+    width: 68px;
+  }
+  .project-name {
+    width: 84px;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .field-inline.w-grid {
+    width: 140px;
+  }
+  .harmony .input {
+    width: 56px;
+  }
+  .topbar {
+    gap: 10px;
+    padding: 0 14px;
+  }
+}
+
+/* compact fields: the value first; its detail only while there is room */
+.dropdown.compact .dropdown-value b {
+  max-width: none;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.dropdown.compact .dropdown-value small {
+  flex: 1 1 0;
+  min-width: 0;
+}
+@media (max-width: 1340px) {
+  .topbar .dropdown.compact .dropdown-value small {
+    display: none;
+  }
+}
+
+/* ---------- the selected track's own controls, apart from the song's ---------- */
+.track-panel {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 4px 12px 6px;
+  margin: 6px 0;
+  align-self: stretch;
+  border-radius: 12px;
+  background: var(--paper-2);
+  border: 1px solid var(--line-soft);
+}
+.track-panel .field-inline > span {
+  color: var(--ink-2);
+}
+@media (max-width: 1440px) {
+  .track-panel {
+    gap: 10px;
+    padding: 4px 10px 6px;
+  }
+}
+@media (max-width: 1340px) {
+  .track-panel {
+    gap: 8px;
+    padding: 4px 8px 6px;
+  }
+}
+@media (max-width: 1340px) {
+  .transport {
+    gap: 8px;
+  }
+}
+
+/* ---------- Ubuntu, and the garden's name as the title ---------- */
+.topbar .project-name {
+  font: 500 15px/1.2 var(--sans);
+  color: var(--ink);
+  width: 170px;
+  letter-spacing: 0.01em;
+}
+@media (max-width: 1440px) {
+  .topbar .project-name {
+    width: 140px;
+  }
+}
+@media (max-width: 1340px) {
+  .topbar .project-name {
+    width: 116px;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .project-name {
+    width: 96px;
+  }
+}
+/* large headings in Ubuntu Light keep the page quiet */
+.track-title,
+.viz-legend h2,
+.sheet-track,
+.sheet-title,
+.kit-detail h3,
+.fn-track h3 {
+  font-weight: 300;
+}
+/* Ubuntu Mono is narrower than the old mono; give small code a touch more size */
+.formula,
+.fn-code code,
+.fn-pre,
+.notes-table {
+  font-size: 12.5px;
+}
+@media (max-width: 1160px) {
+  .topbar .project-name {
+    width: 74px;
+  }
+  .topbar {
+    gap: 8px;
+  }
+}
+
+/* ---------- the top bar: one kind of control, no underlines, one line of labels ---------- */
+:root {
+  --ctl-h: 28px;
+}
+.transport,
+.track-panel {
+  align-items: flex-end;
+}
+.transport > .play {
+  align-self: center;
+}
+.topbar .field-inline > span:first-child {
+  line-height: 1;
+  margin-bottom: 4px;
+}
+/* number and text fields look like the dropdowns: a soft box */
+.topbar .input,
+.topbar .input.num {
+  height: var(--ctl-h);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 0 8px;
+  transition: border-color 0.25s var(--ease);
+}
+.topbar .input:hover,
+.topbar .input:focus {
+  border-color: var(--line);
+  border-bottom-color: var(--line);
+  outline: none;
+}
+.topbar .input.num {
+  -moz-appearance: textfield;
+}
+.topbar .input.num::-webkit-inner-spin-button,
+.topbar .input.num::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.topbar .field-inline > .input.num {
+  width: 52px;
+}
+.grid-controls .input.num {
+  width: 44px;
+}
+.input.num.grid-oct {
+  width: 40px;
+}
+.dropdown.compact .dropdown-field {
+  height: var(--ctl-h);
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--card);
+}
+.dropdown.compact .dropdown-chevron {
+  transform: translateY(-2px);
+}
+.dropdown.compact .dropdown-field.open .dropdown-chevron {
+  transform: translateY(-2px) rotate(180deg);
+}
+.field-placeholder {
+  height: var(--ctl-h);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px dashed var(--line-soft);
+  border-bottom: 1px dashed var(--line-soft);
+  border-radius: 8px;
+}
+/* the garden's name: plain text, a gentle hover instead of an underline */
+.topbar .project-name {
+  height: var(--ctl-h);
+  border: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0 8px;
+  margin-left: -8px;
+  background: transparent;
+}
+.topbar .project-name:hover,
+.topbar .project-name:focus {
+  border-color: var(--line-soft);
+  background: var(--card);
+}
+.harmony {
+  align-items: center;
+  gap: 4px;
+}
+.w-key {
+  width: 54px;
+}
+.w-scale {
+  width: 136px;
+}
+.w-prog {
+  width: 74px;
+}
+.w-space {
+  width: 76px;
+}
+.space-slider {
+  height: var(--ctl-h);
+  display: flex;
+  align-items: center;
+}
+@media (max-width: 1440px) {
+  .w-scale {
+    width: 120px;
+  }
+  .w-prog {
+    width: 64px;
+  }
+  .w-space {
+    width: 64px;
+  }
+}
+@media (max-width: 1340px) {
+  .w-scale {
+    width: 108px;
+  }
+  .w-prog {
+    width: 44px;
+  }
+  .w-prog .dropdown-value b {
+    display: none;
+  }
+}
+
+/* ---------- Plant a function: the formula appears on hover ---------- */
+.preset.reveal code {
+  display: block;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.3s var(--ease), opacity 0.25s var(--ease), margin 0.3s var(--ease);
+}
+.preset.reveal:hover code,
+.preset.reveal:focus-visible code {
+  max-height: 3.2em;
+  opacity: 1;
+  margin-top: 2px;
+}
+.preset.reveal {
+  padding: 6px 10px;
+}
+
+/* the track panel centres like the global group, so both rows of labels share one line */
+.track-panel {
+  align-self: center;
+  margin: 0;
+  padding: 5px 10px;
+}
+@media (max-width: 1340px) {
+  .track-panel {
+    padding: 5px 8px;
+  }
+  .topbar .field-inline > .input.num {
+    width: 44px;
+  }
+  .grid-controls .input.num {
+    width: 40px;
+  }
+  .input.num.grid-oct {
+    width: 36px;
+  }
+  .w-scale {
+    width: 100px;
+  }
+  .w-prog {
+    width: 40px;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .project-name {
+    width: 66px;
+  }
+  .w-scale {
+    width: 92px;
+  }
+  .harmony .input {
+    width: 46px;
+  }
+  .topbar .field-inline.w-grid {
+    width: 132px;
+  }
+  .topbar .field-inline.w-length {
+    width: 84px;
+  }
+  .topbar .field-inline.w-song {
+    width: 76px;
+  }
+}
+@media (max-width: 1500px) {
+  .topbar .field-inline > .input.num {
+    width: 46px;
+  }
+  .grid-controls .input.num {
+    width: 42px;
+  }
+  .input.num.grid-oct {
+    width: 38px;
+  }
+  .w-scale {
+    width: 112px;
+  }
+  .w-prog {
+    width: 58px;
+  }
+  .harmony .input {
+    width: 100px;
+  }
+  .topbar .project-name {
+    width: 124px;
+  }
+}
+@media (max-width: 1340px) {
+  .harmony .input {
+    width: 68px;
+  }
+  .topbar .project-name {
+    width: 100px;
+  }
+}
+/* narrower windows: these come last so they win over the 1500px sizes above */
+@media (max-width: 1340px) {
+  .topbar .field-inline > .input.num {
+    width: 42px;
+  }
+  .grid-controls .input.num {
+    width: 38px;
+  }
+  .input.num.grid-oct {
+    width: 34px;
+  }
+  .w-scale {
+    width: 98px;
+  }
+  .w-prog {
+    width: 40px;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .project-name {
+    width: 66px;
+  }
+  .w-scale {
+    width: 90px;
+  }
+  .harmony .input {
+    width: 46px;
+  }
+}
+/* tight spots: the progression box shows only its chevron; lengths drop the word "beats" */
+@media (max-width: 1500px) {
+  .w-prog {
+    width: 40px;
+  }
+  .w-prog .dropdown-value b {
+    display: none;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .dropdown .unit {
+    display: none;
+  }
+  .topbar .field-inline.w-song {
+    width: 58px;
+  }
+  .topbar .project-name {
+    width: 92px;
+  }
+}
+
+/* ---------- help in the nodes ---------- */
+/* hover any port or setting: an instant, quiet tooltip */
+.fnode [data-tip] {
+  position: relative;
+  cursor: help;
+}
+.fnode [data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: -4px;
+  z-index: 50;
+  width: max-content;
+  max-width: 230px;
+  white-space: normal;
+  text-align: left;
+  font: 400 11px/1.4 var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--paper);
+  background: var(--ink);
+  padding: 6px 9px;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  animation: rise 0.12s var(--ease);
+}
+.fnode .port.out[data-tip]:hover::after {
+  left: auto;
+  right: -4px;
+}
+.fnode [data-tip='']:hover::after {
+  display: none;
+}
+/* the hovered node rises above its neighbours so its tooltip is never hidden */
+.react-flow__node:hover {
+  z-index: 1000 !important;
+}
+.fnode .lock.help {
+  font: 600 11px/1 var(--sans);
+  width: 18px;
+}
+.fnode .lock.help.on {
+  color: var(--ink);
+  background: var(--paper-3);
+  opacity: 1;
+}
+.node-guide {
+  margin: 0 10px 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--paper-2);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  max-width: 240px;
+  cursor: default;
+}
+.node-guide p {
+  margin: 0 0 6px;
+}
+.node-guide dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 8px;
+  margin: 0;
+}
+.node-guide dt {
+  white-space: nowrap;
+  color: var(--ink);
+}
+.node-guide dd {
+  margin: 0;
+  color: var(--ink-3);
+}
+
+.import-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.import-param {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.import-param code {
+  font: 12.5px var(--mono);
+  color: var(--accent);
+}
+.import-param .input.num {
+  width: 64px;
+}
+
+/* ---------- my functions ---------- */
+.mine-head {
+  font: 500 9.5px/1 var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 10px 0 4px;
+}
+.mine-row {
+  position: relative;
+}
+.mine-actions {
+  position: absolute;
+  top: 4px;
+  right: -4px;
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+}
+.mine-row:hover .mine-actions {
+  opacity: 1;
+}
+.mine-actions .icon-btn {
+  width: 22px;
+  height: 22px;
+}
+.track-tools .btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---------- stepper: a number with arrows ---------- */
+.stepper {
+  display: flex;
+  align-items: stretch;
+  height: var(--ctl-h);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--card);
+  overflow: hidden;
+  transition: border-color 0.25s var(--ease);
+}
+.stepper:hover,
+.stepper:focus-within {
+  border-color: var(--line);
+}
+.topbar .stepper .input.num.stepper-input {
+  border: none;
+  height: 100%;
+  width: 30px;
+  padding: 0 0 0 8px;
+  background: transparent;
+}
+.stepper-arrows {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line-soft);
+}
+.stepper-arrows button {
+  flex: 1;
+  width: 18px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.2s, color 0.2s;
+}
+.stepper-arrows button:hover:not(:disabled) {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.stepper-arrows button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.stepper-arrows button + button {
+  border-top: 1px solid var(--line-soft);
+}
+.topbar .field-inline.w-octave {
+  width: 52px;
+}
+
+/* the song repeats exactly: a quiet loop mark in place of "beats" */
+.topbar .repeat-mark {
+  color: var(--accent);
+  font-weight: 400;
+}
+
+/* the node's own dice: a short roll when pressed */
+.fnode-head .lock.dice:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.fnode-head .lock.dice.rolled svg {
+  animation: dice-roll 0.45s var(--ease);
+}
+@keyframes dice-roll {
+  0% { transform: rotate(0) scale(1); }
+  50% { transform: rotate(200deg) scale(0.8); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+/* the garden's name sits on the right, with a save button beside it */
+.topbar .garden-title {
+  gap: 0;
+}
+.topbar .garden-title .project-name {
+  text-align: right;
+  margin-right: 4px;
+  text-overflow: ellipsis;
+}
+.garden-menu {
+  display: flex;
+  align-items: center;
+}
+.garden-menu .save-btn {
+  width: 34px;
+  height: 34px;
+}
+.garden-menu .garden-caret {
+  width: 18px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--ink-3);
+}
+.garden-menu .unsaved-dot {
+  top: 5px;
+  right: 5px;
+  box-shadow: 0 0 0 2px var(--paper);
+}
+.garden-pop {
+  left: auto;
+  right: 0;
+}
+
+/* ---------- tracks: mute & solo in a strip on the left ---------- */
+.track {
+  grid-template-columns: 20px 14px 1fr auto;
+  padding-left: 6px;
+}
+.ms-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ms-col .ms {
+  width: 20px;
+  height: 18px;
+  border-radius: 6px;
+}
+.tracks-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -2px -6px 8px;
+  padding: 0 10px 0 6px;
+  min-height: 40px;
+}
+.tracks-head-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.tracks-head-tools .icon-btn {
+  width: 32px;
+  height: 32px;
+  color: var(--ink-2);
+}
+.tracks-head-tools .fx-glyph {
+  font-size: 19px;
+  line-height: 1;
+  font-style: italic;
+}
+.kit-trigger {
+  padding: 12px 10px;
+}
+
+/* tempo: a number with arrows, like the octave */
+.topbar .field-inline.w-tempo {
+  width: 62px;
+}
+.topbar .stepper.tempo .input.num.stepper-input {
+  width: 40px;
+}
+
+/* ---------- node view toolbar: one row, one height, one icon size ---------- */
+.toolbar {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  gap: 6px;
+  min-height: 52px;
+}
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+.toolbar > *,
+.toolbar .lock-status > * {
+  flex: none;
+}
+.toolbar .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.toolbar .btn svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.toolbar .mutator {
+  height: 32px;
+  padding: 0 8px 0 0;
+  gap: 10px;
+}
+.toolbar .mutator .btn {
+  height: 30px;
+}
+.toolbar .mutator .seg {
+  height: 24px;
+}
+.toolbar .lock-status {
+  height: 32px;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+.toolbar .lock-status .btn {
+  height: 32px;
+  font-size: 12px;
+}
+.toolbar .lock-status .dropdown.compact .dropdown-field {
+  height: 32px;
+}
+
+/* ---------- tracks, second pass ---------- */
+/* M beside S, on the left */
+.ms-col {
+  flex-direction: row;
+  gap: 1px;
+}
+.track {
+  grid-template-columns: 41px 14px 1fr auto;
+}
+/* a line under the + ƒ 🗑 tools */
+.tracks-head {
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+}
+.tracks-head-tools .fx-glyph {
+  font-size: 15px;
+}
+/* plant a function: Save Track · Import · Export */
+.track-tools .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------- node toolbar: let popups (Copy to…) open outside it ---------- */
+.toolbar {
+  overflow: visible;
+}
+.toolbar .lock-status .dropdown.compact .dropdown-field {
+  width: auto;
+  padding: 0 10px;
+  gap: 6px;
+  white-space: nowrap;
+}
+.toolbar .lock-status .dropdown.compact {
+  flex: none;
+}
+
+/* selection tools: icon buttons, the same size as the rest of the toolbar */
+.toolbar .lock-status .btn.tool {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+.toolbar .lock-status .dropdown.compact .dropdown-field {
+  height: 32px;
+  padding: 0 8px;
+}
+.toolbar .copy-to {
+  display: inline-flex;
+  align-items: center;
+}
+/* the Copy to… list opens inward, under its button */
+.toolbar .dropdown.compact .dropdown-pop {
+  left: auto;
+  right: 0;
+  min-width: 220px;
+}
+/* tracks: hover actions float over the row, so names get the full width */
+.track {
+  position: relative;
+  grid-template-columns: 38px 12px 1fr;
+  gap: 8px;
+}
+.track .track-actions {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 8px;
+  background: inherit;
+}
+.track:hover .track-actions {
+  background: var(--paper-2);
+  box-shadow: -10px 0 10px var(--paper-2);
+}
+.track.selected:hover .track-actions {
+  background: var(--paper-3);
+  box-shadow: -10px 0 10px var(--paper-3);
+}
+/* plant a function: Save Track · Import · Export on one line */
+.track-tools {
+  flex-wrap: nowrap;
+  gap: 0;
+}
+.track-tools .btn {
+  padding: 3px 6px;
+  gap: 5px;
+}
+/* Copy to…: a round icon button like its neighbours */
+.toolbar .lock-status .dropdown.compact .dropdown-field {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+.toolbar .lock-status .dropdown.compact .dropdown-chevron {
+  display: none;
+}
+.toolbar .lock-status .dropdown.compact .dropdown-value {
+  display: inline-flex;
+  flex: none;
+}
+
+/* the garden's name: larger, light, in the accent */
+.topbar .garden-title .project-name {
+  font: 400 18px/1.2 var(--sans);
+  color: var(--accent);
+  letter-spacing: 0;
 }

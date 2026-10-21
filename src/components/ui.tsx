@@ -36,6 +36,10 @@ const paths: Record<string, ReactNode> = {
   undo: <path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" />,
   redo: <path d="M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3" />,
   fit: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
+  save: <path d="M5.5 4h10.5l3.5 3.5v11a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 4.5 18.5v-13A1.5 1.5 0 0 1 6 4zM8 4v4.5h7V4M7.5 20v-6h9v6" />,
+  send: <path d="M9 9h10v10H9zM5 15V5h10M13 14h4M15 12l2 2-2 2" />,
+  sigma: <path d="M17 5H6.5l6 7-6 7H17" />,
+  caret: <path d="M8 10l4 4 4-4" />,
   book: <path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 21V5" />,
   wave: <path d="M2 12c2.5-6 5-6 7.5 0s5 6 7.5 0 3.5-4 5-2" />,
 };
@@ -255,5 +259,27 @@ export function NumberField({ value, onValue, min, max, integer, onFocus, onBlur
         onBlur?.(e);
       }}
     />
+  );
+}
+
+/** A number in a box with up/down arrows beside it — the value stays typeable, and ↑/↓ keys work too. */
+export function Stepper({ value, min, max, onValue, label, title, className = '' }: { value: number; min: number; max: number; onValue: (v: number) => void; label: string; title?: string; className?: string }) {
+  const nudge = (d: number) => onValue(Math.min(max, Math.max(min, value + d)));
+  return (
+    <div className={`stepper ${className}`} title={title}>
+      <NumberField className="input num stepper-input" integer min={min} max={max} value={value} onValue={onValue} aria-label={label} />
+      <span className="stepper-arrows">
+        <button type="button" tabIndex={-1} aria-label={`${label} up`} disabled={value >= max} onClick={() => nudge(1)}>
+          <svg width="8" height="5" viewBox="0 0 8 5" aria-hidden>
+            <path d="M1 4l3-3 3 3" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button type="button" tabIndex={-1} aria-label={`${label} down`} disabled={value <= min} onClick={() => nudge(-1)}>
+          <svg width="8" height="5" viewBox="0 0 8 5" aria-hidden>
+            <path d="M1 1l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </span>
+    </div>
   );
 }

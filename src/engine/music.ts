@@ -1,21 +1,66 @@
 export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 
-export const SCALES: Record<string, { label: string; steps: number[] }> = {
-  major: { label: 'Major', steps: [0, 2, 4, 5, 7, 9, 11] },
-  minor: { label: 'Minor', steps: [0, 2, 3, 5, 7, 8, 10] },
-  pentatonic: { label: 'Pentatonic', steps: [0, 2, 4, 7, 9] },
-  minorPentatonic: { label: 'Minor Pentatonic', steps: [0, 3, 5, 7, 10] },
-  hirajoshi: { label: 'Hirajōshi', steps: [0, 2, 3, 7, 8] },
-  inSen: { label: 'In Sen', steps: [0, 1, 5, 7, 10] },
-  iwato: { label: 'Iwato', steps: [0, 1, 5, 6, 10] },
-  yo: { label: 'Yo', steps: [0, 2, 5, 7, 9] },
-  dorian: { label: 'Dorian', steps: [0, 2, 3, 5, 7, 9, 10] },
-  lydian: { label: 'Lydian', steps: [0, 2, 4, 6, 7, 9, 11] },
-  mixolydian: { label: 'Mixolydian', steps: [0, 2, 4, 5, 7, 9, 10] },
-  harmonicMinor: { label: 'Harmonic Minor', steps: [0, 2, 3, 5, 7, 8, 11] },
-  wholeTone: { label: 'Whole Tone', steps: [0, 2, 4, 6, 8, 10] },
-  blues: { label: 'Blues', steps: [0, 3, 5, 6, 7, 10] },
-  chromatic: { label: 'Chromatic', steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
+export type ScaleGroup = 'none' | 'western' | 'modes' | 'japanese' | 'world' | 'symmetric';
+
+export const SCALE_GROUPS: Record<ScaleGroup, string> = {
+  none: 'No scale',
+  western: 'Major, minor & pentatonic',
+  modes: 'Modes',
+  japanese: 'Japanese',
+  world: 'From around the world',
+  symmetric: 'Symmetric',
+};
+
+export const SCALES: Record<string, { label: string; steps: number[]; group: ScaleGroup; hint?: string }> = {
+  chromatic: { label: 'None', steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], group: 'none', hint: 'every semitone — degrees are semitones' },
+
+  major: { label: 'Major', steps: [0, 2, 4, 5, 7, 9, 11], group: 'western' },
+  minor: { label: 'Minor', steps: [0, 2, 3, 5, 7, 8, 10], group: 'western' },
+  harmonicMinor: { label: 'Harmonic Minor', steps: [0, 2, 3, 5, 7, 8, 11], group: 'western' },
+  melodicMinor: { label: 'Melodic Minor', steps: [0, 2, 3, 5, 7, 9, 11], group: 'western' },
+  harmonicMajor: { label: 'Harmonic Major', steps: [0, 2, 4, 5, 7, 8, 11], group: 'western' },
+  pentatonic: { label: 'Pentatonic', steps: [0, 2, 4, 7, 9], group: 'western' },
+  minorPentatonic: { label: 'Minor Pentatonic', steps: [0, 3, 5, 7, 10], group: 'western' },
+  blues: { label: 'Blues', steps: [0, 3, 5, 6, 7, 10], group: 'western' },
+  majorBlues: { label: 'Major Blues', steps: [0, 2, 3, 4, 7, 9], group: 'western' },
+  bebopDominant: { label: 'Bebop Dominant', steps: [0, 2, 4, 5, 7, 9, 10, 11], group: 'western' },
+  bebopMajor: { label: 'Bebop Major', steps: [0, 2, 4, 5, 7, 8, 9, 11], group: 'western' },
+
+  dorian: { label: 'Dorian', steps: [0, 2, 3, 5, 7, 9, 10], group: 'modes' },
+  phrygian: { label: 'Phrygian', steps: [0, 1, 3, 5, 7, 8, 10], group: 'modes' },
+  lydian: { label: 'Lydian', steps: [0, 2, 4, 6, 7, 9, 11], group: 'modes' },
+  mixolydian: { label: 'Mixolydian', steps: [0, 2, 4, 5, 7, 9, 10], group: 'modes' },
+  locrian: { label: 'Locrian', steps: [0, 1, 3, 5, 6, 8, 10], group: 'modes' },
+  phrygianDominant: { label: 'Phrygian Dominant', steps: [0, 1, 4, 5, 7, 8, 10], group: 'modes', hint: 'maqam Hijaz · Freygish' },
+  lydianDominant: { label: 'Lydian Dominant', steps: [0, 2, 4, 6, 7, 9, 10], group: 'modes' },
+  dorianSharp4: { label: 'Dorian ♯4', steps: [0, 2, 3, 6, 7, 9, 10], group: 'modes' },
+  superLocrian: { label: 'Altered', steps: [0, 1, 3, 4, 6, 8, 10], group: 'modes', hint: 'super-Locrian' },
+
+  hirajoshi: { label: 'Hirajōshi', steps: [0, 2, 3, 7, 8], group: 'japanese' },
+  inSen: { label: 'In Sen', steps: [0, 1, 5, 7, 10], group: 'japanese' },
+  iwato: { label: 'Iwato', steps: [0, 1, 5, 6, 10], group: 'japanese' },
+  yo: { label: 'Yo', steps: [0, 2, 5, 7, 9], group: 'japanese', hint: 'also Javanese sléndro' },
+  kumoi: { label: 'Kumoi', steps: [0, 2, 3, 7, 9], group: 'japanese' },
+  ryukyu: { label: 'Ryūkyū', steps: [0, 4, 5, 7, 11], group: 'japanese', hint: 'Okinawan' },
+  miyakoBushi: { label: 'Miyako-bushi', steps: [0, 1, 5, 7, 8], group: 'japanese' },
+
+  doubleHarmonic: { label: 'Double Harmonic', steps: [0, 1, 4, 5, 7, 8, 11], group: 'world', hint: 'Byzantine · raga Bhairav · maqam Hijaz Kar' },
+  hungarianMinor: { label: 'Hungarian Minor', steps: [0, 2, 3, 6, 7, 8, 11], group: 'world' },
+  neapolitanMinor: { label: 'Neapolitan Minor', steps: [0, 1, 3, 5, 7, 8, 11], group: 'world' },
+  persian: { label: 'Persian', steps: [0, 1, 4, 5, 6, 8, 11], group: 'world' },
+  egyptian: { label: 'Egyptian', steps: [0, 2, 5, 7, 10], group: 'world' },
+  pelog: { label: 'Pélog', steps: [0, 1, 3, 7, 8], group: 'world', hint: 'Balinese gamelan (12-tone)' },
+  todi: { label: 'Todi', steps: [0, 1, 3, 6, 7, 8, 11], group: 'world', hint: 'Indian raga' },
+  chinese: { label: 'Chinese', steps: [0, 4, 6, 7, 11], group: 'world' },
+  enigmatic: { label: 'Enigmatic', steps: [0, 1, 4, 6, 8, 10, 11], group: 'world', hint: 'Verdi' },
+  prometheus: { label: 'Prometheus', steps: [0, 2, 4, 6, 9, 10], group: 'world', hint: 'Scriabin' },
+
+  wholeTone: { label: 'Whole Tone', steps: [0, 2, 4, 6, 8, 10], group: 'symmetric' },
+  octatonic: { label: 'Octatonic (half–whole)', steps: [0, 1, 3, 4, 6, 7, 9, 10], group: 'symmetric', hint: 'diminished' },
+  octatonicWH: { label: 'Octatonic (whole–half)', steps: [0, 2, 3, 5, 6, 8, 9, 11], group: 'symmetric' },
+  augmented: { label: 'Augmented', steps: [0, 3, 4, 7, 8, 11], group: 'symmetric' },
+  tritone: { label: 'Tritone', steps: [0, 1, 4, 6, 7, 10], group: 'symmetric' },
+  fifths: { label: 'Fifths only', steps: [0, 7], group: 'symmetric', hint: 'root and fifth — power chords' },
 };
 
 export type PitchMode = 'degree' | 'semitone' | 'normalized';
@@ -53,6 +98,8 @@ export function valueToMidi(
   root: number,
   scaleKey: string,
   octave: number,
+  /** false: leave the result outside 0…127 so a pitch range can fold it back by octaves */
+  clampToMidi = true,
 ): number {
   const scale = (SCALES[scaleKey] ?? SCALES.major).steps;
   let midi: number;
@@ -64,7 +111,7 @@ export function valueToMidi(
     // -1..1 maps to ± one octave worth of scale degrees
     midi = degreeToMidi(value * scale.length, root, scale, octave);
   }
-  return Math.max(0, Math.min(127, midi));
+  return clampToMidi ? Math.max(0, Math.min(127, midi)) : midi;
 }
 
 /**
@@ -78,8 +125,9 @@ export function valueToPitch(
   scaleKey: string,
   octave: number,
   quantize: boolean,
+  clampToMidi = true,
 ): number {
-  if (quantize) return valueToMidi(value, mode, root, scaleKey, octave);
+  if (quantize) return valueToMidi(value, mode, root, scaleKey, octave, clampToMidi);
   const scale = (SCALES[scaleKey] ?? SCALES.major).steps;
   let midi: number;
   if (mode === 'semitone') {
@@ -91,7 +139,45 @@ export function valueToPitch(
     const b = degreeToMidi(lo + 1, root, scale, octave);
     midi = a + (b - a) * (d - lo);
   }
-  return Math.max(0, Math.min(127, midi));
+  return clampToMidi ? Math.max(0, Math.min(127, midi)) : midi;
+}
+
+// ---------- pitch range ----------
+
+export type RangeMode = 'wrap' | 'clamp' | 'off';
+
+export interface PitchRange {
+  mode: RangeMode;
+  /** lowest and highest MIDI note */
+  low: number;
+  high: number;
+}
+
+export const DEFAULT_PITCH_RANGE: PitchRange = { mode: 'wrap', low: 24, high: 96 };
+
+export const RANGE_PRESETS: { label: string; low: number; high: number }[] = [
+  { label: 'Comfortable', low: 24, high: 96 },
+  { label: 'Piano', low: 21, high: 108 },
+  { label: 'Bass', low: 24, high: 60 },
+  { label: 'Voice', low: 48, high: 84 },
+  { label: 'Bright', low: 60, high: 96 },
+];
+
+/**
+ * Keep a pitch inside the range: 'wrap' moves it by whole octaves (it keeps its
+ * note name), 'clamp' pins it to the nearest edge. Always ends inside MIDI 0…127.
+ */
+export function limitPitch(midi: number, range: PitchRange | undefined): number {
+  let m = midi;
+  if (range && range.mode !== 'off' && range.high > range.low) {
+    const { low, high } = range;
+    if (range.mode === 'clamp' || high - low < 12) m = Math.min(high, Math.max(low, m));
+    else {
+      if (m < low) m += 12 * Math.ceil((low - m) / 12);
+      if (m > high) m -= 12 * Math.ceil((m - high) / 12);
+    }
+  }
+  return Math.max(0, Math.min(127, m));
 }
 
 export function midiToFreq(midi: number): number {

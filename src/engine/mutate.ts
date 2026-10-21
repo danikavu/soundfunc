@@ -332,6 +332,14 @@ export function mutateNodeData(node: GNode, chaos: number, rng: Rng, onPitchPath
     case 'expr':
       d.formula = mutateFormula(String(d.formula), chaos, rng, FORMULA_VARS, onPitchPath);
       break;
+    case 'compare':
+      if (p(0.05)) d.op = pick(rng, ['<', '<=', '>', '>=']);
+      if (p(0.3)) d.b = mutateNumber(Number(d.b ?? 0), chaos, rng);
+      break;
+    case 'switch':
+      if (p(0.3)) d.then = mutateNumber(Number(d.then ?? 1), chaos, rng);
+      if (p(0.3)) d.else = mutateNumber(Number(d.else ?? 0), chaos, rng);
+      break;
   }
   return d;
 }
@@ -485,6 +493,34 @@ export function mutateTrack(track: Track, song: Song, chaos: number, seed = Date
     if (score + jitter > best.score) best = { track: cand, score: score + jitter, tried: i + 1 };
   }
   best.tried = candidates;
+  return best.score === -Infinity ? { track, score: -Infinity, tried: candidates } : best;
+}
+
+/**
+ * Mutate one node only, by the same dial: try candidates for its settings and keep the
+ * most musical. A node that doesn't reach the sound (yet) still gets a fresh roll.
+ */
+export function mutateOneNode(track: Track, song: Song, nodeId: string, chaos: number, seed = Date.now(), candidates = 30): MutationResult {
+  const node = track.graph.nodes.find((n) => n.id === nodeId);
+  if (!node || !NODE_DEFS[node.type]?.params.length) return { track, score: -Infinity, tried: 0 };
+  const rng = mulberry32(seed);
+  const onPitch = pitchPath(track.graph).has(nodeId);
+  const orig = renderTrack(track, song, 0, false);
+  const same = JSON.stringify(node.data);
+  let best: MutationResult = { track, score: -Infinity, tried: candidates };
+  let fallback: Track | null = null;
+  for (let i = 0; i < candidates; i++) {
+    const data = mutateNodeData(node, chaos, rng, onPitch);
+    if (JSON.stringify(data) === same) continue;
+    const cand: Track = { ...track, graph: { ...track.graph, nodes: track.graph.nodes.map((n) => (n.id === nodeId ? { ...n, data } : n)) } };
+    const r = renderTrack(cand, song, 0, false);
+    if (r.errors.size && !orig.errors.size) continue;
+    fallback ??= cand;
+    const score = musicalScore(r, orig, track, song, chaos) + rng() * 0.2 * (0.3 + chaos);
+    if (score > best.score) best = { track: cand, score, tried: candidates };
+  }
+  // unheard changes score as "identical" — still better than nothing for the node you asked about
+  if (best.score <= -50 && fallback) return { track: fallback, score: best.score, tried: candidates };
   return best.score === -Infinity ? { track, score: -Infinity, tried: candidates } : best;
 }
 

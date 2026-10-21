@@ -269,8 +269,8 @@ function SoundTab() {
 
       <div className="eyebrow">Pattern</div>
       <p className="muted" style={{ fontSize: 11, margin: '0 0 8px' }}>
-        {track.steps} steps of {stepLabel(track.stepBeats)} ={' '}
-        {track.lengthMode === 'fixed' ? `${track.lengthBeats} beats (fixed)` : `${Number((track.steps * track.stepBeats).toFixed(3))} beats (free)`}
+        {track.steps} steps of {stepLabel(track.stepBeats)} = {Number((track.steps * track.stepBeats).toFixed(3))} beats
+        {project.song.lengthMode === 'free' ? ' (free song)' : ' (the song’s length)'}
         {drum ? '' : `, octave ${track.octave}`} — set in the top bar.
       </p>
       {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} />}
@@ -382,7 +382,8 @@ function GuideTab() {
       </p>
       <div className="eyebrow">Building & experimenting</div>
       <p style={{ margin: 0 }}>
-        <b>Explode</b> (✂ on a Formula) splits its outermost operation into a node — repeat to go deeper. Select nodes and <b>Collapse</b> to merge them back
+        <b>Explode</b> (✂ on a Formula) splits its outermost operation into a node — conditions become If / else, comparisons and logic become
+        Compare, and any other function gets its arguments as separate formulas. Repeat to go deeper. Select nodes and <b>Collapse</b> to merge them back
         into one formula. <b>Save as block</b> keeps selected nodes for any track; blocks live in Add node. <b>🎧</b> listens to one node alone (Esc stops).
         <b> Sliders</b> are named constants for every formula: Alt+S on a number in a formula makes one. <b>Sections</b> plays A, B, C… in turn.
       </p>

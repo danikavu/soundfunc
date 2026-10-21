@@ -24,6 +24,7 @@ import { FuncNode, GraphContext, CATEGORY_COLORS } from './FuncNode';
 import { Icon, Seg, getRender } from './ui';
 import { toast } from './TopBar';
 import { SlidersBar } from './SlidersBar';
+import { Dropdown } from './Dropdown';
 
 const nodeTypes = Object.fromEntries(Object.keys(NODE_DEFS).map((k) => [k, FuncNode]));
 
@@ -163,6 +164,28 @@ function Mutator() {
 }
 
 /** Lock the selected nodes (or unlock them if they are all locked already). */
+/** ⌘C: copy the selected nodes of the open track */
+export function copySelected(): boolean {
+  const { project, selectedTrackId, copyNodes } = useStore.getState();
+  const track = project.tracks.find((t) => t.id === selectedTrackId) ?? project.tracks[0];
+  const ids = track?.graph.nodes.filter((n) => (n as { selected?: boolean }).selected && n.type !== 'output').map((n) => n.id) ?? [];
+  if (!track || !ids.length) return false;
+  const n = copyNodes(track.id, ids);
+  if (n) toast(`Copied ${n} node${n > 1 ? 's' : ''} — select any track and press ⌘V`);
+  return n > 0;
+}
+
+/** ⌘V: paste copied nodes into a track (the open one by default) */
+export function pasteInto(trackId?: string): boolean {
+  const { project, selectedTrackId, pasteNodes, clipboard } = useStore.getState();
+  const id = trackId ?? selectedTrackId ?? project.tracks[0]?.id;
+  if (!id || !clipboard) return false;
+  const r = pasteNodes(id);
+  const name = project.tracks.find((t) => t.id === id)?.name;
+  toast(typeof r === 'string' ? r : `Pasted ${r} node${r === 1 ? '' : 's'} into ${name}${clipboard.sliders.length ? ' · with their sliders' : ''}`);
+  return typeof r !== 'string';
+}
+
 export function toggleLockSelected(): boolean {
   const { project, selectedTrackId, setLocked } = useStore.getState();
   const track = project.tracks.find((t) => t.id === selectedTrackId) ?? project.tracks[0];
@@ -184,6 +207,8 @@ function SelectionTools() {
   const setAudition = useStore((s) => s.setAudition);
   const audition = useStore((s) => s.audition);
   const saveBlock = useLibrary((s) => s.saveBlock);
+  const clipboard = useStore((s) => s.clipboard);
+  useStore((s) => s.project.tracks.length); // keep "Copy to…" in step with the tracks
   const [naming, setNaming] = useState<string | null>(null);
   if (!track) return null;
   const selected = track.graph.nodes.filter((n) => isSelected(n) && n.type !== 'output');
@@ -194,6 +219,7 @@ function SelectionTools() {
     toast(err ?? done);
   };
   const ids = selected.map((n) => n.id);
+  const others = useStore.getState().project.tracks.filter((t) => t.id !== track.id);
 
   if (naming !== null) {
     const commitName = () => {
@@ -224,7 +250,7 @@ function SelectionTools() {
         <button className="btn small primary" onClick={commitName}>
           Save block
         </button>
-        <button className="btn small ghost" onClick={() => setNaming(null)}>
+        <button className="btn small ghost tool" onClick={() => setNaming(null)}>
           Cancel
         </button>
       </div>
@@ -234,28 +260,64 @@ function SelectionTools() {
   return (
     <div className="lock-status">
       {selected.length === 1 && selected[0].type === 'expr' && (
-        <button className="btn small ghost" onClick={() => run((g) => explodeFormula(g, ids[0]), 'Exploded — repeat on the new formulas to go deeper')} title="Split the formula’s outermost operation into a node">
-          <Icon name="split" size={12} /> Explode
+        <button className="btn small ghost tool" aria-label="Explode" onClick={() => run((g) => explodeFormula(g, ids[0]), 'Exploded — repeat on the new formulas to go deeper')} title="Explode — split the formula’s outermost operation into a node">
+          <Icon name="split" size={14} />
         </button>
       )}
       {selected.length >= 2 && (
-        <button className="btn small ghost" onClick={() => run((g) => collapseNodes(g, ids), `Collapsed ${ids.length} nodes into one formula`)} title="Merge the selected nodes into one Formula node">
-          <Icon name="merge" size={12} /> Collapse
+        <button className="btn small ghost tool" onClick={() => run((g) => collapseNodes(g, ids), `Collapsed ${ids.length} nodes into one formula`)} title="Collapse — merge the selected nodes into one Formula node" aria-label="Collapse">
+          <Icon name="merge" size={14} />
         </button>
       )}
       {selected.length >= 1 && (
         <>
-          <button className="btn small ghost" onClick={() => setNaming(selected.length === 1 ? NODE_DEFS[selected[0].type].label : `${track.name} block`)} title="Keep these nodes and their wires to reuse in any track">
-            <Icon name="bookmark" size={12} /> Save as block
+          <button className="btn small ghost tool" onClick={() => setNaming(selected.length === 1 ? NODE_DEFS[selected[0].type].label : `${track.name} block`)} title="Save as block — keep these nodes and their wires to reuse in any track" aria-label="Save as block">
+            <Icon name="bookmark" size={14} />
           </button>
           {selected.length === 1 && (
-            <button className={`btn small ghost ${audition?.nodeId === ids[0] ? 'on' : ''}`} onClick={() => setAudition(audition?.nodeId === ids[0] ? null : { trackId: track.id, nodeId: ids[0] })}>
-              <Icon name="headphones" size={12} /> Listen
+            <button
+              className={`btn small ghost tool ${audition?.nodeId === ids[0] ? 'on' : ''}`}
+              title="Listen — hear this node alone"
+              aria-label="Listen"
+              onClick={() => setAudition(audition?.nodeId === ids[0] ? null : { trackId: track.id, nodeId: ids[0] })}
+            >
+              <Icon name="headphones" size={14} />
             </button>
           )}
-          <button className="btn small ghost" onClick={toggleLockSelected} title="Lock / unlock the selected nodes (L)">
-            <Icon name={selected.every((n) => n.data.locked) ? 'unlock' : 'lock'} size={12} />
-            {selected.every((n) => n.data.locked) ? 'Unlock' : 'Lock'}
+          <button className="btn small ghost tool" onClick={copySelected} title="Copy — the selected nodes and their wires (⌘C); paste into any track with ⌘V" aria-label="Copy">
+            <Icon name="copy" size={14} />
+          </button>
+          {others.length > 0 && (
+            <Dropdown
+              compact
+              label="Copy to track"
+              value={
+                <span className="copy-to" title="Copy to another track">
+                  <Icon name="send" size={14} />
+                </span>
+              }
+              groups={[
+                {
+                  title: 'Copy the selection into',
+                  items: others.map((o) => ({
+                    key: o.id,
+                    label: o.name,
+                    glyph: <span className="stone" style={{ background: o.color }} />,
+                    onSelect: () => {
+                      if (useStore.getState().copyNodes(track.id, ids)) pasteInto(o.id);
+                    },
+                  })),
+                },
+              ]}
+            />
+          )}
+          <button
+            className="btn small ghost tool"
+            onClick={toggleLockSelected}
+            title={selected.every((n) => n.data.locked) ? 'Unlock the selected nodes (L)' : 'Lock the selected nodes against Mutate (L)'}
+            aria-label={selected.every((n) => n.data.locked) ? 'Unlock' : 'Lock'}
+          >
+            <Icon name={selected.every((n) => n.data.locked) ? 'unlock' : 'lock'} size={14} />
           </button>
         </>
       )}
@@ -273,8 +335,15 @@ function SelectionTools() {
               Unlock all
             </button>
           </>
+        ) : clipboard ? (
+          <>
+            <span>select nodes to edit them</span>
+            <button className="btn small ghost" onClick={() => pasteInto(track.id)} title="Paste the copied nodes here (⌘V)">
+              <Icon name="copy" size={12} /> Paste {clipboard.block.nodes.length} node{clipboard.block.nodes.length > 1 ? 's' : ''}
+            </button>
+          </>
         ) : (
-          <span>select nodes to explode, collapse, save or lock them</span>
+          <span>select nodes to edit them</span>
         ))}
     </div>
   );
@@ -419,14 +488,14 @@ export function NodeEditor() {
           <Icon name="plus" size={14} /> Add node
         </button>
         <button className="btn" onClick={() => useStore.getState().setShowFunction(true)} title="See the whole track as one function — math, SoundFunc, JavaScript, Python (F)">
-          <span className="serif" style={{ fontSize: 14, lineHeight: 1 }}>∑</span> Function
+          <Icon name="sigma" size={14} /> Function
         </button>
         <button
           className="btn"
-          title="Add a slider — a named constant every formula can use (or Alt+S on a number in a formula)"
+          title="Add a slider to this track — a named constant its formulas can use (or Alt+S on a number in a formula)"
           onClick={() => {
-            const name = useStore.getState().addSlider(0.5);
-            toast(`Added slider “${name}” — type its name in any formula`);
+            const name = useStore.getState().addSlider(track.id, 0.5);
+            toast(`Added slider “${name}” to ${track.name} — type its name in any of its formulas`);
           }}
         >
           <Icon name="sliders" size={14} /> Slider
@@ -434,7 +503,7 @@ export function NodeEditor() {
         <Mutator />
         <SelectionTools />
       </div>
-      <SlidersBar />
+      <SlidersBar track={track} />
       <div className="nodes-canvas">
         <GraphContext.Provider value={{ trackId: track.id, traces: render.traces, errors: render.errors }}>
           <ReactFlow

@@ -5,20 +5,23 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { compile, compileAst, parse } from './expr';
 import { compose, toSource, toTex, trackCode } from './symbolic';
-import { compileGraph, euclid } from './graph';
+import { compileGraph, euclid, NODE_DEFS } from './graph';
+import { docFor } from './nodeDocs';
 import { exportMidi, collectNotes } from './midi';
+import { songWindows } from './project';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
 import { KITS, PRESETS, defaultProject, trackFromPreset, trackFromTemplate } from './presets';
-import { harmonyAt, normalizeProject, renderTrack, scaleLength, type Project, type Track } from './project';
-import { chordName, chordTones } from './music';
-import { mulberry32, mutateFormula, mutateTrack, musicalScore } from './mutate';
+import { harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
+import { chordName, chordTones, limitPitch } from './music';
+import { mulberry32, mutateFormula, mutateOneNode, mutateTrack, musicalScore } from './mutate';
+import { useStore } from '../state/store';
 import { parsePattern } from './graph';
 import { timbreHarmonics } from './timbre';
 import { importMath } from './importMath';
 import { auditionGraph, blockFromSelection, collapseNodes, explodeFormula, insertBlock } from './graphEdit';
 import { BLOCKS } from './blocks';
 import { applyGrid } from './steps';
-import { cleanProject, projectKey, voiceOf, wearsVoice } from '../state/library';
+import { cleanProject, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
 
 const ev = (s: string, scope = {}) => compile(s).fn(scope);
 
@@ -298,7 +301,7 @@ describe('symbolic: the written-out function equals the graph', () => {
   const scopeFor = (track: Track, song: Project['song'], n: number, k: number) => {
     const t = n * track.stepBeats;
     const beat = k * track.steps * track.stepBeats + t;
-    return { ...Object.fromEntries((song.sliders ?? []).map((s) => [s.name, s.value])), n, x: n / track.steps, t, k, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / 4 + 1e-9), L: scaleLength(song), beat } as Record<string, number>;
+    return { ...Object.fromEntries((track.sliders ?? []).map((s) => [s.name, s.value])), n, x: n / track.steps, t, k, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / 4 + 1e-9), L: scaleLength(song), beat } as Record<string, number>;
   };
 
   it('symbolic expressions reproduce every preset and kit track', () => {
@@ -385,6 +388,41 @@ describe('library', () => {
     expect(v).toMatchObject({ name: 'Folded', waveform: 'custom', timbre: t.timbre });
     expect(wearsVoice(t, v)).toBe(true);
     expect(wearsVoice({ ...t, timbre: 'sin(tau*p)' }, v)).toBe(false);
+  });
+  it('saved functions keep every node, value and the track’s sliders', () => {
+    const song = defaultProject().song;
+    const t = trackFromPreset(PRESETS.find((x) => x.id === 'desmos')!, 0);
+    const expr = t.graph.nodes.find((n) => n.type === 'expr');
+    expect(expr).toBeTruthy();
+    expr!.data = { ...expr!.data, formula: `${expr!.data.formula} + depth/12` };
+    t.sliders = [{ name: 'depth', value: 3, min: 0, max: 8 }];
+    const fn = functionOf(t, 'Mine');
+    expect(fn.track.sliders.map((s) => s.name)).toEqual(['depth']);
+    expect(fn.track.graph.nodes).toHaveLength(t.graph.nodes.length);
+    expect(fn.track).not.toHaveProperty('id');
+
+    // through a file and back, it plays exactly the same notes
+    const [back] = readFunctionFile(JSON.stringify(functionFile([fn])));
+    const planted = trackFromTemplate(structuredClone(back.track), back.name, 0);
+    const notes = (tr: Track) => renderTrack(tr, song).pitchCurve;
+    expect(notes(t).length).toBeGreaterThan(0);
+    expect(notes(planted)).toEqual(notes(t));
+    expect(notes(planted)).not.toEqual(notes({ ...t, sliders: [{ ...t.sliders[0], value: 0 }] }));
+    // files from before tracks owned their sliders still bring them
+    const { sliders: _s, ...legacyTrack } = fn.track;
+    const [old] = readFunctionFile(JSON.stringify(functionFile([{ ...fn, track: legacyTrack as typeof fn.track, sliders: fn.track.sliders }])));
+    expect(old.track.sliders).toEqual(fn.track.sliders);
+    expect(() => readFunctionFile('{"kind":"soundfunc-project"}')).toThrow(/functions file/);
+    expect(() => readFunctionFile('not json')).toThrow(/JSON/);
+  });
+  it('importing functions numbers names that are taken', () => {
+    useLibrary.setState({ functions: [] });
+    const fn = functionOf(defaultProject().tracks[0], 'Pond');
+    useLibrary.getState().saveFunction(fn);
+    expect(useLibrary.getState().importFunctions([fn, fn])).toBe(2);
+    expect(useLibrary.getState().functions.map((f) => f.name)).toEqual(['Pond', 'Pond 2', 'Pond 3']);
+    useLibrary.getState().saveFunction({ ...fn, id: 'other' });
+    expect(useLibrary.getState().functions.filter((f) => f.name === 'Pond')).toHaveLength(1);
   });
 });
 
@@ -482,6 +520,48 @@ describe('graph editing keeps the music', () => {
     expect(exploded).toBeGreaterThan(50);
   });
 
+  it('conditions, comparisons, logic and any call explode into nodes', () => {
+    const blank = trackFromPreset(PRESETS.find((p) => p.id === 'blank')!, 0);
+    const f = blank.graph.nodes.find((n) => n.type === 'expr')!;
+    const cases: [string, string][] = [
+      ['n % 4 == 0 ? h + 2 : h - 1', 'switch'],
+      ['n > 3 && x < 0.5', 'compare'],
+      ['!(n % 3)', 'compare'],
+      ['smoothstep(0, 1, fract(t * 2)) * 4', 'math'],
+      ['rand(n + 16k, 3) * 7', 'math'],
+      ['floor(7 * noise(n * 0.3, 2))', 'func'],
+      ['pow(2, n % 4)', 'math'],
+    ];
+    for (const [formula, top] of cases) {
+      let graph = { ...blank.graph, nodes: blank.graph.nodes.map((n) => (n.id === f.id ? { ...n, data: { formula } } : n)) };
+      const original = { ...blank, graph };
+      const first = explodeFormula(graph, f.id);
+      if ('error' in first) throw new Error(`${formula}: ${first.error}`);
+      expect(first.graph.nodes.find((n) => n.id === first.focus)?.type, formula).toBe(top);
+      // keep exploding everything until nothing splits further — the sound never changes
+      graph = first.graph;
+      for (let round = 0; round < 12; round++) {
+        let changed = false;
+        for (const n of graph.nodes.filter((x) => x.type === 'expr')) {
+          const r = explodeFormula(graph, n.id);
+          if (!('error' in r)) (graph = r.graph), (changed = true);
+        }
+        if (!changed) break;
+      }
+      sameSound(formula, original, { ...blank, graph }, defaultProject().song);
+      // …and collapsing the whole tree back gives one formula that sounds the same
+      const ids = graph.nodes.filter((n) => n.type !== 'output' && n.type !== 'step').map((n) => n.id);
+      if (ids.length >= 2) {
+        const back = collapseNodes(graph, ids);
+        if ('error' in back) throw new Error(`${formula} collapse: ${back.error}`);
+        sameSound(`${formula} collapsed`, original, { ...blank, graph: back.graph }, defaultProject().song);
+      }
+    }
+    // a call whose arguments are already plain inputs has nothing left to split
+    const done = explodeFormula({ ...blank.graph, nodes: blank.graph.nodes.map((n) => (n.id === f.id ? { ...n, data: { formula: 'rand(a, 3)' } } : n)) }, f.id);
+    expect('error' in done).toBe(true);
+  });
+
   it('collapsing each branch into one formula changes nothing you hear', () => {
     for (const { label, track, song } of tracks()) {
       let graph = track.graph;
@@ -537,8 +617,9 @@ describe('graph editing keeps the music', () => {
   });
 
   it('Sections and sliders: the written-out function and exported code still match', () => {
-    const song = { ...defaultProject().song, harmony: 'pick(bar, 0, 3)', sliders: [{ name: 'lift', value: 2, min: 0, max: 5 }] };
+    const song = { ...defaultProject().song, harmony: 'pick(bar, 0, 3)' };
     const t = trackFromPreset(PRESETS.find((p) => p.id === 'form')!, 0);
+    t.sliders = [{ name: 'lift', value: 2, min: 0, max: 5 }];
     const formula = t.graph.nodes.find((n) => n.data.formula === 'h + round(3 * sin(tau * x * 2))')!;
     formula.data.formula = 'h + round(3 * sin(tau * x * 2)) + lift';
     const c = compose(t);
@@ -550,8 +631,36 @@ describe('graph editing keeps the music', () => {
     }
     // the bridge (4th section, beats 24–32 → loops 6 and 7) reads the slider
     const bridge = renderTrack(t, song, 6, false).pitchCurve[0];
-    const lower = renderTrack(t, { ...song, sliders: [{ ...song.sliders[0], value: 0 }] }, 6, false).pitchCurve[0];
+    const lower = renderTrack({ ...t, sliders: [{ ...t.sliders[0], value: 0 }] }, song, 6, false).pitchCurve[0];
     expect(bridge - lower).toBe(2);
+  });
+  it('each track has its own sliders: same name, different values, no crosstalk', () => {
+    const song = defaultProject().song;
+    const make = (v: number) => {
+      const t = trackFromPreset(PRESETS.find((p) => p.id === 'form')!, 0);
+      t.graph.nodes.find((n) => n.data.formula === 'h + round(3 * sin(tau * x * 2))')!.data.formula = 'h + round(3 * sin(tau * x * 2)) + lift';
+      t.sliders = [{ name: 'lift', value: v, min: -5, max: 5 }];
+      return t;
+    };
+    const a = make(0), b = make(3);
+    expect(renderTrack(b, song, 6, false).pitchCurve[0] - renderTrack(a, song, 6, false).pitchCurve[0]).toBe(3);
+    // the garden's code keeps each track's slider inside its own function
+    const code = trackCode([compose({ ...a, name: 'low' }), compose({ ...b, name: 'high' })], song, 'js').replace(/^export /gm, '');
+    const fns = new Function(`${code}\nreturn [low, high];`)() as ((n: number, k: number) => Record<string, number>)[];
+    expect(fns[1](0, 6).pitch - fns[0](0, 6).pitch).toBe(3);
+  });
+  it('old gardens: song sliders move to the tracks that read them; the harmony keeps their values', () => {
+    const p = defaultProject();
+    const t = trackFromPreset(PRESETS.find((x) => x.id === 'form')!, 0);
+    t.graph.nodes.find((n) => n.data.formula === 'h + round(3 * sin(tau * x * 2))')!.data.formula = 'h + round(3 * sin(tau * x * 2)) + lift';
+    const { sliders: _a, ...plain } = t;
+    const { sliders: _b, ...other } = p.tracks[0];
+    const legacy = { ...p, song: { ...p.song, harmony: 'pick(bar, 0, root2)', sliders: [{ name: 'lift', value: 2, min: 0, max: 5 }, { name: 'root2', value: -3, min: -5, max: 5 }] }, tracks: [plain, other] } as unknown as Project;
+    const n = normalizeProject(legacy);
+    expect(n.tracks[0].sliders.map((s) => s.name)).toEqual(['lift']);
+    expect(n.tracks[1].sliders).toEqual([]);
+    expect(n.song).not.toHaveProperty('sliders');
+    expect(n.song.harmony).toBe('pick(bar, 0, (-3))');
   });
 });
 
@@ -635,36 +744,271 @@ OTHERWISE:
   });
 });
 
-describe('loop length: fixed or free', () => {
-  const fixed = (lengthBeats: number, stepBeats = 0.25) => applyGrid({ steps: 16, stepBeats: 0.25, lengthMode: 'fixed', lengthBeats }, { stepBeats });
-  it('divides a fixed length into whole steps', () => {
-    expect(fixed(8, 0.25)).toMatchObject({ steps: 32, stepBeats: 0.25 });
-    expect(fixed(4, 1 / 3)).toMatchObject({ steps: 12 });
-    expect(fixed(16, 0.2)).toMatchObject({ steps: 80 });
+describe('the song length rules every track', () => {
+  const fit = (L: number, stepBeats: number) => applyGrid({ steps: 16, stepBeats: 0.25 }, { stepBeats }, L);
+  it('divides the song length into whole steps', () => {
+    expect(fit(8, 0.25)).toMatchObject({ steps: 32, stepBeats: 0.25 });
+    expect(fit(4, 1 / 3)).toMatchObject({ steps: 12 });
+    expect(fit(16, 0.2)).toMatchObject({ steps: 80 });
   });
-  it('nudges an irrational step so the loop still lands on the beat', () => {
-    const g = fixed(4, (Math.sqrt(5) - 1) / 4); // φ⁻¹/2 ≈ 0.309 beat
+  it('nudges an irrational step so the track still lands on the beat', () => {
+    const g = fit(4, (Math.sqrt(5) - 1) / 4); // φ⁻¹/2 ≈ 0.309 beat
     expect(g.steps).toBe(13);
     expect(g.steps * g.stepBeats).toBeCloseTo(4, 12);
   });
   it('a typed step count divides the length evenly', () => {
-    const g = applyGrid({ steps: 16, stepBeats: 0.25, lengthMode: 'fixed', lengthBeats: 4 }, { steps: 12 });
-    expect(g.stepBeats).toBeCloseTo(1 / 3, 12);
+    expect(applyGrid({ steps: 16, stepBeats: 0.25 }, { steps: 12 }, 4).stepBeats).toBeCloseTo(1 / 3, 12);
   });
-  it('switching to fixed snaps the loop; free leaves it alone', () => {
-    const free = { steps: 21, stepBeats: 0.375, lengthMode: 'free' as const, lengthBeats: 8 };
-    expect(applyGrid(free, { stepBeats: (Math.sqrt(5) - 1) / 2 }).steps).toBe(21); // 12.98 beats, as asked
-    const g = applyGrid(free, { lengthMode: 'fixed' });
-    expect(g.steps * g.stepBeats).toBeCloseTo(8, 12);
+  it('a free song leaves steps × step length as they are', () => {
+    expect(applyGrid({ steps: 21, stepBeats: 0.375 }, { stepBeats: (Math.sqrt(5) - 1) / 2 }, null).steps).toBe(21);
   });
-  it('caps a fixed loop at 256 steps', () => {
-    expect(fixed(64, 1 / 16).steps).toBe(256);
+  it('fits 64 beats of 1/64 notes, and caps at 1024 steps', () => {
+    expect(fit(64, 1 / 16)).toMatchObject({ steps: 1024, stepBeats: 1 / 16 });
+    expect(fit(64, 1 / 32).steps).toBe(1024);
   });
-  it('older projects open as free, with the nearest fixed length remembered', () => {
+});
+
+describe('negative octaves', () => {
+  it('play lower, stay inside MIDI, and still export', () => {
+    const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+    // raw octave behaviour, with the pitch range switched off
+    const song = { ...defaultProject().song, pitchRange: { mode: 'off' as const, low: 24, high: 96 } };
+    const at = (octave: number) => renderTrack({ ...t, octave }, song).notes.map((n) => n.midi);
+    const four = at(4), minusOne = at(-1), minusFour = at(-4);
+    four.forEach((m, i) => expect(minusOne[i]).toBe(Math.max(0, m - 60)));
+    expect(Math.min(...minusFour)).toBe(0); // below MIDI note 0 they sit on it
+    expect(minusFour.every((m) => m >= 0 && m <= 127)).toBe(true);
+    const bytes = exportMidi({ ...defaultProject(), tracks: [{ ...t, octave: -2 }] });
+    expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('MThd');
+  });
+});
+
+describe('pitch range', () => {
+  const extreme = () => {
+    const blank = trackFromPreset(PRESETS.find((p) => p.id === 'blank')!, 0);
+    const f = blank.graph.nodes.find((n) => n.type === 'expr')!;
+    // wildly out-of-range values, like a formula gone astray
+    f.data.formula = 'pick(n, -8373, 0, 4000, 2, -50, 61)';
+    return blank;
+  };
+  const base = defaultProject().song;
+
+  it('is on by default — wrap into C1–C7 — and fills in for older projects', () => {
+    expect(base.pitchRange).toEqual({ mode: 'wrap', low: 24, high: 96 });
+    const { pitchRange, ...old } = base;
+    expect(normalizeProject({ ...defaultProject(), song: old as Project['song'] }).song.pitchRange.mode).toBe('wrap');
+  });
+
+  it('wrap keeps every note in range and keeps its note name', () => {
+    const t = extreme();
+    const off = renderTrack(t, { ...base, root: 0, scale: 'major', pitchRange: { mode: 'off', low: 24, high: 96 } }).notes;
+    const wrapped = renderTrack(t, { ...base, root: 0, scale: 'major' }).notes;
+    for (const n of wrapped) {
+      expect(n.midi).toBeGreaterThanOrEqual(24);
+      expect(n.midi).toBeLessThanOrEqual(96);
+    }
+    // the note name (pitch class) of an in-range note never changes
+    expect(wrapped[1].midi).toBe(off[1].midi);
+    // the unclamped value of −8373 degrees is some real note; wrapping keeps it
+    const raw = valueToMidi(-8373, 'degree', 0, 'major', 4, false);
+    expect(wrapped[0].midi % 12).toBe(((raw % 12) + 12) % 12);
+    // without a range, the extremes all pile up on the edges of MIDI
+    expect(off.filter((n) => n.midi === 0 || n.midi === 127).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('clamp pins notes to the edges; glide curves follow the range too', () => {
+    const t = extreme();
+    const clamped = renderTrack(t, { ...base, pitchRange: { mode: 'clamp', low: 48, high: 72 } }).notes.map((n) => n.midi);
+    expect(Math.min(...clamped)).toBe(48);
+    expect(Math.max(...clamped)).toBe(72);
+    const glide = renderTrack({ ...t, playMode: 'glide', quantize: false }, base).curve.midi;
+    expect(glide.every((m) => m >= 24 && m <= 96)).toBe(true);
+  });
+
+  it('limitPitch handles the edges and narrow ranges', () => {
+    expect(limitPitch(-8000, { mode: 'wrap', low: 24, high: 96 })).toBeGreaterThanOrEqual(24);
+    expect(limitPitch(130.5, { mode: 'wrap', low: 24, high: 96 })).toBeCloseTo(94.5);
+    expect(limitPitch(30, { mode: 'wrap', low: 60, high: 64 })).toBe(60); // narrower than an octave: clamps
+    expect(limitPitch(200, { mode: 'off', low: 0, high: 0 })).toBe(127);
+  });
+});
+
+describe('song length', () => {
+  it('sets the song loop — a progression that never repeats can’t stretch it', () => {
     const p = defaultProject();
-    const old = { ...p, tracks: p.tracks.map(({ lengthMode, lengthBeats, ...t }) => t as Track) };
-    const n = normalizeProject(old);
-    expect(n.tracks.every((t) => t.lengthMode === 'free')).toBe(true);
-    expect(n.tracks[0].lengthBeats).toBe(8);
+    expect(p.song).toMatchObject({ lengthMode: 'fixed', lengthBeats: 8 });
+    expect(songBeats(p.tracks, p.song)).toBe(8);
+    expect(songBeats(p.tracks, { ...p.song, harmony: 'floor(7 * fract(bar * phi))' })).toBe(8);
+  });
+  it('a free song is as long as its longest track', () => {
+    const p = defaultProject();
+    const long = { ...p.tracks[0], steps: 64, stepBeats: 0.5 }; // 32 beats
+    expect(songBeats([long, p.tracks[1]], { ...p.song, lengthMode: 'free' })).toBe(32);
+    expect(songBeats([long, p.tracks[1]], p.song)).toBe(8); // fixed: the song's length rules
+  });
+  it('older projects open fixed only when their tracks already agree', () => {
+    const p = defaultProject();
+    const { lengthMode, lengthBeats, ...old } = p.song;
+    expect(normalizeProject({ ...p, song: old as Project['song'] }).song).toMatchObject({ lengthMode: 'fixed', lengthBeats: 8 });
+    const mixed = { ...p, song: old as Project['song'], tracks: [p.tracks[0], { ...p.tracks[1], steps: 12 }] };
+    expect(normalizeProject(mixed).song.lengthMode).toBe('free');
+    // and tracks no longer carry a loop of their own
+    const withLoop = { ...p, tracks: [{ ...p.tracks[0], lengthMode: 'fixed', lengthBeats: 32 } as unknown as Track] };
+    expect('lengthMode' in normalizeProject(withLoop).tracks[0]).toBe(false);
+  });
+});
+
+describe('node help', () => {
+  it('every port and setting of every node explains itself', () => {
+    const missing: string[] = [];
+    for (const def of Object.values(NODE_DEFS)) {
+      for (const p of [...def.inputs, ...def.outputs]) if (!docFor(def.type, p.id)) missing.push(`${def.type}.${p.id}`);
+      for (const p of def.params) if (!docFor(def.type, p.key)) missing.push(`${def.type}.${p.key}`);
+    }
+    expect(missing).toEqual([]);
+  });
+});
+
+describe('importing: Greek letters, subscripts, parameters, any time variable', () => {
+  const run = (src: string, scope: Record<string, number> = {}) => {
+    const r = importMath(src);
+    return { r, at: (t: number) => compileAst(r.value)({ ...Object.fromEntries(r.params.map((p) => [p.name, p.value])), ...scope, t }) };
+  };
+  it('t_i = x − σ u_i, σ > 0: Greek and subscripted names become sliders; the condition is noted', () => {
+    const { r, at } = run('t_i = x - \\sigma u_i, \\quad \\sigma > 0');
+    expect(r.timeVar).toBe('x');
+    expect(r.params.map((p) => p.name).sort()).toEqual(['sigma', 'u_i']);
+    expect(at(3)).toBe(2); // 3 − 1·1
+    expect(r.warnings.join(' ')).toMatch(/condition/);
+  });
+  it('p = p_0 e^{−h/H}: any name can be the function; h is the one that moves', () => {
+    const { r, at } = run('p = p_0 e^{-h/H}');
+    expect(r.timeVar).toBe('h');
+    expect(r.params.map((p) => p.name).sort()).toEqual(['H', 'p_0']);
+    expect(at(1)).toBeCloseTo(Math.exp(-1), 12);
+  });
+  it('k = 2.5 on its own line becomes a slider starting at 2.5, renamed away from the loop count', () => {
+    const { r, at } = run('k=2.5\ng(x)=\\tanh(k\\sin(2\\pi x))');
+    expect(r.params).toEqual([{ name: 'k_', value: 2.5 }]);
+    expect(at(0.25)).toBeCloseTo(Math.tanh(2.5), 12);
+  });
+  it('a constant written as an expression is written into the function', () => {
+    const { r, at } = run('a = 3\nc = 2a\ny = c x');
+    expect(r.params.map((p) => p.name)).toEqual(['a_']);
+    expect(at(1)).toBe(6);
+  });
+  it('the time variable can be Greek, and can be chosen', () => {
+    expect(run('r(\\theta) = 1 + \\cos(3\\theta)').r.timeVar).toBe('theta');
+    const chosen = importMath('p = p_0 e^{-h/H}', { timeVar: 'H' });
+    expect(chosen.params.map((p) => p.name).sort()).toEqual(['h_', 'p_0']);
+    expect(chosen.names).toContain('h');
+  });
+  it('unicode Greek and \\operatorname{sgn} read too', () => {
+    const { r, at } = run('y = α sgn(sin(2πx))');
+    expect(r.params.map((p) => p.name)).toEqual(['alpha']);
+    expect(at(0.25)).toBe(1);
+    expect(at(0.75)).toBe(-1);
+  });
+});
+
+describe('each pass: evolve or repeat exactly', () => {
+  const evolving = () => {
+    const p = defaultProject();
+    const t = trackFromPreset(PRESETS.find((x) => x.id === 'evolve')!, 0);
+    return { ...p, song: { ...p.song, lengthBeats: 4, exportLoops: 3 }, tracks: [t] } as Project;
+  };
+  const passes = (p: Project) => {
+    const notes = collectNotes(p)[0].notes;
+    return [0, 1, 2].map((i) => notes.filter((n) => n.beat >= i * 4 && n.beat < (i + 1) * 4).map((n) => [n.beat - i * 4, n.midi]));
+  };
+  it('song windows split play time into passes only when repeating exactly', () => {
+    const song = defaultProject().song;
+    expect(songWindows(song, 8, 6, 10)).toEqual([{ base: 0, from: 6, to: 10 }]);
+    expect(songWindows({ ...song, repeat: 'exact' }, 8, 6, 10)).toEqual([{ base: 0, from: 6, to: 8 }, { base: 8, from: 0, to: 2 }]);
+  });
+  it('evolve: k runs on, so passes differ; exact: every pass is the first', () => {
+    const p = evolving();
+    const ev = passes(p);
+    expect(ev[1]).not.toEqual(ev[0]);
+    const ex = passes({ ...p, song: { ...p.song, repeat: 'exact' } });
+    expect(ex[0]).toEqual(ev[0]);
+    expect(ex[1]).toEqual(ex[0]);
+    expect(ex[2]).toEqual(ex[0]);
+  });
+  it('exact, free length: shorter tracks start again with the song', () => {
+    const p = evolving();
+    const long = { ...p.tracks[0], id: 'long', steps: 20 }; // 5 beats
+    const short = { ...p.tracks[0], id: 'short', steps: 12 }; // 3 beats
+    const song = { ...p.song, lengthMode: 'free' as const, repeat: 'exact' as const, exportLoops: 2 };
+    const [, s] = collectNotes({ ...p, song, tracks: [long, short] });
+    const first = s.notes.filter((n) => n.beat < 5).map((n) => [n.beat, n.midi]);
+    const second = s.notes.filter((n) => n.beat >= 5).map((n) => [n.beat - 5, n.midi]);
+    expect(second).toEqual(first);
+    expect(first.every(([b]) => b < 5)).toBe(true);
+  });
+});
+
+describe('duplicate, copy & paste, and one-node mutation', () => {
+  const fresh = () => {
+    useStore.setState({ project: defaultProject(), clipboard: null, past: [], future: [] });
+    const [a, b] = useStore.getState().project.tracks;
+    useStore.getState().selectTrack(a.id);
+    return { a, b };
+  };
+  const track = (id: string) => useStore.getState().project.tracks.find((t) => t.id === id)!;
+
+  it('duplicates a track right after itself, with a copy name', () => {
+    const { a } = fresh();
+    useStore.getState().duplicateTrack(a.id);
+    useStore.getState().duplicateTrack(a.id);
+    const names = useStore.getState().project.tracks.map((t) => t.name);
+    expect(names.slice(0, 3)).toEqual([a.name, `${a.name} copy 2`, `${a.name} copy`]);
+    const copy = useStore.getState().project.tracks[2];
+    expect(copy.id).not.toBe(a.id);
+    expect(copy.graph).toEqual(a.graph);
+  });
+  it('copies nodes into another track: fresh ids, inner wires, its clock, its sliders, free Note Out ports only', () => {
+    const { a, b } = fresh();
+    useStore.getState().updateNodeData(a.id, a.graph.nodes.find((n) => n.type !== 'output' && n.type !== 'step')!.id, {});
+    // a formula that reads a slider of track a
+    useStore.getState().addSlider(a.id, 0.5, 'depth');
+    useStore.getState().setGraph(a.id, [...track(a.id).graph.nodes, { id: 'f1', type: 'expr', position: { x: 0, y: 500 }, data: { formula: 'x * depth' } }], track(a.id).graph.edges);
+    const ids = track(a.id).graph.nodes.filter((n) => n.type !== 'output').map((n) => n.id);
+    expect(useStore.getState().copyNodes(a.id, ids)).toBe(ids.length);
+    const before = track(b.id);
+    const r = useStore.getState().pasteNodes(b.id);
+    expect(typeof r).toBe('number');
+    const after = track(b.id);
+    const added = after.graph.nodes.filter((n) => !before.graph.nodes.some((x) => x.id === n.id));
+    expect(added.length).toBe(r);
+    expect(added.some((n) => n.type === 'step')).toBe(before.graph.nodes.every((n) => n.type !== 'step'));
+    expect(added.every((n) => !ids.includes(n.id))).toBe(true);
+    expect(after.sliders.map((s) => s.name)).toContain('depth');
+    // b's Note Out keeps its own wiring
+    const out = after.graph.nodes.find((n) => n.type === 'output')!;
+    for (const e of before.graph.edges.filter((e) => e.target === out.id)) expect(after.graph.edges).toContainEqual(expect.objectContaining({ source: e.source, targetHandle: e.targetHandle }));
+    expect(renderTrack(after, useStore.getState().project.song).errors.size).toBe(0);
+  });
+  it('the node dice changes only that node', () => {
+    const t = trackFromPreset(PRESETS.find((x) => x.id === 'evolve')!, 0);
+    const target = t.graph.nodes.find((n) => n.type === 'expr')!;
+    const r = mutateOneNode(t, defaultProject().song, target.id, 0.5, 1234);
+    expect(r.track).not.toBe(t);
+    for (const n of r.track.graph.nodes) {
+      const was = t.graph.nodes.find((x) => x.id === n.id)!;
+      if (n.id === target.id) expect(n.data).not.toEqual(was.data);
+      else expect(n.data).toEqual(was.data);
+    }
+    expect(r.track.graph.edges).toEqual(t.graph.edges);
+  });
+  it('every scale is well-formed, and None is every semitone', () => {
+    for (const [k, sc] of Object.entries(SCALES)) {
+      expect(sc.steps[0], k).toBe(0);
+      expect([...sc.steps].sort((x, y) => x - y), k).toEqual(sc.steps);
+      expect(new Set(sc.steps).size, k).toBe(sc.steps.length);
+      expect(Math.max(...sc.steps), k).toBeLessThan(12);
+    }
+    expect(SCALES.chromatic.label).toBe('None');
+    expect(degreeToMidi(13, 0, SCALES.chromatic.steps, 4)).toBe(60 + 13);
   });
 });

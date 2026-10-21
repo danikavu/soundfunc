@@ -1,7 +1,7 @@
 import { compileGraph, type Graph } from './graph';
-import { tryCompile, type Compiled } from './expr';
-import { nearestFixedLength, type LengthMode } from './steps';
-import { chordTones, midiToDegree, midiToFreq, midiToName, NOTE_NAMES, SCALES, valueToMidi, valueToPitch, type PitchMode } from './music';
+import { parse, renameVariable, tryCompile, type Compiled } from './expr';
+import { FIXED_LENGTHS, fixedLengthFor, type LengthMode } from './steps';
+import { chordTones, DEFAULT_PITCH_RANGE, limitPitch, midiToDegree, midiToFreq, midiToName, NOTE_NAMES, SCALES, valueToMidi, valueToPitch, type PitchMode, type PitchRange } from './music';
 
 export type DrumVoice = 'kick' | 'snare' | 'hat' | 'openhat' | 'clap' | 'rim' | 'tom' | 'crash';
 export type Waveform = 'sine' | 'triangle' | 'square' | 'sawtooth' | 'bell' | 'pluck' | 'pad' | 'flute' | 'reese' | 'custom' | DrumVoice;
@@ -48,9 +48,6 @@ export interface Track {
   steps: number;
   /** step length in beats (0.25 = sixteenth) */
   stepBeats: number;
-  /** fixed: the loop is exactly lengthBeats (4/8/16/32/64); free: steps × stepBeats */
-  lengthMode: LengthMode;
-  lengthBeats: number;
   octave: number;
   pitchMode: PitchMode;
   waveform: Waveform;
@@ -72,17 +69,18 @@ export interface Track {
   glide: number;
   muted: boolean;
   solo: boolean;
+  /** named constants this track's formulas read, Desmos-style — each track has its own */
+  sliders: Slider[];
 }
 
 export const TRACK_DEFAULTS: Omit<Track, 'id' | 'name' | 'color' | 'graph'> = {
   steps: 16,
   stepBeats: 0.25,
-  lengthMode: 'free',
-  lengthBeats: 4,
   octave: 4,
   pitchMode: 'degree',
   waveform: 'sine',
   timbre: 'sin(tau*p) + 0.5*sin(2*tau*p) + 0.25*sin(3*tau*p)',
+  sliders: [],
   volume: 0.8,
   pan: 0,
   attack: 0.01,
@@ -107,9 +105,25 @@ export interface Song {
   harmony: string;
   /** keep the progression when mutating the whole garden */
   harmonyLocked?: boolean;
-  /** named constants every formula can read, Desmos-style */
-  sliders: Slider[];
+  /** where pitches may go: wrap by octaves (default), clamp, or off */
+  pitchRange: PitchRange;
+  /**
+   * fixed: every track is exactly lengthBeats (4/8/16/32/64) long ·
+   * free: each track loops on its own (steps × step length); the song is the longest
+   */
+  lengthMode: LengthMode;
+  lengthBeats: number;
+  /**
+   * evolve: time keeps running from pass to pass — k, bar and the harmony move on ·
+   * exact: every pass of the song starts the clock again, so it repeats note for note
+   */
+  repeat: RepeatMode;
 }
+
+export type RepeatMode = 'evolve' | 'exact';
+
+/** the length every track fills, or null when the song is free */
+export const songGridLength = (song: Song): number | null => (song.lengthMode === 'free' ? null : song.lengthBeats);
 
 export interface Slider {
   name: string;
@@ -118,27 +132,29 @@ export interface Slider {
   max: number;
 }
 
-export const sliderNames = (song: Song) => (song.sliders ?? []).map((s) => s.name);
-export const sliderValues = (song: Song): Record<string, number> => Object.fromEntries((song.sliders ?? []).map((s) => [s.name, s.value]));
+export const sliderNames = (track: Track) => (track.sliders ?? []).map((s) => s.name);
+export const sliderValues = (track: Track): Record<string, number> => Object.fromEntries((track.sliders ?? []).map((s) => [s.name, s.value]));
 
-export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', sliders: [] };
+export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16, repeat: 'evolve' };
 export const BEATS_PER_BAR = 4;
 
 const harmonyCache = new Map<string, Compiled | null>();
-function harmonyFn(src: string, sliders: readonly string[]): Compiled | null {
-  const key = `${src}|${sliders.join(',')}`;
-  if (!harmonyCache.has(key)) {
+function harmonyFn(src: string): Compiled | null {
+  if (!harmonyCache.has(src)) {
     if (harmonyCache.size > 64) harmonyCache.clear();
-    harmonyCache.set(key, tryCompile(src, ['bar', 'k', 'L', ...sliders]).fn);
+    harmonyCache.set(src, tryCompile(src, HARMONY_VARS).fn);
   }
-  return harmonyCache.get(key)!;
+  return harmonyCache.get(src)!;
 }
+
+/** what the harmony formula can read — it belongs to the song, so no track's sliders */
+export const HARMONY_VARS = ['bar', 'k', 'L'] as const;
 
 /** The chord (scale degree) sounding at an absolute beat of the song. */
 export function harmonyAt(song: Song, beat: number): number {
-  const fn = harmonyFn(song.harmony ?? '0', sliderNames(song));
+  const fn = harmonyFn(song.harmony ?? '0');
   if (!fn) return 0;
-  const v = fn({ ...sliderValues(song), bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), k: 0, L: scaleLength(song) });
+  const v = fn({ bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), k: 0, L: scaleLength(song) });
   return Number.isFinite(v) ? Math.round(v) : 0;
 }
 
@@ -152,16 +168,47 @@ export interface Project {
 
 /** Fill in fields added since a project was saved. */
 export function normalizeProject(p: Project): Project {
+  const { sliders: legacySliders, ...songIn } = (p.song ?? {}) as Partial<Song> & { sliders?: Slider[] };
+  const song: Song = { ...SONG_DEFAULTS, ...songIn };
+  // projects from before the song's length ruled every track: fixed when all tracks
+  // already share one of the fixed lengths, otherwise free — so nothing gets cut
+  const lengths = p.tracks.map((t) => (t.steps ?? 16) * (t.stepBeats ?? 0.25));
+  if (!('lengthMode' in (p.song ?? {}))) {
+    const same = lengths.length > 0 && lengths.every((l) => Math.abs(l - lengths[0]) < 1e-9) && (FIXED_LENGTHS as readonly number[]).some((f) => Math.abs(f - lengths[0]) < 1e-9);
+    song.lengthMode = same ? 'fixed' : 'free';
+    song.lengthBeats = same ? lengths[0] : fixedLengthFor(Math.max(1, ...lengths));
+  }
+  // the harmony could read the song's sliders; it keeps their values, written in
+  if (legacySliders?.length) for (const sl of legacySliders) song.harmony = renameVariable(song.harmony, sl.name, sl.value < 0 ? `(${sl.value})` : String(sl.value));
   return {
     name: p.name ?? 'Untitled',
-    song: { ...SONG_DEFAULTS, ...(p.song as Partial<Song>) },
+    song,
     tracks: p.tracks.map((t) => {
-      const track = { ...TRACK_DEFAULTS, ...t };
-      // projects from before fixed lengths: keep them free, remember the nearest fixed length
-      if (!('lengthBeats' in t)) track.lengthBeats = nearestFixedLength(track.steps * track.stepBeats);
+      // tracks used to carry their own loop length; the song's length rules now
+      const { lengthMode: _m, lengthBeats: _l, ...rest } = t as Track & { lengthMode?: unknown; lengthBeats?: unknown };
+      const track = { ...TRACK_DEFAULTS, ...rest };
+      // sliders used to belong to the whole song; each track now keeps the ones its formulas read
+      if (legacySliders?.length && !t.sliders) {
+        const used = formulaNames(track.graph);
+        track.sliders = legacySliders.filter((sl) => used.has(sl.name)).map((sl) => ({ ...sl }));
+      }
       return track;
     }),
   };
+}
+
+/** every name the track's formulas read */
+export function formulaNames(graph: Graph): Set<string> {
+  const used = new Set<string>();
+  for (const n of graph.nodes) {
+    if (n.type !== 'expr') continue;
+    try {
+      for (const v of parse(String(n.data.formula ?? '')).variables) used.add(v);
+    } catch {
+      /* an unfinished formula reads nothing */
+    }
+  }
+  return used;
 }
 
 /** A generated note — everything needed for playback, visuals and export. */
@@ -218,8 +265,8 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 export const curveRes = (track: Track) => (track.playMode === 'glide' ? 16 : Math.max(1, Math.min(16, Math.floor(1024 / track.steps))));
 
 export function renderTrack(track: Track, song: Song, loop = 0, withTraces = true): TrackRender {
-  const program = compileGraph(track.graph, sliderNames(song));
-  const vars = sliderValues(song);
+  const program = compileGraph(track.graph, sliderNames(track));
+  const vars = sliderValues(track);
   const traces = withTraces ? new Map<string, number[]>() : undefined;
   const notes: Note[] = [];
   const pitchCurve: number[] = [];
@@ -249,13 +296,14 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
     velocityCurve.push(vel);
     if (vel < 0.01 || glide) continue;
 
-    const rootMidi = drum ? drum.gm : valueToMidi(out.pitch, track.pitchMode, song.root, song.scale, track.octave);
+    const range = song.pitchRange ?? DEFAULT_PITCH_RANGE;
+    const rootMidi = drum ? drum.gm : limitPitch(valueToMidi(out.pitch, track.pitchMode, song.root, song.scale, track.octave, false), range);
     // chords: stack scale degrees on top of the pitch
     const size = drum ? 1 : clamp(Math.round(out.chord), 1, 8);
     const scale = (SCALES[song.scale] ?? SCALES.major).steps;
     const tones =
       size > 1
-        ? chordTones(midiToDegree(rootMidi, song.root, scale, track.octave), size, out.stack, out.inversion, song.root, song.scale, track.octave)
+        ? chordTones(midiToDegree(rootMidi, song.root, scale, track.octave), size, out.stack, out.inversion, song.root, song.scale, track.octave).map((m) => limitPitch(m, range))
         : [rootMidi];
     const strum = clamp(out.strum, -0.5, 0.5);
     const tune = drum ? clamp(out.pitch, -24, 24) : 0;
@@ -295,7 +343,9 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
       curve.raw.push(out.pitch);
       curve.velocity.push(clamp(out.velocity, 0, 1));
       curve.midi.push(
-        drum ? drum.gm + clamp(out.pitch, -24, 24) : valueToPitch(out.pitch, track.pitchMode, song.root, song.scale, track.octave, !glide || track.quantize),
+        drum
+          ? drum.gm + clamp(out.pitch, -24, 24)
+          : limitPitch(valueToPitch(out.pitch, track.pitchMode, song.root, song.scale, track.octave, !glide || track.quantize, false), song.pitchRange ?? DEFAULT_PITCH_RANGE),
       );
     }
   }
@@ -314,9 +364,28 @@ export function harmonyCycleBars(song: Song): number {
   return 16;
 }
 
-/** One full cycle of the song: the longest pattern, or the progression if that is longer. */
+/**
+ * One full cycle of the song: its length — or, when the song is free, its longest
+ * track. (The progression doesn't stretch it: it repeats, or keeps going, inside.)
+ */
 export function songBeats(tracks: Track[], song: Song): number {
-  return Math.max(1, ...tracks.map(patternBeats), harmonyCycleBars(song) * BEATS_PER_BAR);
+  if (song.lengthMode !== 'free') return song.lengthBeats ?? 16;
+  return Math.max(1, ...tracks.map(patternBeats));
+}
+
+/**
+ * Split a stretch of play time [from, to) into pieces of song time: with `repeat: 'exact'`
+ * each pass of the song starts again at 0; otherwise song time is play time.
+ * `base` is where the piece's song time 0 sits in play time.
+ */
+export function songWindows(song: Song, songLength: number, from: number, to: number): { base: number; from: number; to: number }[] {
+  if (song.repeat !== 'exact' || !(songLength > 0)) return [{ base: 0, from, to }];
+  const out: { base: number; from: number; to: number }[] = [];
+  for (let p = Math.floor(from / songLength + 1e-9); p * songLength < to - 1e-9; p++) {
+    const base = p * songLength;
+    out.push({ base, from: Math.max(0, from - base), to: Math.min(songLength, to - base) });
+  }
+  return out;
 }
 
 export function patternBeats(track: Track): number {
