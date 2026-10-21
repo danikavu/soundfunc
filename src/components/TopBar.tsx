@@ -7,7 +7,7 @@ import { togglePlay } from '../state/transport';
 import { GardenMenu } from './GardenMenu';
 import { FIXED_LENGTHS, shortBeats } from '../engine/steps';
 import { Dropdown } from './Dropdown';
-import { HARMONY_VARS } from '../engine/project';
+import { HARMONY_VARS, patternBeats } from '../engine/project';
 import { Icon, Stepper, TextField, download, fileSafe, isProject } from './ui';
 
 export function toast(msg: string) {
@@ -106,7 +106,7 @@ function SongLengthField() {
   const setSongLength = useStore((s) => s.setSongLength);
   const setSong = useStore((s) => s.setSong);
   const exact = song.repeat === 'exact';
-  const longest = useStore((s) => Math.max(0, ...s.project.tracks.map((t) => t.steps * t.stepBeats)));
+  const longest = useStore((s) => Math.max(0, ...s.project.tracks.map(patternBeats)));
   const free = song.lengthMode === 'free';
   return (
     <div

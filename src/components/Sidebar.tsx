@@ -1,6 +1,6 @@
 import { PRESETS } from '../engine/presets';
 import { KitPicker } from './KitPicker';
-import { audibleTracks, voiceLabel } from '../engine/project';
+import { audibleTracks, stretchOf, voiceLabel } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, download, fileSafe } from './ui';
 import { useRef, useState, type ReactNode } from 'react';
@@ -215,7 +215,10 @@ export function Sidebar() {
           </div>
           <span className="stone" style={{ background: t.color }} />
           <div style={{ minWidth: 0 }} title={`${voiceLabel(t.waveform)}${t.playMode === 'glide' ? ' · glide' : ''} · ${t.steps} steps`}>
-            <div className="track-name">{t.name}</div>
+            <div className="track-name">
+              {t.name}
+              {stretchOf(t) !== 1 && <small className="stretch-badge">×{Number(stretchOf(t).toFixed(3))}</small>}
+            </div>
           </div>
           <div className="track-actions" onClick={(e) => e.stopPropagation()}>
             <button className="ms remove" title="Duplicate channel — every node, value and slider" aria-label={`Duplicate ${t.name}`} onClick={() => duplicateTrack(t.id)}>

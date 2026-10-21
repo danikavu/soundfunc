@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { engine } from '../engine/audio';
 import { SCALES, chordName, limitPitch, midiToName, valueToPitch } from '../engine/music';
-import { BEATS_PER_BAR, audibleTracks, harmonyAt, isDrum, patternBeats, renderTrack, scaleLength, songBeats, voiceLabel, type Note, type Song, type Track, type TrackRender } from '../engine/project';
+import { BEATS_PER_BAR, audibleTracks, harmonyAt, isDrum, patternBeats, renderTrack, scaleLength, songBeats, stretchOf, voiceLabel, type Note, type Song, type Track, type TrackRender } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Seg, getRender } from './ui';
 import { RangeControl } from './RangeControl';
@@ -180,12 +180,12 @@ export function Visualizer() {
         midi.push(r.curve.midi[i]);
       });
       r.pitchCurve.forEach((v, n) => {
-        const beat = at + n * selected.stepBeats;
+        const beat = at + n * selected.stepBeats * stretchOf(selected);
         if (inPass(beat)) steps.push({ beat, raw: v, vel: r.velocityCurve[n] });
       });
     }
     // curve samples are evenly spaced: dt beats apart
-    return { raw, vel, midi, steps, dt: selected.stepBeats / fn.curve.res, total };
+    return { raw, vel, midi, steps, dt: (selected.stepBeats * stretchOf(selected)) / fn.curve.res, total };
   }, [selected, fn, project.song, score.total, offset]);
 
   /** the visible window, clamped to the song */
@@ -620,7 +620,7 @@ export function Visualizer() {
             if (st.beat < vw.start - 1 || st.beat > vw.start + vw.span + 1) continue;
             const v = st.vel;
             const x = sx(st.beat), y = sy(st.raw);
-            if (ppb * selected.stepBeats < 2 && v < 0.01) continue; // too dense to show rests
+            if (ppb * selected.stepBeats * stretchOf(selected) < 2 && v < 0.01) continue; // too dense to show rests
             g.globalAlpha = v < 0.01 ? 0.25 : 1;
             g.fillStyle = v < 0.01 ? P.paper : selected.color;
             g.strokeStyle = v < 0.01 ? P.ink3 : selected.color;

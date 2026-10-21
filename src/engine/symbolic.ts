@@ -6,7 +6,7 @@
 import { compileAst, parse, type Ast, type BinOp } from './expr';
 import { COMPARE_OPS, NODE_DEFS, parseList, parsePattern, sectionLengths, type GNode, type Graph } from './graph';
 import { NOTE_NAMES, PITCH_MODES, SCALES } from './music';
-import { BEATS_PER_BAR, isDrum, scaleLength, voiceLabel, type Song, type Track } from './project';
+import { BEATS_PER_BAR, isDrum, scaleLength, stretchOf, voiceLabel, type Song, type Track } from './project';
 
 // ---------- tree helpers ----------
 
@@ -740,13 +740,16 @@ function harmonyAst(song: Song): Ast {
 
 /** beat = k · patternBeats + t */
 function beatAst(track: Track): Ast {
-  return simplify(bin('+', bin('*', num(track.steps * track.stepBeats), v('k')), v('t')));
+  // real beats: the channel's own time t, stretched
+  const s = stretchOf(track);
+  return simplify(bin('*', num(s), bin('+', bin('*', num(track.steps * track.stepBeats), v('k')), v('t'))));
 }
 
 /** bar = ⌊(k · patternBeats + t) / 4⌋ */
 function barAst(track: Track): Ast {
   const len = track.steps * track.stepBeats;
-  return simplify(call('floor', bin('/', bin('+', bin('*', num(len), v('k')), v('t')), num(BEATS_PER_BAR))));
+  const s = stretchOf(track);
+  return simplify(call('floor', bin('/', bin('*', num(s), bin('+', bin('*', num(len), v('k')), v('t'))), num(BEATS_PER_BAR))));
 }
 
 export function describeTrack(track: Track, song: Song): string {
@@ -856,7 +859,7 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
     const sliders = (track.sliders ?? []).filter((sl) => vars.has(sl.name)).map((sl) => `${pre}${sl.name} = ${fmtNum(sl.value)}${end}  ${lang === 'js' ? '//' : '#'} slider ${fmtNum(sl.min)} … ${fmtNum(sl.max)}`);
     clock.unshift(...sliders);
     const binds = math.bindings.map((b) => `${pre}${b.name} = ${toCode(b.ast, lang)}${end}  ${lang === 'js' ? '//' : '#'} ${b.label}`);
-    const mode = `${describeTrack(track, song)} · ${track.steps} steps of ${track.stepBeats} beats`;
+    const mode = `${describeTrack(track, song)} · ${track.steps} steps of ${track.stepBeats} beats${stretchOf(track) !== 1 ? ` · stretched ×${fmtNum(stretchOf(track))} in time` : ''}`;
     if (lang === 'js') {
       const outs = math.outputs.map((o) => `    ${o.port}: ${toCode(o.ast, 'js')},`);
       body.push(

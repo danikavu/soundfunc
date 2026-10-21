@@ -48,6 +48,11 @@ export interface Track {
   steps: number;
   /** step length in beats (0.25 = sixteenth) */
   stepBeats: number;
+  /**
+   * time stretch: the channel's function keeps its shape (it reads the same n, x, t, k)
+   * but plays out over stretch × as long — 2 = twice as long and slow, 0.5 = twice as fast
+   */
+  stretch: number;
   octave: number;
   pitchMode: PitchMode;
   waveform: Waveform;
@@ -76,6 +81,7 @@ export interface Track {
 export const TRACK_DEFAULTS: Omit<Track, 'id' | 'name' | 'color' | 'graph'> = {
   steps: 16,
   stepBeats: 0.25,
+  stretch: 1,
   octave: 4,
   pitchMode: 'degree',
   waveform: 'sine',
@@ -277,10 +283,12 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
   let hasOutput = true;
   const L = scaleLength(song);
   const loopBeat = loop * patternBeats(track);
-  /** clock for a (possibly fractional) step position u */
+  /** a step's length in real beats — the grid's, stretched */
+  const sb = track.stepBeats * stretchOf(track);
+  /** clock for a (possibly fractional) step position u: the function's own time t, and the song's real beat */
   const clock = (u: number) => {
     const t = u * track.stepBeats;
-    const beat = loopBeat + t;
+    const beat = loopBeat + u * sb;
     return { n: Math.floor(u), x: u / track.steps, t, k: loop, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), L, beat, vars };
   };
 
@@ -317,8 +325,8 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
         notes.push({
           step: n,
           loop,
-          beat: (n + Math.min(0.97, shift + roll) + r / ratchet) * track.stepBeats,
-          duration: ratchet > 1 ? (track.stepBeats / ratchet) * 0.9 : Math.max(0.05, len - roll) * track.stepBeats,
+          beat: (n + Math.min(0.97, shift + roll) + r / ratchet) * sb,
+          duration: ratchet > 1 ? (sb / ratchet) * 0.9 : Math.max(0.05, len - roll) * sb,
           midi,
           name: drum ? drum.label : midiToName(midi),
           freq: midiToFreq(midi),
@@ -339,7 +347,7 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
     for (let i = 0; i < track.steps * res; i++) {
       const u = i / res;
       const out = program.run(clock(u))!;
-      curve.beat.push(u * track.stepBeats);
+      curve.beat.push(u * sb);
       curve.raw.push(out.pitch);
       curve.velocity.push(clamp(out.velocity, 0, 1));
       curve.midi.push(
@@ -388,9 +396,17 @@ export function songWindows(song: Song, songLength: number, from: number, to: nu
   return out;
 }
 
+/** how long one pass of the channel lasts, in beats — its grid, stretched */
 export function patternBeats(track: Track): number {
-  return track.steps * track.stepBeats;
+  return track.steps * track.stepBeats * stretchOf(track);
 }
+
+export const STRETCH_MIN = 1 / 16;
+export const STRETCH_MAX = 16;
+export const stretchOf = (track: Track) => {
+  const s = track.stretch;
+  return Number.isFinite(s) && s > 0 ? Math.min(STRETCH_MAX, Math.max(STRETCH_MIN, s)) : 1;
+};
 
 export function audibleTracks(tracks: Track[]): Track[] {
   const anySolo = tracks.some((t) => t.solo);

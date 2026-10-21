@@ -3,7 +3,7 @@ import { engine } from '../engine/audio';
 import { CONSTANTS, FUNCTIONS } from '../engine/expr';
 import { PITCH_MODES, midiToName, type PitchMode } from '../engine/music';
 import { TRACK_COLORS } from '../engine/presets';
-import { DRUMS, WAVEFORMS, isDrum, keyLabel, voiceLabel, type PlayMode, type Waveform } from '../engine/project';
+import { DRUMS, STRETCH_MAX, STRETCH_MIN, WAVEFORMS, isDrum, keyLabel, patternBeats, stretchOf, voiceLabel, type PlayMode, type Waveform } from '../engine/project';
 import { useLibrary, voiceOf, wearsVoice } from '../state/library';
 import { toast } from './TopBar';
 import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
@@ -194,6 +194,46 @@ function SaveVoice() {
   );
 }
 
+const fmtX = (v: number) => (Number.isInteger(v) ? String(v) : v < 1 && Number.isInteger(1 / v) ? `1/${1 / v}` : String(Number(v.toFixed(3))));
+
+/** Stretch the channel in time: ÷2, ×2, or any factor — the function keeps its shape and plays out slower or faster. */
+function StretchField() {
+  const track = useSelectedTrack()!;
+  const updateTrack = useStore((s) => s.updateTrack);
+  const s = stretchOf(track);
+  const set = (v: number) => updateTrack(track.id, { stretch: Math.min(STRETCH_MAX, Math.max(STRETCH_MIN, v)) });
+  return (
+    <label className="field stretch-field">
+      <span>
+        Stretch
+        {s !== 1 && (
+          <button type="button" className="stretch-reset" onClick={(e) => (e.preventDefault(), set(1))} title="Back to ×1" aria-label="Reset stretch">
+            reset
+          </button>
+        )}
+      </span>
+      <div className="stretch-ctl">
+        <button type="button" className="stretch-btn" onClick={(e) => (e.preventDefault(), set(s / 2))} disabled={s <= STRETCH_MIN} title="Half as long — twice as fast" aria-label="Stretch ÷2">
+          ÷2
+        </button>
+        <span className="stretch-x">×</span>
+        <NumberField
+          className="input num stretch-input"
+          min={STRETCH_MIN}
+          max={STRETCH_MAX}
+          value={s}
+          onValue={set}
+          aria-label="Stretch"
+          title={`×${fmtX(s)} — 2 = twice as long and slow, 0.5 = twice as fast (1/16 … 16)`}
+        />
+        <button type="button" className="stretch-btn" onClick={(e) => (e.preventDefault(), set(s * 2))} disabled={s >= STRETCH_MAX} title="Twice as long — half as fast" aria-label="Stretch ×2">
+          ×2
+        </button>
+      </div>
+    </label>
+  );
+}
+
 /** The selected channel's grid: steps × step length, octave — and things to set on every channel at once. */
 function ChannelGrid() {
   const track = useSelectedTrack()!;
@@ -212,7 +252,10 @@ function ChannelGrid() {
         <Info>
           {track.steps} steps of {stepLabel(track.stepBeats)} = {shortBeats(track.steps * track.stepBeats)}
           {free ? ' — the song is free, so this channel loops on its own.' : ` — the song’s Length (${song.lengthBeats} beats): change the steps or the step length and the other follows.`}{' '}
-          Octave sets where pitch 0 sits: 4 is middle C’s octave.
+          Stretch plays the channel out over more or less time without changing its shape: ×2 is twice as long and slow, ×0.5 twice as fast
+          {stretchOf(track) !== 1 ? ` — now one pass lasts ${shortBeats(patternBeats(track))}` : ''}
+          {!free && stretchOf(track) > 1 ? ', longer than the song, so it plays across passes (with Repeats exactly, only its start is heard)' : ''}. Octave sets
+          where pitch 0 sits: 4 is middle C’s octave.
         </Info>
       </div>
       <div className="channel-grid">
@@ -236,6 +279,7 @@ function ChannelGrid() {
             />
           </div>
         </label>
+        <StretchField />
         {!drum && (
           <label className="field">
             <span>Octave</span>
