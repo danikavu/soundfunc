@@ -250,7 +250,7 @@ function SelectionTools() {
         <button className="btn small primary" onClick={commitName}>
           Save block
         </button>
-        <button className="btn small ghost" onClick={() => setNaming(null)}>
+        <button className="btn small ghost tool" onClick={() => setNaming(null)}>
           Cancel
         </button>
       </div>
@@ -260,33 +260,42 @@ function SelectionTools() {
   return (
     <div className="lock-status">
       {selected.length === 1 && selected[0].type === 'expr' && (
-        <button className="btn small ghost" onClick={() => run((g) => explodeFormula(g, ids[0]), 'Exploded — repeat on the new formulas to go deeper')} title="Split the formula’s outermost operation into a node">
-          <Icon name="split" size={12} /> Explode
+        <button className="btn small ghost tool" aria-label="Explode" onClick={() => run((g) => explodeFormula(g, ids[0]), 'Exploded — repeat on the new formulas to go deeper')} title="Explode — split the formula’s outermost operation into a node">
+          <Icon name="split" size={14} />
         </button>
       )}
       {selected.length >= 2 && (
-        <button className="btn small ghost" onClick={() => run((g) => collapseNodes(g, ids), `Collapsed ${ids.length} nodes into one formula`)} title="Merge the selected nodes into one Formula node">
-          <Icon name="merge" size={12} /> Collapse
+        <button className="btn small ghost tool" onClick={() => run((g) => collapseNodes(g, ids), `Collapsed ${ids.length} nodes into one formula`)} title="Collapse — merge the selected nodes into one Formula node" aria-label="Collapse">
+          <Icon name="merge" size={14} />
         </button>
       )}
       {selected.length >= 1 && (
         <>
-          <button className="btn small ghost" onClick={() => setNaming(selected.length === 1 ? NODE_DEFS[selected[0].type].label : `${track.name} block`)} title="Keep these nodes and their wires to reuse in any track">
-            <Icon name="bookmark" size={12} /> Save as block
+          <button className="btn small ghost tool" onClick={() => setNaming(selected.length === 1 ? NODE_DEFS[selected[0].type].label : `${track.name} block`)} title="Save as block — keep these nodes and their wires to reuse in any track" aria-label="Save as block">
+            <Icon name="bookmark" size={14} />
           </button>
           {selected.length === 1 && (
-            <button className={`btn small ghost ${audition?.nodeId === ids[0] ? 'on' : ''}`} onClick={() => setAudition(audition?.nodeId === ids[0] ? null : { trackId: track.id, nodeId: ids[0] })}>
-              <Icon name="headphones" size={12} /> Listen
+            <button
+              className={`btn small ghost tool ${audition?.nodeId === ids[0] ? 'on' : ''}`}
+              title="Listen — hear this node alone"
+              aria-label="Listen"
+              onClick={() => setAudition(audition?.nodeId === ids[0] ? null : { trackId: track.id, nodeId: ids[0] })}
+            >
+              <Icon name="headphones" size={14} />
             </button>
           )}
-          <button className="btn small ghost" onClick={copySelected} title="Copy the selected nodes and their wires (⌘C) — paste into any track with ⌘V">
-            <Icon name="copy" size={12} /> Copy
+          <button className="btn small ghost tool" onClick={copySelected} title="Copy — the selected nodes and their wires (⌘C); paste into any track with ⌘V" aria-label="Copy">
+            <Icon name="copy" size={14} />
           </button>
           {others.length > 0 && (
             <Dropdown
               compact
               label="Copy to track"
-              value={<span>Copy to…</span>}
+              value={
+                <span className="copy-to" title="Copy to another track">
+                  <Icon name="send" size={14} />
+                </span>
+              }
               groups={[
                 {
                   title: 'Copy the selection into',
@@ -302,9 +311,13 @@ function SelectionTools() {
               ]}
             />
           )}
-          <button className="btn small ghost" onClick={toggleLockSelected} title="Lock / unlock the selected nodes (L)">
-            <Icon name={selected.every((n) => n.data.locked) ? 'unlock' : 'lock'} size={12} />
-            {selected.every((n) => n.data.locked) ? 'Unlock' : 'Lock'}
+          <button
+            className="btn small ghost tool"
+            onClick={toggleLockSelected}
+            title={selected.every((n) => n.data.locked) ? 'Unlock the selected nodes (L)' : 'Lock the selected nodes against Mutate (L)'}
+            aria-label={selected.every((n) => n.data.locked) ? 'Unlock' : 'Lock'}
+          >
+            <Icon name={selected.every((n) => n.data.locked) ? 'unlock' : 'lock'} size={14} />
           </button>
         </>
       )}

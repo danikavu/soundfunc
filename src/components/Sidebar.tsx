@@ -29,16 +29,19 @@ function MyFunctions() {
     <>
       <div className="track-tools">
         <button className="btn small ghost" disabled={!track} onClick={() => track && setNaming(track.name)} title="Save the selected track — all its nodes, values, sound and grid — as a function">
-          <Icon name="bookmark" size={11} /> Save this track
+          <Icon name="save" size={13} /> Save Track
         </button>
         <button className="btn small ghost" onClick={() => fileRef.current?.click()} title="Add functions from a .json file">
-          <Icon name="upload" size={11} /> Import
+          <Icon name="upload" size={13} /> Import
         </button>
-        {functions.length > 0 && (
-          <button className="btn small ghost" onClick={() => exportFns(functions, 'soundfunc-functions.json')} title="Download all your functions as one file">
-            <Icon name="download" size={11} /> Export all
-          </button>
-        )}
+        <button
+          className="btn small ghost"
+          disabled={!functions.length}
+          onClick={() => exportFns(functions, 'soundfunc-functions.json')}
+          title={functions.length ? 'Download all your functions as one file' : 'Save a track first — then export your functions as one file'}
+        >
+          <Icon name="download" size={13} /> Export
+        </button>
         <input
           ref={fileRef}
           type="file"
@@ -175,11 +178,8 @@ export function Sidebar() {
             </button>
           </div>
           <span className="stone" style={{ background: t.color }} />
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0 }} title={`${voiceLabel(t.waveform)}${t.playMode === 'glide' ? ' · glide' : ''} · ${t.steps} steps`}>
             <div className="track-name">{t.name}</div>
-            <div className="track-meta">
-              {voiceLabel(t.waveform)}{t.playMode === 'glide' ? ' · glide' : ''} · {t.steps} steps
-            </div>
           </div>
           <div className="track-actions" onClick={(e) => e.stopPropagation()}>
             <button className="ms remove" title="Duplicate track — every node, value and slider" aria-label={`Duplicate ${t.name}`} onClick={() => duplicateTrack(t.id)}>

@@ -2930,13 +2930,6 @@ button:focus-visible {
 .topbar .stepper.tempo .input.num.stepper-input {
   width: 40px;
 }
-/* the selected track's name: larger, light, in the accent */
-.topbar .track-panel .grid-field > span .grid-name {
-  font: 400 13px/1 var(--sans);
-  letter-spacing: 0.02em;
-  text-transform: none;
-  color: var(--accent);
-}
 
 /* ---------- node view toolbar: one row, one height, one icon size ---------- */
 .toolbar {
@@ -2991,15 +2984,117 @@ button:focus-visible {
   height: 32px;
 }
 
-/* the larger name hangs in the label row without making it taller, so every label stays in line */
-.topbar .track-panel .grid-field > span {
-  height: 9px;
+/* ---------- tracks, second pass ---------- */
+/* M beside S, on the left */
+.ms-col {
+  flex-direction: row;
+  gap: 1px;
+}
+.track {
+  grid-template-columns: 41px 14px 1fr auto;
+}
+/* a line under the + ƒ 🗑 tools */
+.tracks-head {
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+}
+.tracks-head-tools .fx-glyph {
+  font-size: 15px;
+}
+/* plant a function: Save Track · Import · Export */
+.track-tools .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------- node toolbar: let popups (Copy to…) open outside it ---------- */
+.toolbar {
   overflow: visible;
 }
-.topbar .track-panel .grid-field > span .grid-name {
-  line-height: 9px;
-  padding: 3px 0;
-  margin: -3px 0;
-  max-width: 150px;
+.toolbar .lock-status .dropdown.compact .dropdown-field {
+  width: auto;
+  padding: 0 10px;
+  gap: 6px;
   white-space: nowrap;
+}
+.toolbar .lock-status .dropdown.compact {
+  flex: none;
+}
+
+/* selection tools: icon buttons, the same size as the rest of the toolbar */
+.toolbar .lock-status .btn.tool {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+.toolbar .lock-status .dropdown.compact .dropdown-field {
+  height: 32px;
+  padding: 0 8px;
+}
+.toolbar .copy-to {
+  display: inline-flex;
+  align-items: center;
+}
+/* the Copy to… list opens inward, under its button */
+.toolbar .dropdown.compact .dropdown-pop {
+  left: auto;
+  right: 0;
+  min-width: 220px;
+}
+/* tracks: hover actions float over the row, so names get the full width */
+.track {
+  position: relative;
+  grid-template-columns: 38px 12px 1fr;
+  gap: 8px;
+}
+.track .track-actions {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 8px;
+  background: inherit;
+}
+.track:hover .track-actions {
+  background: var(--paper-2);
+  box-shadow: -10px 0 10px var(--paper-2);
+}
+.track.selected:hover .track-actions {
+  background: var(--paper-3);
+  box-shadow: -10px 0 10px var(--paper-3);
+}
+/* plant a function: Save Track · Import · Export on one line */
+.track-tools {
+  flex-wrap: nowrap;
+  gap: 0;
+}
+.track-tools .btn {
+  padding: 3px 6px;
+  gap: 5px;
+}
+/* Copy to…: a round icon button like its neighbours */
+.toolbar .lock-status .dropdown.compact .dropdown-field {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+.toolbar .lock-status .dropdown.compact .dropdown-chevron {
+  display: none;
+}
+.toolbar .lock-status .dropdown.compact .dropdown-value {
+  display: inline-flex;
+  flex: none;
+}
+
+/* the garden's name: larger, light, in the accent */
+.topbar .garden-title .project-name {
+  font: 400 18px/1.2 var(--sans);
+  color: var(--accent);
+  letter-spacing: 0;
 }
