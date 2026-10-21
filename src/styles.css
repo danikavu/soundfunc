@@ -3283,3 +3283,68 @@ aside.panel:last-of-type .info-pop {
   color: inherit;
   border-color: transparent;
 }
+
+/* ---------- paste a function: a preview of one fixed size ---------- */
+.import-src-wrap {
+  position: relative;
+}
+.import-src-wrap .import-src {
+  width: 100%;
+  padding-right: 84px;
+}
+.import-paste {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.import-preview {
+  display: grid;
+  grid-template-rows: 64px 140px;
+  gap: 8px;
+  width: 100%;
+  flex: none;
+}
+.import-read {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  border-bottom: 1px dashed var(--line-soft);
+}
+.import-read-tex {
+  height: 64px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: auto hidden;
+  scrollbar-width: thin;
+}
+.import-read-tex .tex {
+  white-space: nowrap;
+}
+.import-plot-box {
+  position: relative;
+  height: 140px;
+  min-width: 0;
+}
+.import-plot-box .import-plot {
+  display: block;
+  height: 140px;
+}
+.import-plot.empty {
+  background: repeating-linear-gradient(90deg, transparent 0 39px, var(--line-soft) 39px 40px), var(--paper);
+  opacity: 0.6;
+}
+.import-overlay {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  max-height: 116px;
+  overflow: auto;
+}
