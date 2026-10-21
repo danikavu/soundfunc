@@ -774,24 +774,26 @@ body {
   outline-offset: 2px !important;
 }
 
-/* the progressions dropdown takes the room the bar has */
-.topbar .w-prog {
-  width: 230px;
+/* the progressions list opens wide enough to read each progression and its formula */
+.topbar .w-prog .dropdown-pop {
+  width: 420px;
+  max-width: calc(100vw - 24px);
+  left: auto;
+  right: 0;
 }
-@media (max-width: 1440px) {
-  .topbar .w-prog {
-    width: 190px;
-  }
+.topbar .w-prog .dropdown-row {
+  white-space: nowrap;
 }
-@media (max-width: 1280px) {
-  .topbar .w-prog {
-    width: 150px;
-  }
+
+/* steppers have their own arrows — never the browser's as well */
+.stepper .stepper-input {
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
-@media (max-width: 1160px) {
-  .topbar .w-prog {
-    width: 108px;
-  }
+.stepper .stepper-input::-webkit-inner-spin-button,
+.stepper .stepper-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* the buttons on a node's faceplate: darker, always readable */
