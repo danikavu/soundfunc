@@ -64,11 +64,11 @@ export function GardenMenu() {
 
   return (
     <div className="menu garden-menu" ref={ref}>
-      <button className="icon-btn save-btn" onClick={() => saveGarden()} title={unsaved ? 'Save (⌘S) — there are unsaved changes' : 'Save (⌘S) — saved'} aria-label="Save garden">
+      <button className="icon-btn save-btn" onClick={() => saveGarden()} title={unsaved ? 'Save (⌘S) — there are unsaved changes' : 'Save (⌘S) — saved'} aria-label="Save track">
         <Icon name="save" size={21} />
         {unsaved && <span className="unsaved-dot" />}
       </button>
-      <button className={`icon-btn garden-caret ${open ? 'active' : ''}`} onClick={() => setOpen((o) => !o)} title="Your gardens — save as a copy, open, start anew" aria-label="Your gardens">
+      <button className={`icon-btn garden-caret ${open ? 'active' : ''}`} onClick={() => setOpen((o) => !o)} title="Your tracks — save as a copy, open, start anew" aria-label="Your tracks">
         <Icon name="caret" size={13} />
       </button>
       {open && (
@@ -80,7 +80,7 @@ export function GardenMenu() {
             }}
           >
             Save <kbd>⌘S</kbd>
-            <small>{currentProjectId ? 'Update the saved copy' : 'Keep this garden in your library'}</small>
+            <small>{currentProjectId ? 'Update the saved copy' : 'Keep this track in your library'}</small>
           </button>
           <button
             onClick={() => {
@@ -92,16 +92,16 @@ export function GardenMenu() {
           </button>
           <button
             onClick={() => {
-              if (!leave('Start a new garden')) return;
+              if (!leave('Start a new track')) return;
               loadProject(defaultProject());
               setOpen(false);
             }}
           >
-            New garden <small>Start from the default three tracks</small>
+            New track <small>Start from the default three channels</small>
           </button>
           <hr />
-          <div className="garden-list-head">Your gardens</div>
-          {projects.length === 0 && <p className="muted garden-empty">Nothing saved yet. Save keeps every track, node and setting.</p>}
+          <div className="garden-list-head">Your tracks</div>
+          {projects.length === 0 && <p className="muted garden-empty">Nothing saved yet. Save keeps every channel, node and setting.</p>}
           {projects.map((sp) => (
             <div key={sp.id} className={`garden-row ${sp.id === currentProjectId ? 'current' : ''}`}>
               <button
@@ -114,7 +114,7 @@ export function GardenMenu() {
               >
                 <span className="serif">{sp.name}</span>
                 <small>
-                  {sp.project.tracks.length} tracks · {sp.project.song.bpm} bpm · {ago(sp.savedAt)}
+                  {sp.project.tracks.length} channels · {sp.project.song.bpm} bpm · {ago(sp.savedAt)}
                   {sp.id === currentProjectId && (unsaved ? ' · open, edited' : ' · open')}
                 </small>
               </button>
@@ -122,7 +122,7 @@ export function GardenMenu() {
                 className="icon-btn"
                 title={`Delete “${sp.name}”`}
                 onClick={() => {
-                  if (!confirm(`Delete the saved garden “${sp.name}”? This can’t be undone.`)) return;
+                  if (!confirm(`Delete the saved track “${sp.name}”? This can’t be undone.`)) return;
                   deleteProject(sp.id);
                   if (sp.id === currentProjectId) useStore.getState().setCurrentProjectId(null);
                 }}

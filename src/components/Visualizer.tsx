@@ -797,7 +797,7 @@ export function Visualizer() {
         style={{ cursor: mode === 'function' ? 'ew-resize' : tip ? 'pointer' : 'default', touchAction: 'none' }}
       />
       <div className="viz-legend">
-        <h2>{mode === 'score' ? 'The Garden' : mode === 'function' ? selected?.name ?? '—' : 'Ripple'}</h2>
+        <h2>{mode === 'score' ? 'The Track' : mode === 'function' ? selected?.name ?? '—' : 'Ripple'}</h2>
         <span className="muted">
           {mode !== 'ripple' && (project.song.repeat === 'exact' ? '⟲ repeats exactly · ' : pass > 0 ? `pass ${pass + 1} · ` : '')}
           {mode === 'score' && `${Number(score.total.toFixed(3))} beats · ${midiToName(score.lo + 2)}–${midiToName(score.hi - 2)}${score.drums.length ? ` · ${score.drums.length} drum lanes` : ''}`}

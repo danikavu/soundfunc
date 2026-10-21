@@ -78,8 +78,8 @@ export function StepPicker({
           </button>
         </label>
         {onApplyAll && (
-          <button className="btn small ghost step-all" onClick={onApplyAll} title="Give every track this step length">
-            Use {stepLabel(value)} for every track
+          <button className="btn small ghost step-all" onClick={onApplyAll} title="Give every channel this step length">
+            Use {stepLabel(value)} for every channel
           </button>
         )}
         </>

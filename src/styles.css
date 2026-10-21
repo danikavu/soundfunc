@@ -3098,3 +3098,188 @@ button:focus-visible {
   color: var(--accent);
   letter-spacing: 0;
 }
+
+/* ---------- folding sections: My functions, Function presets ---------- */
+.fold {
+  margin: 0 -6px 6px;
+}
+.fold-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font: 400 14px/1.2 var(--sans);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.25s var(--ease), background 0.25s var(--ease);
+}
+.fold-trigger:hover,
+.fold.open .fold-trigger {
+  border-color: var(--line);
+  background: var(--paper-2);
+}
+.fold-trigger small {
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+.fold-chevron {
+  margin-left: auto;
+  font: 300 18px/1 var(--serif);
+  color: var(--ink-3);
+  transition: transform 0.25s var(--ease);
+}
+.fold.open .fold-chevron {
+  transform: rotate(90deg);
+}
+.fold-body {
+  padding: 6px 6px 2px;
+}
+.fold-empty {
+  font-size: 11px;
+  margin: 2px 4px 6px;
+}
+/* ---------- ⓘ: explanations on demand ---------- */
+.info {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+.info-btn {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.info-btn:hover,
+.info.open .info-btn {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.info-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -6px;
+  z-index: 80;
+  width: 240px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--shadow-lg, var(--shadow));
+  font: 400 11.5px/1.5 var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-2);
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
+}
+.info.right .info-pop {
+  left: auto;
+  right: -6px;
+}
+.info:hover .info-pop,
+.info.open .info-pop,
+.info-btn:focus-visible + .info-pop {
+  opacity: 1;
+  transform: none;
+}
+.eyebrow-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.eyebrow-info .info {
+  margin-left: 2px;
+}
+/* the channel's grid, in the right panel */
+.channel-grid {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.channel-grid .input.num {
+  width: 52px;
+}
+.channel-grid .stepper .input.num.stepper-input {
+  width: 34px;
+  border: none;
+  background: transparent;
+  padding: 0 0 0 8px;
+  height: 100%;
+}
+.channel-grid .stepper {
+  height: 32px;
+}
+.all-channels {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  font-size: 11px;
+}
+.all-channels .muted {
+  margin-right: 4px;
+}
+.all-channels .btn.on {
+  color: var(--accent);
+}
+/* closed explanations take no room at all (an invisible one near the edge would widen the page) */
+.info-pop {
+  display: none;
+}
+.info:hover .info-pop,
+.info.open .info-pop,
+.info-btn:focus-visible + .info-pop {
+  display: block;
+  animation: info-in 0.18s var(--ease);
+}
+@keyframes info-in {
+  from { opacity: 0; transform: translateY(-3px); }
+}
+/* in the right panel, open toward the middle of the screen */
+aside.panel:last-of-type .info-pop {
+  left: auto;
+  right: -6px;
+}
+
+/* ⓘ notes float above every panel */
+.info .info-pop {
+  position: fixed;
+  display: block;
+  right: auto;
+  opacity: 1;
+  transform: none;
+  pointer-events: none;
+  animation: info-in 0.18s var(--ease);
+}
+.info-btn.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+/* Save Channel · Import · Export share the row evenly */
+.track-tools .btn {
+  flex: 1 1 auto;
+  justify-content: center;
+  padding: 3px 3px;
+  gap: 4px;
+  white-space: nowrap;
+}
+.all-channels .btn.on {
+  color: inherit;
+  border-color: transparent;
+}

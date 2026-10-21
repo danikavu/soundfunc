@@ -8,10 +8,11 @@ import { useLibrary, voiceOf, wearsVoice } from '../state/library';
 import { toast } from './TopBar';
 import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
-import { Icon, Seg, Slider, TextField, getRender } from './ui';
+import { Icon, Info, NumberField, Seg, Slider, Stepper, TextField, getRender } from './ui';
+import { StepPicker } from './StepPicker';
 import { FormulaEditor } from './FormulaEditor';
 import { Dropdown } from './Dropdown';
-import { stepLabel } from '../engine/steps';
+import { MAX_STEPS, shortBeats, stepLabel } from '../engine/steps';
 
 type Tab = 'sound' | 'notes' | 'guide';
 
@@ -111,7 +112,7 @@ function VoicePicker() {
             glyph: glyph(v.waveform, v.timbre),
             selected: mine?.id === v.id,
             onSelect: () => up({ waveform: v.waveform, timbre: v.timbre, attack: v.attack, release: v.release }),
-            onDelete: () => confirm(`Delete the voice “${v.name}”? Tracks using it keep their sound.`) && deleteVoice(v.id),
+            onDelete: () => confirm(`Delete the voice “${v.name}”? Channels using it keep their sound.`) && deleteVoice(v.id),
           })),
         },
         {
@@ -159,7 +160,7 @@ function SaveVoice() {
     const replacing = voices.some((v) => v.name === name);
     saveVoice(voiceOf(track, name));
     setNaming(null);
-    toast(`${replacing ? 'Updated' : 'Saved'} voice “${name}” — it is in the Voice menu, in every garden`);
+    toast(`${replacing ? 'Updated' : 'Saved'} voice “${name}” — it is in the Voice menu, in every track`);
   };
   if (naming === null)
     return (
@@ -193,6 +194,84 @@ function SaveVoice() {
   );
 }
 
+/** The selected channel's grid: steps × step length, octave — and things to set on every channel at once. */
+function ChannelGrid() {
+  const track = useSelectedTrack()!;
+  const song = useStore((s) => s.project.song);
+  const tracks = useStore((s) => s.project.tracks);
+  const { updateTrack, setGrid, setStepBeatsAll, patchMelodic } = useStore();
+  const free = song.lengthMode === 'free';
+  const drum = isDrum(track.waveform);
+  const melodic = tracks.filter((t) => !isDrum(t.waveform));
+  const allGlide = melodic.length > 0 && melodic.every((t) => t.playMode === 'glide');
+  const allSnap = melodic.length > 0 && melodic.every((t) => t.quantize);
+  return (
+    <>
+      <div className="eyebrow eyebrow-info">
+        Grid
+        <Info>
+          {track.steps} steps of {stepLabel(track.stepBeats)} = {shortBeats(track.steps * track.stepBeats)}
+          {free ? ' — the song is free, so this channel loops on its own.' : ` — the song’s Length (${song.lengthBeats} beats): change the steps or the step length and the other follows.`}{' '}
+          Octave sets where pitch 0 sits: 4 is middle C’s octave.
+        </Info>
+      </div>
+      <div className="channel-grid">
+        <label className="field">
+          <span>Steps</span>
+          <div className="row" style={{ gap: 6 }}>
+            <NumberField className="input num" integer min={1} max={MAX_STEPS} value={track.steps} onValue={(steps) => setGrid(track.id, { steps })} aria-label="Steps" />
+            <span className="muted">×</span>
+            <StepPicker
+              compact
+              value={track.stepBeats}
+              onChange={(stepBeats) => setGrid(track.id, { stepBeats })}
+              onApplyAll={
+                tracks.length > 1
+                  ? () => {
+                      setStepBeatsAll(track.stepBeats);
+                      toast(`Every channel now steps in ${stepLabel(track.stepBeats)} — ⌘Z to undo`);
+                    }
+                  : undefined
+              }
+            />
+          </div>
+        </label>
+        {!drum && (
+          <label className="field">
+            <span>Octave</span>
+            <Stepper label="Octave" min={-4} max={9} value={track.octave} onValue={(octave) => updateTrack(track.id, { octave })} />
+          </label>
+        )}
+      </div>
+      {melodic.length > 0 && (
+        <div className="all-channels">
+          <span className="muted">All channels</span>
+          <button
+            className={`btn small ghost ${allGlide ? 'on' : ''}`}
+            onClick={() => {
+              patchMelodic({ playMode: allGlide ? 'notes' : 'glide' });
+              toast(`${allGlide ? 'Every channel plays notes again' : 'Every melodic channel glides'} — ⌘Z to undo`);
+            }}
+            title={allGlide ? 'Unglide all — every melodic channel plays notes' : 'Glide all — every melodic channel follows its curve'}
+          >
+            {allGlide ? 'Unglide all' : 'Glide all'}
+          </button>
+          <button
+            className={`btn small ghost ${allSnap ? 'on' : ''}`}
+            onClick={() => {
+              patchMelodic({ quantize: !allSnap });
+              toast(`${allSnap ? 'Every glide is free pitch' : 'Every glide snaps to the scale'} — ⌘Z to undo`);
+            }}
+            title={allSnap ? 'Free pitch on every channel — glides go between the notes' : 'Snap every channel’s glide to the scale'}
+          >
+            {allSnap ? 'Free pitch all' : 'Snap all'}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
 function SoundTab() {
   const track = useSelectedTrack()!;
   const { project, updateTrack, setSong, duplicateTrack, removeTrack, checkpoint } = useStore();
@@ -219,6 +298,8 @@ function SoundTab() {
         {glide ? 'continuous glide' : `${render.notes.length} ${drum ? 'hits' : 'notes'}`} · {keyLabel(project.song)}
       </div>
 
+      <ChannelGrid />
+
       <div className="eyebrow">Voice</div>
       <VoicePicker />
       {track.waveform === 'custom' && <TimbreEditor />}
@@ -226,7 +307,10 @@ function SoundTab() {
 
       {!drum && (
         <>
-          <div className="eyebrow">Play as</div>
+          <div className="eyebrow eyebrow-info">
+            Play as
+            <Info>Glide: one voice slides continuously along f(x); velocity shapes its volume. It exports as MIDI pitch bend. Snap to scale keeps the slide on the scale’s notes; free pitch goes anywhere between them.</Info>
+          </div>
           <Seg<PlayMode>
             value={track.playMode}
             onChange={(playMode) => up({ playMode })}
@@ -237,10 +321,7 @@ function SoundTab() {
           />
           {glide && (
             <>
-              <p className="muted" style={{ fontSize: 11, margin: '10px 0 4px' }}>
-                One voice slides continuously along f(x). Velocity shapes its volume. Exports as MIDI pitch bend.
-              </p>
-              <div style={{ marginTop: 6 }}>
+              <div style={{ marginTop: 8 }}>
                 <Seg<boolean>
                   value={track.quantize}
                   onChange={(quantize) => up({ quantize })}
@@ -267,16 +348,12 @@ function SoundTab() {
         </>
       )}
 
-      <div className="eyebrow">Pattern</div>
-      <p className="muted" style={{ fontSize: 11, margin: '0 0 8px' }}>
-        {track.steps} steps of {stepLabel(track.stepBeats)} = {Number((track.steps * track.stepBeats).toFixed(3))} beats
-        {project.song.lengthMode === 'free' ? ' (free song)' : ' (the song’s length)'}
-        {drum ? '' : `, octave ${track.octave}`} — set in the top bar.
-      </p>
+      <div className="eyebrow">Feel</div>
       {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} />}
       {drum ? (
-        <p className="muted" style={{ fontSize: 11 }}>
-          On drums, <b>pitch</b> tunes the hit in semitones. <b>ratchet</b> turns a step into a roll.
+        <p className="muted row" style={{ fontSize: 11, gap: 6 }}>
+          Drum channel
+          <Info>On drums, pitch tunes the hit in semitones, and ratchet turns a step into a roll.</Info>
         </p>
       ) : (
         <label className="field" style={{ marginTop: 12 }}>
@@ -314,17 +391,20 @@ function NotesTab() {
     let lo = 127, hi = 0;
     curve.midi.forEach((m, i) => curve.velocity[i] >= 0.01 && ((lo = Math.min(lo, m)), (hi = Math.max(hi, m))));
     return (
-      <p className="muted" style={{ marginTop: 0, fontSize: 11.5 }}>
-        <b className="serif">{track.name}</b> glides instead of playing notes: {curve.midi.length} pitch samples per pass
-        {lo <= hi && ` between ${midiToName(Math.round(lo))} and ${midiToName(Math.round(hi))}`}. The CSV export holds every sample, and MIDI export
-        writes them as pitch bend (±24 semitones) with CC11 expression for volume.
+      <p className="muted row" style={{ marginTop: 0, fontSize: 11.5, gap: 6 }}>
+        {curve.midi.length} pitch samples{lo <= hi && ` · ${midiToName(Math.round(lo))}–${midiToName(Math.round(hi))}`}
+        <Info>
+          {track.name} glides instead of playing notes. The CSV export holds every sample, and MIDI export writes them as pitch bend (±24 semitones) with
+          CC11 expression for volume.
+        </Info>
       </p>
     );
   }
   return (
     <>
-      <p className="muted" style={{ marginTop: 0, fontSize: 11.5 }}>
-        One pass of <b className="serif">{track.name}</b> in {keyLabel(song)}. Click a row to hear it. Export the full data as CSV or MIDI from the top bar.
+      <p className="muted row" style={{ marginTop: 0, fontSize: 11.5, gap: 6 }}>
+        One pass · {keyLabel(song)}
+        <Info>Every note of one pass of {track.name}. Click a row to hear it. Export the full data as CSV or MIDI from the top bar.</Info>
       </p>
       <table className="notes-table">
         <thead>
@@ -364,7 +444,7 @@ function GuideTab() {
         <code>velocity</code> 0 means rest, and <code>length</code> is measured in steps.
       </p>
       <p>
-        <b>shift</b> delays a hit by part of a step (swing, flams). <b>ratchet</b> repeats it 2–8× inside the step (rolls). In <b>Glide</b> mode the track
+        <b>shift</b> delays a hit by part of a step (swing, flams). <b>ratchet</b> repeats it 2–8× inside the step (rolls). In <b>Glide</b> mode the channel
         is one sliding voice: <code>x</code> and <code>t</code> flow smoothly while <code>n</code> still ticks per step.
       </p>
       <div className="eyebrow">Chords</div>
@@ -376,7 +456,7 @@ function GuideTab() {
       </p>
       <div className="eyebrow">Randomizer</div>
       <p style={{ margin: 0 }}>
-        <b>Mutate</b> (R, or ⇧R for the whole garden) rewrites parameters and formulas, renders ~40 candidates and keeps the one that scores best on
+        <b>Mutate</b> (R, or ⇧R for the whole track) rewrites parameters and formulas, renders ~40 candidates and keeps the one that scores best on
         melodic contour, chord-tone fit, rhythmic density and distance from the original. The 調和 ↔ 実験 dial trades consonance for novelty. Lock a node
         (hover its header) to protect it.
       </p>
@@ -384,7 +464,7 @@ function GuideTab() {
       <p style={{ margin: 0 }}>
         <b>Explode</b> (✂ on a Formula) splits its outermost operation into a node — conditions become If / else, comparisons and logic become
         Compare, and any other function gets its arguments as separate formulas. Repeat to go deeper. Select nodes and <b>Collapse</b> to merge them back
-        into one formula. <b>Save as block</b> keeps selected nodes for any track; blocks live in Add node. <b>🎧</b> listens to one node alone (Esc stops).
+        into one formula. <b>Save as block</b> keeps selected nodes for any channel; blocks live in Add node. <b>🎧</b> listens to one node alone (Esc stops).
         <b> Sliders</b> are named constants for every formula: Alt+S on a number in a formula makes one. <b>Sections</b> plays A, B, C… in turn.
       </p>
       <div className="eyebrow">Pattern notation</div>
@@ -432,13 +512,13 @@ export function Inspector() {
           value={tab}
           onChange={setTab}
           options={[
-            { value: 'sound', label: 'Track' },
+            { value: 'sound', label: 'Channel' },
             { value: 'notes', label: 'Notes' },
             { value: 'guide', label: 'Guide' },
           ]}
         />
       </div>
-      {tab === 'guide' ? <GuideTab /> : !track ? <p className="empty">No track selected.</p> : tab === 'sound' ? <SoundTab /> : <NotesTab />}
+      {tab === 'guide' ? <GuideTab /> : !track ? <p className="empty">No channel selected.</p> : tab === 'sound' ? <SoundTab /> : <NotesTab />}
     </aside>
   );
 }

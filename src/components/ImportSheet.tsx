@@ -240,7 +240,7 @@ export function ImportSheet() {
                   </div>
                 )}
                 <label className="field">
-                  <span>Track name</span>
+                  <span>Channel name</span>
                   <TextField className="input" value={name} onValue={setName} />
                 </label>
                 <div className="field">
@@ -279,7 +279,7 @@ export function ImportSheet() {
                   />
                 </div>
                 <div className="row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <label className="field" style={{ width: 90 }} title="Where the track begins along x — for functions that start at negative x">
+                  <label className="field" style={{ width: 90 }} title="Where the channel begins along x — for functions that start at negative x">
                     <span>{parsed.ok.timeVar} starts at</span>
                     <NumberField className="input" value={xStart} onValue={setXStart} />
                   </label>
@@ -319,7 +319,7 @@ export function ImportSheet() {
               : 'Your function stays exact: it becomes a Formula node you can keep editing.'}
           </span>
           <button className="btn primary" disabled={!parsed.ok} onClick={plant}>
-            <Icon name="plus" size={13} /> Plant as a track
+            <Icon name="plus" size={13} /> Plant as a channel
           </button>
         </footer>
       </div>

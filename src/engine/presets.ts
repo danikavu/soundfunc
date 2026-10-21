@@ -538,7 +538,7 @@ export const PRESETS: Preset[] = [
   {
     id: 'wavetable',
     name: 'Wavefolder',
-    description: 'The sound itself is a function: f(p) = sin(2πp + 2·sin(2πp)). Edit it in Track → Voice.',
+    description: 'The sound itself is a function: f(p) = sin(2πp + 2·sin(2πp)). Edit it in Channel → Voice.',
     formula: 'timbre = sin(τp + 2 sin τp)',
     track: {
       waveform: 'custom',
@@ -688,7 +688,7 @@ export const PRESETS: Preset[] = [
   },
   {
     id: 'blank',
-    name: 'Empty Garden',
+    name: 'Empty Track',
     description: 'Just a clock and an output. Start from nothing.',
     formula: 'pitch = ?',
     track: {
@@ -859,7 +859,7 @@ export const KITS: Kit[] = [
   },
   {
     id: 'poly',
-    name: 'Polyrhythm Garden',
+    name: 'Polyrhythm Track',
     description: '3 against 5 against 7: Euclidean rhythms of different lengths drifting in and out of phase.',
     song: { bpm: 108, root: 2, scale: 'yo', harmony: '0' },
     tracks: [

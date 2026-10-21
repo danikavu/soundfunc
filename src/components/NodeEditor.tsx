@@ -21,7 +21,7 @@ import { useLibrary } from '../state/library';
 import { nodeHeight, uid } from '../engine/presets';
 import { useSelectedTrack, useStore } from '../state/store';
 import { FuncNode, GraphContext, CATEGORY_COLORS } from './FuncNode';
-import { Icon, Seg, getRender } from './ui';
+import { Icon, Info, Seg, getRender } from './ui';
 import { toast } from './TopBar';
 import { SlidersBar } from './SlidersBar';
 import { Dropdown } from './Dropdown';
@@ -132,7 +132,7 @@ export function runMutate(scope: 'track' | 'garden') {
   const mood = chaos < 0.35 ? 'harmonious' : chaos < 0.7 ? 'adventurous' : 'experimental';
   toast(
     r.tracks
-      ? `${scope === 'garden' ? `Mutated ${r.tracks} tracks${useStore.getState().project.song.harmonyLocked ? '' : ' and the harmony'}` : 'Mutated'} · ${mood} · best of ${r.tried} candidates — ⌘Z to undo`
+      ? `${scope === 'garden' ? `Mutated ${r.tracks} channels${useStore.getState().project.song.harmonyLocked ? '' : ' and the harmony'}` : 'Mutated'} · ${mood} · best of ${r.tried} candidates — ⌘Z to undo`
       : 'Nothing to mutate — every node is locked',
   );
 }
@@ -155,8 +155,8 @@ function Mutator() {
         value={scope}
         onChange={setScope}
         options={[
-          { value: 'track', label: 'Track' },
-          { value: 'garden', label: 'Garden' },
+          { value: 'track', label: 'Channel' },
+          { value: 'garden', label: 'Track' },
         ]}
       />
     </div>
@@ -171,7 +171,7 @@ export function copySelected(): boolean {
   const ids = track?.graph.nodes.filter((n) => (n as { selected?: boolean }).selected && n.type !== 'output').map((n) => n.id) ?? [];
   if (!track || !ids.length) return false;
   const n = copyNodes(track.id, ids);
-  if (n) toast(`Copied ${n} node${n > 1 ? 's' : ''} — select any track and press ⌘V`);
+  if (n) toast(`Copied ${n} node${n > 1 ? 's' : ''} — select any channel and press ⌘V`);
   return n > 0;
 }
 
@@ -184,6 +184,17 @@ export function pasteInto(trackId?: string): boolean {
   const name = project.tracks.find((t) => t.id === id)?.name;
   toast(typeof r === 'string' ? r : `Pasted ${r} node${r === 1 ? '' : 's'} into ${name}${clipboard.sliders.length ? ' · with their sliders' : ''}`);
   return typeof r !== 'string';
+}
+
+/** how to work the node board — behind one ⓘ instead of a line of text */
+function NodeTips() {
+  return (
+    <Info label="Node board tips">
+      Select nodes to explode, collapse, copy, save as a block or lock them (shift-click or drag to select several). Double-click the board to add a
+      node · drag a wire into empty space to add one there · ⌫ deletes · ⌘C / ⌘V copy and paste · R mutates the channel, ⇧R the track · F shows the
+      function.
+    </Info>
+  );
 }
 
 export function toggleLockSelected(): boolean {
@@ -271,7 +282,7 @@ function SelectionTools() {
       )}
       {selected.length >= 1 && (
         <>
-          <button className="btn small ghost tool" onClick={() => setNaming(selected.length === 1 ? NODE_DEFS[selected[0].type].label : `${track.name} block`)} title="Save as block — keep these nodes and their wires to reuse in any track" aria-label="Save as block">
+          <button className="btn small ghost tool" onClick={() => setNaming(selected.length === 1 ? NODE_DEFS[selected[0].type].label : `${track.name} block`)} title="Save as block — keep these nodes and their wires to reuse in any channel" aria-label="Save as block">
             <Icon name="bookmark" size={14} />
           </button>
           {selected.length === 1 && (
@@ -284,15 +295,15 @@ function SelectionTools() {
               <Icon name="headphones" size={14} />
             </button>
           )}
-          <button className="btn small ghost tool" onClick={copySelected} title="Copy — the selected nodes and their wires (⌘C); paste into any track with ⌘V" aria-label="Copy">
+          <button className="btn small ghost tool" onClick={copySelected} title="Copy — the selected nodes and their wires (⌘C); paste into any channel with ⌘V" aria-label="Copy">
             <Icon name="copy" size={14} />
           </button>
           {others.length > 0 && (
             <Dropdown
               compact
-              label="Copy to track"
+              label="Copy to channel"
               value={
-                <span className="copy-to" title="Copy to another track">
+                <span className="copy-to" title="Copy to another channel">
                   <Icon name="send" size={14} />
                 </span>
               }
@@ -337,13 +348,13 @@ function SelectionTools() {
           </>
         ) : clipboard ? (
           <>
-            <span>select nodes to edit them</span>
+            <NodeTips />
             <button className="btn small ghost" onClick={() => pasteInto(track.id)} title="Paste the copied nodes here (⌘V)">
               <Icon name="copy" size={12} /> Paste {clipboard.block.nodes.length} node{clipboard.block.nodes.length > 1 ? 's' : ''}
             </button>
           </>
         ) : (
-          <span>select nodes to edit them</span>
+          <NodeTips />
         ))}
     </div>
   );
@@ -487,12 +498,12 @@ export function NodeEditor() {
         >
           <Icon name="plus" size={14} /> Add node
         </button>
-        <button className="btn" onClick={() => useStore.getState().setShowFunction(true)} title="See the whole track as one function — math, SoundFunc, JavaScript, Python (F)">
+        <button className="btn" onClick={() => useStore.getState().setShowFunction(true)} title="See the whole channel as one function — math, SoundFunc, JavaScript, Python (F)">
           <Icon name="sigma" size={14} /> Function
         </button>
         <button
           className="btn"
-          title="Add a slider to this track — a named constant its formulas can use (or Alt+S on a number in a formula)"
+          title="Add a slider to this channel — a named constant its formulas can use (or Alt+S on a number in a formula)"
           onClick={() => {
             const name = useStore.getState().addSlider(track.id, 0.5);
             toast(`Added slider “${name}” to ${track.name} — type its name in any of its formulas`);
@@ -528,7 +539,6 @@ export function NodeEditor() {
             <Controls showInteractive={false} position="bottom-right" />
           </ReactFlow>
         </GraphContext.Provider>
-        <span className="muted nodes-hint">double-click canvas · drag a wire into space · ⌫ deletes · R mutates · F shows the function</span>
       </div>
       {!render.hasOutput && (
         <div className="viz-tip" style={{ left: '50%', top: 70, transform: 'translateX(-50%)', color: 'var(--accent)' }}>
