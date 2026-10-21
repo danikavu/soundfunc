@@ -166,7 +166,7 @@ function SaveVoice() {
     return (
       <div className="row" style={{ marginTop: 8 }}>
         <button className="btn small ghost" onClick={() => setNaming(suggest())} title="Keep this sound — waveform, custom f(p), attack, release">
-          <Icon name="bookmark" size={11} /> Save voice
+          <Icon name="save" size={13} /> Save voice
         </button>
       </div>
     );
