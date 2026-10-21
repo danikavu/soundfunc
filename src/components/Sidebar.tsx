@@ -213,13 +213,16 @@ export function Sidebar() {
               S
             </button>
           </div>
-          <span className="stone" style={{ background: t.color }} />
+          <span className="ch-num" style={{ background: t.color }}>
+            {project.tracks.indexOf(t) + 1}
+          </span>
           <div style={{ minWidth: 0 }} title={`${voiceLabel(t.waveform)}${t.playMode === 'glide' ? ' · glide' : ''} · ${t.steps} steps`}>
             <div className="track-name">
               {t.name}
               {stretchOf(t) !== 1 && <small className="stretch-badge">×{Number(stretchOf(t).toFixed(3))}</small>}
             </div>
           </div>
+          <span className={`led ${audible.has(t.id) ? 'on' : ''}`} title={audible.has(t.id) ? 'Sounding' : t.muted ? 'Muted' : 'Silent — another channel is soloed'} />
           <div className="track-actions" onClick={(e) => e.stopPropagation()}>
             <button className="ms remove" title="Duplicate channel — every node, value and slider" aria-label={`Duplicate ${t.name}`} onClick={() => duplicateTrack(t.id)}>
               <Icon name="copy" size={11} />

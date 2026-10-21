@@ -2,7 +2,7 @@ import { NODE_DEFS, type GEdge, type GNode, type Graph, type NodeData } from './
 import { DEFAULT_PITCH_RANGE, type PitchMode } from './music';
 import { TRACK_DEFAULTS, type DrumVoice, type Project, type Song, type Track, type Waveform } from './project';
 
-export const TRACK_COLORS = ['#c4583d', '#6f8a63', '#4a5d7e', '#b39561', '#8a6a7e', '#5e8a86', '#6f6a62'];
+export const TRACK_COLORS = ['#e2483a', '#e8a93a', '#4fc98a', '#4f86d9', '#a865d6', '#3fb7b0', '#e07a3c'];
 
 type N = [id: string, type: string, x: number, y: number, data?: NodeData];
 type E = [source: string, sourceHandle: string, target: string, targetHandle: string];

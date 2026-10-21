@@ -9,6 +9,10 @@ npm test         # engine tests
 npm run build
 ```
 
+## Look
+
+A 1980s lab workstation: beige instrument chrome with bevelled plates and riveted section headers, green-black screens (the Score / Function view and the node board) with glowing lines, LCD displays for every value, numbered channel keys with status LEDs, and a nameplate with the lab clock and seal. Day and night modes both keep the screens dark. The skin lives in `src/retro.css`, loaded after `styles.css`.
+
 ## Using it
 
 - **Space** plays / stops. **⌘Z / ⇧⌘Z** undo / redo. Edits are heard live while playing.
