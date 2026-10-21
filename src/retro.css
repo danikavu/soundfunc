@@ -197,48 +197,9 @@ body {
 .title-main {
   flex: 1;
 }
-.title-mark {
-  width: 20px;
-  height: 20px;
-  flex: none;
-  color: var(--ink);
-}
 .title-main b {
   font: 700 16px/1 var(--sans);
   letter-spacing: 0.04em;
-}
-.title-dept {
-  font: 500 13px/1 var(--sans);
-  letter-spacing: 0.06em;
-}
-.title-sub {
-  font: 400 12px/1 var(--sans);
-  color: var(--ink-2);
-  margin-left: 6px;
-  letter-spacing: 0.06em;
-}
-.title-ver {
-  font: 400 11px/1 var(--mono);
-  color: var(--ink-3);
-}
-.title-model span {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.title-model b {
-  font: 400 12px/1 var(--mono);
-  letter-spacing: 0.12em;
-}
-.title-model small {
-  font: 400 9.5px/1 var(--sans);
-  color: var(--ink-2);
-  letter-spacing: 0.04em;
-}
-.title-scope {
-  width: 54px;
-  height: 16px;
-  color: var(--ink-2);
 }
 .title-clock {
   font: 400 13px/1 var(--mono);
@@ -248,32 +209,6 @@ body {
   font-weight: 400;
   margin: 0 4px;
 }
-.title-seal {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  place-items: center;
-  width: 34px;
-  border: 2px solid var(--accent);
-  border-radius: 2px;
-  color: var(--accent);
-  font: 700 12px/1 'Hiragino Mincho ProN', 'Yu Mincho', serif;
-  padding: 1px;
-  transform: rotate(-2deg);
-  opacity: 0.88;
-}
-@media (max-width: 1340px) {
-  .title-sub,
-  .title-model small {
-    display: none;
-  }
-}
-@media (max-width: 1160px) {
-  .title-model,
-  .title-dept {
-    display: none;
-  }
-}
-
 /* ---------- top bar: the control panel ---------- */
 
 .topbar {
@@ -825,4 +760,55 @@ body {
 .nodes-canvas .fnode input[type='text'],
 .nodes-canvas .fnode input[type='number'] {
   padding-left: 5px;
+}
+
+/* ---------- second pass ---------- */
+
+/* the channel's colours: small square swatches */
+.app aside.panel button.stone[aria-label^='color'] {
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 1px !important;
+  border: 1px solid var(--edge) !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(0, 0, 0, 0.3);
+  outline-offset: 2px !important;
+}
+
+/* the progressions dropdown takes the room the bar has */
+.topbar .w-prog {
+  width: 230px;
+}
+@media (max-width: 1440px) {
+  .topbar .w-prog {
+    width: 190px;
+  }
+}
+@media (max-width: 1280px) {
+  .topbar .w-prog {
+    width: 150px;
+  }
+}
+@media (max-width: 1160px) {
+  .topbar .w-prog {
+    width: 108px;
+  }
+}
+
+/* the buttons on a node's faceplate: darker, always readable */
+.fnode-head .lock {
+  color: #2a271f;
+  opacity: 0.85;
+}
+.fnode:hover .fnode-head .lock {
+  opacity: 1;
+}
+.fnode-head .lock:hover {
+  background: rgba(35, 33, 27, 0.12);
+  color: #000;
+}
+.fnode-head .lock:disabled {
+  opacity: 0.35;
+}
+.fnode-head .lock.on {
+  color: #a8281c;
 }
