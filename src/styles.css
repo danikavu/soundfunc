@@ -2879,3 +2879,127 @@ button:focus-visible {
   left: auto;
   right: 0;
 }
+
+/* ---------- tracks: mute & solo in a strip on the left ---------- */
+.track {
+  grid-template-columns: 20px 14px 1fr auto;
+  padding-left: 6px;
+}
+.ms-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ms-col .ms {
+  width: 20px;
+  height: 18px;
+  border-radius: 6px;
+}
+.tracks-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -2px -6px 8px;
+  padding: 0 10px 0 6px;
+  min-height: 40px;
+}
+.tracks-head-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.tracks-head-tools .icon-btn {
+  width: 32px;
+  height: 32px;
+  color: var(--ink-2);
+}
+.tracks-head-tools .fx-glyph {
+  font-size: 19px;
+  line-height: 1;
+  font-style: italic;
+}
+.kit-trigger {
+  padding: 12px 10px;
+}
+
+/* tempo: a number with arrows, like the octave */
+.topbar .field-inline.w-tempo {
+  width: 62px;
+}
+.topbar .stepper.tempo .input.num.stepper-input {
+  width: 40px;
+}
+/* the selected track's name: larger, light, in the accent */
+.topbar .track-panel .grid-field > span .grid-name {
+  font: 400 13px/1 var(--sans);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--accent);
+}
+
+/* ---------- node view toolbar: one row, one height, one icon size ---------- */
+.toolbar {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  gap: 6px;
+  min-height: 52px;
+}
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+.toolbar > *,
+.toolbar .lock-status > * {
+  flex: none;
+}
+.toolbar .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.toolbar .btn svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.toolbar .mutator {
+  height: 32px;
+  padding: 0 8px 0 0;
+  gap: 10px;
+}
+.toolbar .mutator .btn {
+  height: 30px;
+}
+.toolbar .mutator .seg {
+  height: 24px;
+}
+.toolbar .lock-status {
+  height: 32px;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+.toolbar .lock-status .btn {
+  height: 32px;
+  font-size: 12px;
+}
+.toolbar .lock-status .dropdown.compact .dropdown-field {
+  height: 32px;
+}
+
+/* the larger name hangs in the label row without making it taller, so every label stays in line */
+.topbar .track-panel .grid-field > span {
+  height: 9px;
+  overflow: visible;
+}
+.topbar .track-panel .grid-field > span .grid-name {
+  line-height: 9px;
+  padding: 3px 0;
+  margin: -3px 0;
+  max-width: 150px;
+  white-space: nowrap;
+}

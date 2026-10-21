@@ -896,7 +896,7 @@ export function defaultProject(): Project {
   tracks[1].volume = 0.55;
   tracks[1].pan = 0.3;
   return {
-    name: 'Zen Garden',
+    name: 'Untitled',
     song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', pitchRange: { ...DEFAULT_PITCH_RANGE }, lengthMode: 'fixed', lengthBeats: 8, repeat: 'evolve' },
     tracks,
   };

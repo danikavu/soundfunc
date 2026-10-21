@@ -107,40 +107,73 @@ function MyFunctions() {
 }
 
 export function Sidebar() {
-  const { project, selectTrack, updateTrack, addTrack, removeTrack, duplicateTrack } = useStore();
+  const { project, selectTrack, updateTrack, addTrack, removeTrack, duplicateTrack, setAllTracks } = useStore();
+  const allMuted = project.tracks.length > 0 && project.tracks.every((t) => t.muted);
+  const anySolo = project.tracks.some((t) => t.solo);
   const selected = useSelectedTrack();
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
 
   return (
     <aside className="panel">
       <div className="eyebrow">Tracks</div>
-      <div className="track-tools">
+      <div className="tracks-head">
+        {project.tracks.length > 0 && (
+          <div className="ms-col">
+            <button
+              className={`ms ${allMuted ? 'on' : ''}`}
+              title={allMuted ? 'Unmute every track' : 'Mute every track'}
+              aria-label={allMuted ? 'Unmute all' : 'Mute all'}
+              onClick={() => setAllTracks('muted', !allMuted)}
+            >
+              M
+            </button>
+            <button
+              className={`ms solo ${anySolo ? 'on' : ''}`}
+              title={anySolo ? 'Clear every solo' : 'Solo every track'}
+              aria-label={anySolo ? 'Unsolo all' : 'Solo all'}
+              onClick={() => setAllTracks('solo', !anySolo)}
+            >
+              S
+            </button>
+          </div>
+        )}
+        <div className="tracks-head-tools">
+          <button className="icon-btn" onClick={() => addTrack('blank')} title="New empty track — a clock, one formula and Note Out" aria-label="New empty track">
+            <Icon name="plus" size={16} />
+          </button>
+          <button className="icon-btn" onClick={() => useStore.getState().setShowImport(true)} title="Paste a function — LaTeX, Desmos or plain math" aria-label="Paste function">
+            <span className="serif fx-glyph">ƒ</span>
+          </button>
           {project.tracks.length > 0 && (
             <button
-              className="btn small ghost"
+              className="icon-btn"
               onClick={() => {
                 const n = project.tracks.length;
                 useStore.getState().clearTracks();
                 toast(`Cleared ${n} track${n > 1 ? 's' : ''} — ⌘Z brings them back`);
               }}
-              title="Remove every track (⌘Z to undo)"
+              title="Clear — remove every track (⌘Z to undo)"
+              aria-label="Clear all tracks"
             >
-              <Icon name="trash" size={11} /> Clear
+              <Icon name="trash" size={17} />
             </button>
           )}
-          <button className="btn small ghost" onClick={() => addTrack('blank')} title="A clock, one formula and Note Out">
-            <Icon name="plus" size={11} /> Empty
-          </button>
-          <button className="btn small ghost" onClick={() => useStore.getState().setShowImport(true)} title="Paste LaTeX, Desmos or plain math">
-            <span className="serif">ƒ</span> Paste function
-          </button>
         </div>
+      </div>
       {project.tracks.map((t) => (
         <div
           key={t.id}
           className={`track ${selected?.id === t.id ? 'selected' : ''} ${audible.has(t.id) ? '' : 'dim'}`}
           onClick={() => selectTrack(t.id)}
         >
+          <div className="ms-col" onClick={(e) => e.stopPropagation()}>
+            <button className={`ms ${t.muted ? 'on' : ''}`} title="Mute" aria-label={`Mute ${t.name}`} onClick={() => updateTrack(t.id, { muted: !t.muted })}>
+              M
+            </button>
+            <button className={`ms solo ${t.solo ? 'on' : ''}`} title="Solo" aria-label={`Solo ${t.name}`} onClick={() => updateTrack(t.id, { solo: !t.solo })}>
+              S
+            </button>
+          </div>
           <span className="stone" style={{ background: t.color }} />
           <div style={{ minWidth: 0 }}>
             <div className="track-name">{t.name}</div>
@@ -149,12 +182,6 @@ export function Sidebar() {
             </div>
           </div>
           <div className="track-actions" onClick={(e) => e.stopPropagation()}>
-            <button className={`ms ${t.muted ? 'on' : ''}`} title="Mute" onClick={() => updateTrack(t.id, { muted: !t.muted })}>
-              M
-            </button>
-            <button className={`ms solo ${t.solo ? 'on' : ''}`} title="Solo" onClick={() => updateTrack(t.id, { solo: !t.solo })}>
-              S
-            </button>
             <button className="ms remove" title="Duplicate track — every node, value and slider" aria-label={`Duplicate ${t.name}`} onClick={() => duplicateTrack(t.id)}>
               <Icon name="copy" size={11} />
             </button>

@@ -65,6 +65,8 @@ interface State {
   /** add some of a kit's tracks (e.g. just its drums) to the current garden */
   addKitTracks: (kitId: string, trackIndexes: number[], adoptSong?: boolean) => void;
   duplicateTrack: (id: string) => void;
+  /** mute / solo every track at once (one undo step) */
+  setAllTracks: (flag: 'muted' | 'solo', on: boolean) => void;
   /** copied nodes (with their wires and the sliders they read), ready to paste into any track */
   clipboard: NodeClip | null;
   /** copy nodes of a track; returns how many */
@@ -156,7 +158,8 @@ export const useStore = create<State>()(
           const fitted = tracks.map((t) => fitToSong(t, song));
           commit((p) => ({
             ...p,
-            name: layer ? p.name : kit.name,
+            // a kit that replaces the garden starts a new one — unnamed, like any other
+            name: layer ? p.name : 'Untitled',
             song,
             tracks: layer ? [...p.tracks, ...fitted] : fitted,
           }));
@@ -225,6 +228,7 @@ export const useStore = create<State>()(
           });
           set({ selectedTrackId: tracks[0].id });
         },
+        setAllTracks: (flag, on) => commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, [flag]: on })) })),
         clipboard: null,
         copyNodes: (trackId, ids) => {
           const t = get().project.tracks.find((x) => x.id === trackId);

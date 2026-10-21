@@ -270,10 +270,10 @@ export function TopBar() {
         <button className={`play ${playing ? 'on' : ''}`} onClick={() => void togglePlay()} title="Play / stop (space)">
           <Icon name={playing ? 'stop' : 'play'} size={18} />
         </button>
-        <label className="field-inline">
+        <div className="field-inline w-tempo">
           <span>Tempo</span>
-          <NumberField className="input num" min={20} max={300} value={song.bpm} onValue={(bpm) => setSong({ bpm })} />
-        </label>
+          <Stepper className="tempo" label="Tempo" title="Beats per minute (20–300) — type it, use the arrows, or ↑/↓" min={20} max={300} value={song.bpm} onValue={(bpm) => setSong({ bpm })} />
+        </div>
         <SongLengthField />
         <div className="field-inline w-key">
           <span>Key</span>

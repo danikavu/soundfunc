@@ -324,13 +324,13 @@ function SelectionTools() {
           </>
         ) : clipboard ? (
           <>
-            <span>select nodes to explode, collapse, copy, save or lock them</span>
+            <span>select nodes to edit them</span>
             <button className="btn small ghost" onClick={() => pasteInto(track.id)} title="Paste the copied nodes here (⌘V)">
               <Icon name="copy" size={12} /> Paste {clipboard.block.nodes.length} node{clipboard.block.nodes.length > 1 ? 's' : ''}
             </button>
           </>
         ) : (
-          <span>select nodes to explode, collapse, copy, save or lock them</span>
+          <span>select nodes to edit them</span>
         ))}
     </div>
   );
@@ -475,7 +475,7 @@ export function NodeEditor() {
           <Icon name="plus" size={14} /> Add node
         </button>
         <button className="btn" onClick={() => useStore.getState().setShowFunction(true)} title="See the whole track as one function — math, SoundFunc, JavaScript, Python (F)">
-          <span className="serif" style={{ fontSize: 14, lineHeight: 1 }}>∑</span> Function
+          <Icon name="sigma" size={14} /> Function
         </button>
         <button
           className="btn"

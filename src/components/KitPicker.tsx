@@ -48,9 +48,6 @@ export function KitPicker() {
       <button ref={btn} className={`kit-trigger ${open ? 'open' : ''}`} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span>
           <b className="serif">Rhythm kits</b>
-          <small>
-            {KITS.length} kits · whole grooves or single percussion tracks
-          </small>
         </span>
         <span className="kit-chevron" aria-hidden>
           ›
