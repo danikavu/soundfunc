@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { compile, compileAst, parse } from './expr';
 import { compose, toSource, toTex, trackCode } from './symbolic';
-import { compileGraph, euclid, NODE_DEFS } from './graph';
+import { compileGraph, euclid, evalCurve, NODE_DEFS, parseCurve } from './graph';
 import { docFor } from './nodeDocs';
 import { exportMidi, collectNotes } from './midi';
 import { patternBeats, songWindows, stretchOf } from './project';
@@ -18,7 +18,7 @@ import { useStore } from '../state/store';
 import { parsePattern } from './graph';
 import { timbreHarmonics } from './timbre';
 import { importMath } from './importMath';
-import { auditionGraph, blockFromSelection, collapseNodes, explodeFormula, insertBlock } from './graphEdit';
+import { auditionGraph, blockFromSelection, collapseNodes, curveToFormula, explodeFormula, insertBlock } from './graphEdit';
 import { BLOCKS } from './blocks';
 import { applyGrid } from './steps';
 import { cleanProject, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
@@ -292,10 +292,30 @@ describe('randomizer', () => {
 describe('symbolic: the written-out function equals the graph', () => {
   const all = () => {
     const out: { label: string; track: Track; song: Project['song'] }[] = [];
+    const outs: typeof out = [];
     const base = defaultProject().song;
     const song = { ...base, harmony: 'pick(bar, 0, 4, 5, 3)' };
     PRESETS.forEach((p, i) => out.push({ label: p.id, track: trackFromPreset(p, i), song }));
     for (const kit of KITS) kit.tracks.forEach((t, i) => out.push({ label: `${kit.id}/${t.name}`, track: trackFromTemplate(t, t.name, i), song: { ...base, ...kit.song } }));
+    // channels driven by Curve nodes: every starter curve, into Note Out, plus one curve read through another phase
+    for (const id of ['duck', 'ramp', 'swell', 'bentsaw']) {
+      const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+      const b = BLOCKS.find((x) => x.id === id)!;
+      const out = t.graph.nodes.find((n) => n.type === 'output')!;
+      const port = id === 'ramp' ? 'pitch' : (b.toOutput?.[0]?.port ?? 'pitch');
+      const g = insertBlock({ ...t.graph, edges: t.graph.edges.filter((e) => !(e.target === out.id && e.targetHandle === port)) }, { ...b, toOutput: [{ node: 'c', handle: 'out', port }] }, { x: 0, y: 400 }).graph;
+      outs.push({ label: `curve/${id}`, track: { ...t, graph: g }, song });
+    }
+    {
+      const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+      const out = t.graph.nodes.find((n) => n.type === 'output')!;
+      t.graph = {
+        nodes: [...t.graph.nodes, { id: 'ph', type: 'expr', position: { x: 0, y: 0 }, data: { formula: 'fract(t / 3) * 0.9 + 0.05' } }, { id: 'cv', type: 'curve', position: { x: 0, y: 0 }, data: { points: '0.1:0.2:0.8 0.4:1:-0.7 0.4:0.3:0 0.85:0.6:0.3', repeats: 2, lo: -3, hi: 9 } }],
+        edges: [...t.graph.edges.filter((e) => !(e.target === out.id && e.targetHandle === 'pitch')), { id: 'e1', source: 'ph', sourceHandle: 'out', target: 'cv', targetHandle: 'p' }, { id: 'e2', source: 'cv', sourceHandle: 'out', target: out.id, targetHandle: 'pitch' }],
+      };
+      outs.push({ label: 'curve/wired', track: t, song });
+    }
+    out.push(...outs);
     return out;
   };
   const scopeFor = (track: Track, song: Project['song'], n: number, k: number) => {
@@ -486,8 +506,28 @@ describe('graph editing keeps the music', () => {
     const base = defaultProject().song;
     const song = { ...base, harmony: 'pick(bar, 0, 4, 5, 3)' };
     const out: { label: string; track: Track; song: Project['song'] }[] = [];
+    const outs: typeof out = [];
     PRESETS.forEach((p, i) => out.push({ label: p.id, track: trackFromPreset(p, i), song }));
     for (const kit of KITS) kit.tracks.forEach((t, i) => out.push({ label: `${kit.id}/${t.name}`, track: trackFromTemplate(t, t.name, i), song: { ...base, ...kit.song } }));
+    // channels driven by Curve nodes: every starter curve, into Note Out, plus one curve read through another phase
+    for (const id of ['duck', 'ramp', 'swell', 'bentsaw']) {
+      const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+      const b = BLOCKS.find((x) => x.id === id)!;
+      const out = t.graph.nodes.find((n) => n.type === 'output')!;
+      const port = id === 'ramp' ? 'pitch' : (b.toOutput?.[0]?.port ?? 'pitch');
+      const g = insertBlock({ ...t.graph, edges: t.graph.edges.filter((e) => !(e.target === out.id && e.targetHandle === port)) }, { ...b, toOutput: [{ node: 'c', handle: 'out', port }] }, { x: 0, y: 400 }).graph;
+      outs.push({ label: `curve/${id}`, track: { ...t, graph: g }, song });
+    }
+    {
+      const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+      const out = t.graph.nodes.find((n) => n.type === 'output')!;
+      t.graph = {
+        nodes: [...t.graph.nodes, { id: 'ph', type: 'expr', position: { x: 0, y: 0 }, data: { formula: 'fract(t / 3) * 0.9 + 0.05' } }, { id: 'cv', type: 'curve', position: { x: 0, y: 0 }, data: { points: '0.1:0.2:0.8 0.4:1:-0.7 0.4:0.3:0 0.85:0.6:0.3', repeats: 2, lo: -3, hi: 9 } }],
+        edges: [...t.graph.edges.filter((e) => !(e.target === out.id && e.targetHandle === 'pitch')), { id: 'e1', source: 'ph', sourceHandle: 'out', target: 'cv', targetHandle: 'p' }, { id: 'e2', source: 'cv', sourceHandle: 'out', target: out.id, targetHandle: 'pitch' }],
+      };
+      outs.push({ label: 'curve/wired', track: t, song });
+    }
+    out.push(...outs);
     return out;
   };
   const sameSound = (label: string, a: Track, b: Track, song: Project['song']) => {
@@ -1069,5 +1109,59 @@ describe('channel colours', () => {
     useStore.getState().duplicateTrack(useStore.getState().project.tracks[0].id);
     const colors = useStore.getState().project.tracks.map((t) => t.color);
     expect(new Set(colors).size).toBe(colors.length);
+  });
+});
+
+describe('Curve node', () => {
+  const run = (data: Record<string, string | number>, x: number) =>
+    compileGraph({ nodes: [{ id: 'c', type: 'curve', position: { x: 0, y: 0 }, data }, { id: 'o', type: 'output', position: { x: 0, y: 0 }, data: {} }], edges: [{ id: 'e', source: 'c', sourceHandle: 'out', target: 'o', targetHandle: 'pitch' }] }).run({ n: 0, x, t: 0, k: 0, steps: 16, h: 0, bar: 0, L: 7, beat: 0, vars: {} })!.pitch;
+  it('straight lines between corners, flat outside them, scaled between bottom and top', () => {
+    const pts = parseCurve('0.25:0:0 0.75:1:0');
+    expect(evalCurve(pts, 0)).toBe(0);
+    expect(evalCurve(pts, 0.5)).toBeCloseTo(0.5, 12);
+    expect(evalCurve(pts, 0.9)).toBe(1);
+    expect(run({ points: '0:0:0 1:1:0', lo: 2, hi: 10, repeats: 1 }, 0.25)).toBeCloseTo(4, 12);
+  });
+  it('a bend keeps the corners and only changes the middle: + starts slow, − starts fast', () => {
+    const at = (b: number, u: number) => evalCurve(parseCurve(`0:0:${b} 1:1:0`), u);
+    for (const b of [-1, -0.4, 0, 0.4, 1]) {
+      expect(at(b, 0)).toBeCloseTo(0, 12);
+      expect(at(b, 0.999999)).toBeCloseTo(1, 4);
+    }
+    expect(at(0.5, 0.5)).toBeLessThan(0.5);
+    expect(at(-0.5, 0.5)).toBeGreaterThan(0.5);
+    expect(at(0.5, 0.5) + at(-0.5, 0.5)).toBeCloseTo(1, 12); // opposite bends mirror each other
+  });
+  it('repeats play the shape again', () => {
+    const d = { points: '0:0:0.5 1:1:0', repeats: 4, lo: 0, hi: 1 };
+    for (const x of [0.1, 0.33, 0.6]) expect(run(d, x)).toBeCloseTo(run(d, x + 0.25 > 1 ? x - 0.25 : x + 0.25), 12);
+  });
+  it('“Write as a formula” sounds exactly the same', () => {
+    const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+    const out = t.graph.nodes.find((n) => n.type === 'output')!;
+    t.graph = {
+      nodes: [...t.graph.nodes, { id: 'cv', type: 'curve', position: { x: 0, y: 0 }, data: { points: '0:0.2:0.7 0.5:1:-0.5 1:0:0', repeats: 2, lo: -2, hi: 6 } }],
+      edges: [...t.graph.edges.filter((e) => !(e.target === out.id && e.targetHandle === 'pitch')), { id: 'e', source: 'cv', sourceHandle: 'out', target: out.id, targetHandle: 'pitch' }],
+    };
+    const r = curveToFormula(t.graph, 'cv');
+    if ('error' in r) throw new Error(r.error);
+    expect(r.graph.nodes.find((n) => n.id === 'cv')!.type).toBe('expr');
+    const song = defaultProject().song;
+    expect(renderTrack({ ...t, graph: r.graph }, song, 0, false).pitchCurve).toEqual(renderTrack(t, song, 0, false).pitchCurve.map((v) => expect.closeTo(v, 9)));
+  });
+  it('the dice keeps the corners in place and the values in range', () => {
+    const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+    const b = BLOCKS.find((x) => x.id === 'duck')!;
+    t.graph = insertBlock(t.graph, b, { x: 0, y: 400 }).graph;
+    const id = t.graph.nodes.find((n) => n.type === 'curve')!.id;
+    const before = parseCurve(String(t.graph.nodes.find((n) => n.id === id)!.data.points));
+    const r = mutateOneNode(t, defaultProject().song, id, 0.3, 99);
+    const after = parseCurve(String(r.track.graph.nodes.find((n) => n.id === id)!.data.points));
+    expect(after.map((q) => q.x)).toEqual(before.map((q) => q.x));
+    for (const q of after) {
+      expect(q.y).toBeGreaterThanOrEqual(0);
+      expect(q.y).toBeLessThanOrEqual(1);
+      expect(Math.abs(q.b)).toBeLessThanOrEqual(1);
+    }
   });
 });

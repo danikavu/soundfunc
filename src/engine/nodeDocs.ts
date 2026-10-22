@@ -66,6 +66,14 @@ export const NODE_DOCS: Record<string, string> = {
   'pattern.rotate': 'Shift the pattern by this many steps',
   'pattern.out': 'The velocity for this step',
 
+  'curve.p': 'phase — where along the curve (the loop’s progress x, if nothing is wired in)',
+  'curve.points':
+    'Points sit on the corners; the lines between them bend. Click to add a point (it snaps to 1/16 — hold Shift to place it freely), drag a point to move it, drag a line up or down to bend it, double-click a point to remove it',
+  'curve.repeats': 'How many times the shape plays across the loop — draw it once, repeat it (4 = every bar of a 4-bar loop)',
+  'curve.lo': 'The value at the bottom of the box',
+  'curve.hi': 'The value at the top of the box',
+  'curve.out': 'The curve’s value, between bottom and top',
+
   'list.n': 'Which step (the step n, if nothing is wired in)',
   'list.values': 'The values to step through, in order — then round again',
   'list.every': 'Hold each value for this many steps',

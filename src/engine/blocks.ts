@@ -8,6 +8,21 @@ function block(id: string, name: string, description: string, nodes: Parameters<
 }
 
 export const BLOCKS: Block[] = [
+  block('duck', 'Sidechain duck', 'Drops on every beat and swells back — the pump of a sidechained pad, as velocity', { c: ['curve', { points: '0:0.15:0.7 0.95:1:0 1:0.15:0', repeats: 4, lo: 0, hi: 0.9 }] }, [], {
+    outlet: { node: 'c', handle: 'out' },
+    toOutput: [{ node: 'c', handle: 'out', port: 'velocity' }],
+  }),
+  block('ramp', 'Ramp up', 'A slow rise over the whole loop that speeds up at the end — risers, builds', { c: ['curve', { points: '0:0:0.6 1:1:0', repeats: 1, lo: 0, hi: 7 }] }, [], {
+    outlet: { node: 'c', handle: 'out' },
+  }),
+  block('swell', 'Swell', 'Rises and falls once per loop, easing at both ends — a breath, as velocity', { c: ['curve', { points: '0:0.1:0.5 0.5:1:-0.5 1:0.1:0', repeats: 1, lo: 0, hi: 0.9 }] }, [], {
+    outlet: { node: 'c', handle: 'out' },
+    toOutput: [{ node: 'c', handle: 'out', port: 'velocity' }],
+  }),
+  block('bentsaw', 'Bent saw', 'A sawtooth whose rise curves — a pitch sweep that leans into each bar', { c: ['curve', { points: '0:0:-0.6 1:1:0', repeats: 4, lo: 0, hi: 7 }] }, [], {
+    outlet: { node: 'c', handle: 'out' },
+    toOutput: [{ node: 'c', handle: 'out', port: 'pitch' }],
+  }),
   block('arp', 'Arpeggio', 'Walks the current chord: h + 0, 2, 4, octave', { f: ['expr', { formula: 'h + pick(n, 0, 2, 4, L)' }] }, [], {
     outlet: { node: 'f', handle: 'out' },
     toOutput: [{ node: 'f', handle: 'out', port: 'pitch' }],

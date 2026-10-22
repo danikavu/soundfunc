@@ -4,7 +4,7 @@
  * prints as SoundFunc formulas, LaTeX, JavaScript and Python.
  */
 import { compileAst, parse, type Ast, type BinOp } from './expr';
-import { COMPARE_OPS, NODE_DEFS, parseList, parsePattern, sectionLengths, type GNode, type Graph } from './graph';
+import { COMPARE_OPS, NODE_DEFS, curveRepeats, parseCurve, parseList, parsePattern, sectionLengths, type GNode, type Graph, type NodeData } from './graph';
 import { NOTE_NAMES, PITCH_MODES, SCALES } from './music';
 import { BEATS_PER_BAR, isDrum, scaleLength, stretchOf, voiceLabel, type Song, type Track } from './project';
 
@@ -159,6 +159,7 @@ const PREFIX: Record<string, string> = {
 export function fallback(type: string, port: string, data: GNode['data']): Ast {
   switch (`${type}.${port}`) {
     case 'wave.p':
+    case 'curve.p':
     case 'func.x':
       return v('x');
     case 'series.n':
@@ -271,6 +272,8 @@ export function nodeAst(node: GNode, handle: string, ins: Ast[]): Ast {
       const pos: Ast = bin('%', v('beat'), num(total));
       return frontToBack(lens, pos, handle, ins);
     }
+    case 'curve':
+      return curveAst(d, ins[0]);
     case 'list': {
       const vals = parseList(String(d.values ?? ''));
       return vals.length ? call('pick', call('floor', bin('/', ins[0], num(Math.max(1, n(d.every, 1))))), ...vals.map(num)) : num(0);
@@ -278,6 +281,31 @@ export function nodeAst(node: GNode, handle: string, ins: Ast[]): Ast {
     default:
       return num(0);
   }
+}
+
+/**
+ * A Curve node as math: u = fract(repeats · phase), then u < x₁ ? segment₀ : u < x₂ ? segment₁ : …,
+ * each segment yᵢ + (yᵢ₊₁ − yᵢ) · bend((u − xᵢ)/(xᵢ₊₁ − xᵢ), bᵢ), scaled between bottom and top.
+ */
+export function curveAst(d: NodeData, phase: Ast): Ast {
+  const pts = parseCurve(String(d.points ?? ''));
+  const rep = curveRepeats(d);
+  const lo = Number(d.lo) || 0, hi = d.hi === undefined || d.hi === '' ? 1 : Number(d.hi);
+  const u: Ast = call('fract', rep === 1 ? phase : bin('*', num(rep), phase));
+  const seg = (i: number): Ast => {
+    const a = pts[i], c = pts[i + 1];
+    const dx = c.x - a.x;
+    if (dx <= 0 || a.y === c.y) return num(c.y);
+    const t = bin('/', bin('-', u, num(a.x)), num(dx));
+    const shaped = a.b === 0 ? t : call('bend', t, num(a.b));
+    // falling segments read as y − drop·…, not y + −drop·…
+    const dy = Math.round((c.y - a.y) * 1e6) / 1e6;
+    return dy < 0 ? bin('-', num(a.y), bin('*', num(-dy), shaped)) : bin('+', num(a.y), bin('*', num(dy), shaped));
+  };
+  let out: Ast = num(pts[pts.length - 1].y);
+  for (let i = pts.length - 2; i >= 0; i--) out = { k: 'cond', c: bin('<', u, num(pts[i + 1].x)), a: seg(i), b: out };
+  if (pts[0].x > 0) out = { k: 'cond', c: bin('<', u, num(pts[0].x)), a: num(pts[0].y), b: out };
+  return simplify(bin('+', num(lo), bin('*', num(hi - lo), out)));
 }
 
 /** p < L₀ ? A : p < L₀+L₁ ? B : … — how a person would write the Sections node */
@@ -602,6 +630,7 @@ const JS_HELPERS: Record<string, string> = {
   mod: 'function mod(a, b) { return b === 0 ? 0 : ((a % b) + b) % b; }',
   div: 'function div(a, b) { return b === 0 ? 0 : a / b; }',
   fract: 'function fract(x) { return x - Math.floor(x); }',
+  bend: 'function bend(t, b) { const c = 6 * b; return Math.abs(c) < 1e-6 ? t : (Math.exp(c * t) - 1) / (Math.exp(c) - 1); }',
   clamp: 'function clamp(x, lo = 0, hi = 1) { return Math.min(Math.max(x, lo), hi); }',
   lerp: 'function lerp(a, b, t) { return a + (b - a) * t; }',
   step: 'function step(edge, x) { return x < edge ? 0 : 1; }',
@@ -647,6 +676,7 @@ const PY_HELPERS: Record<string, string> = {
   jsround: 'def jsround(x):\n    return math.floor(x + 0.5)  # JavaScript rounding: halves go up',
   sign: 'def sign(x):\n    return (x > 0) - (x < 0)',
   fract: 'def fract(x):\n    return x - math.floor(x)',
+  bend: 'def bend(t, b):\n    c = 6 * b\n    return t if abs(c) < 1e-6 else (math.exp(c * t) - 1) / (math.exp(c) - 1)',
   clamp: 'def clamp(x, lo=0, hi=1):\n    return min(max(x, lo), hi)',
   lerp: 'def lerp(a, b, t):\n    return a + (b - a) * t',
   step: 'def step(edge, x):\n    return 0 if x < edge else 1',

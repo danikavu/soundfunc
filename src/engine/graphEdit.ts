@@ -6,7 +6,7 @@
 import { parse, type Ast } from './expr';
 import { NODE_DEFS, type GEdge, type GNode, type Graph, type NodeData } from './graph';
 import { nodeHeight, uid } from './presets';
-import { fallback, nodeAst, simplify, toSource } from './symbolic';
+import { curveAst, fallback, nodeAst, simplify, toSource } from './symbolic';
 
 export type EditResult = { graph: Graph; focus?: string } | { error: string };
 
@@ -390,4 +390,22 @@ export function auditionGraph(graph: Graph, nodeId: string, opts: { asVelocity: 
   }
   edges.push(mkEdge(from.node, from.handle, out.id, port));
   return { nodes, edges };
+}
+
+/**
+ * Write a Curve node out as a Formula node holding the same function — its wiring
+ * kept: whatever drove the curve's phase now comes in as a (or x, if nothing did).
+ */
+export function curveToFormula(graph: Graph, nodeId: string): EditResult {
+  const node = graph.nodes.find((n) => n.id === nodeId);
+  if (!node || node.type !== 'curve') return { error: 'Only Curve nodes can be written as a formula.' };
+  const wired = graph.edges.some((e) => e.target === nodeId && e.targetHandle === 'p');
+  const formula = toSource(curveAst(node.data, { k: 'var', name: wired ? 'a' : 'x' }));
+  return {
+    graph: {
+      nodes: graph.nodes.map((n) => (n.id === nodeId ? { ...n, type: 'expr', data: { formula } } : n)),
+      edges: graph.edges.map((e) => (e.target === nodeId && e.targetHandle === 'p' ? { ...e, targetHandle: 'a' } : e)),
+    },
+    focus: nodeId,
+  };
 }

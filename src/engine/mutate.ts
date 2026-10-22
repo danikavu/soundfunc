@@ -7,7 +7,7 @@
  * function swaps, grafted terms; novelty rewarded).
  */
 import { compile, tokenize } from './expr';
-import { ctxVars, NODE_DEFS, type GNode, type Graph, type NodeData } from './graph';
+import { ctxVars, formatCurve, NODE_DEFS, parseCurve, type GNode, type Graph, type NodeData } from './graph';
 import { chordTones, PROGRESSIONS, SCALES } from './music';
 import { isDrum, renderTrack, type Song, type Track, type TrackRender } from './project';
 import { TIMBRE_VARS } from './timbre';
@@ -329,6 +329,20 @@ export function mutateNodeData(node: GNode, chaos: number, rng: Rng, onPitchPath
       if (p(0.45)) d.values = mutateList(String(d.values), chaos, rng);
       if (p(0.15)) d.every = nearIn([1, 2, 4, 8, 16], Number(d.every), 1, rng);
       break;
+    case 'curve': {
+      // corners stay where they are (the rhythm of the shape); heights and bends move
+      const pts = parseCurve(String(d.points ?? ''));
+      const spread = 0.06 + chaos * 0.25;
+      for (const q of pts) {
+        if (p(0.35)) q.y = clamp(q.y + gauss(rng) * spread, 0, 1);
+        if (p(0.35)) q.b = clamp(Math.round((q.b + gauss(rng) * (0.25 + chaos * 0.6)) * 100) / 100, -1, 1);
+      }
+      // experimental: inner corners may slide a little too
+      if (chaos > 0.6) for (let i = 1; i < pts.length - 1; i++) if (p(0.1)) pts[i].x = clamp(pts[i].x + gauss(rng) * 0.05, pts[i - 1].x, pts[i + 1].x);
+      d.points = formatCurve(pts);
+      if (p(0.08)) d.repeats = clamp(Number(d.repeats ?? 1) + pick(rng, [-1, 1]), 1, 8);
+      break;
+    }
     case 'expr':
       d.formula = mutateFormula(String(d.formula), chaos, rng, FORMULA_VARS, onPitchPath);
       break;
