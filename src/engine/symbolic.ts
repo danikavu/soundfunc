@@ -804,6 +804,7 @@ export function trackTex(c: Composed, song: Song): { label: string; tex: string 
   if (vars.has('L')) defs.push(`L = ${scaleLength(song)}`);
   if (vars.has('h') || vars.has('bar')) defs.push(`\\mathrm{bar} = ${toTex(barAst(track))}`);
   if (vars.has('beat')) defs.push(`\\mathit{beat} = ${toTex(beatAst(track))}`);
+  if (vars.has('np')) defs.push(`\\mathit{np} = \\text{note phase, } 0 \\to 1`);
   for (const sl of track.sliders ?? []) if (vars.has(sl.name)) defs.push(`${texName(sl.name)} = ${fmtNum(sl.value)}\\ \\text{(slider)}`);
   if (vars.has('h')) defs.push(`h = ${toTex(harmonyAst(song))}`);
   if (defs.length) lines.push({ label: 'clock, harmony & sliders', tex: defs.join(',\\quad ') });
@@ -893,12 +894,12 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
     if (lang === 'js') {
       const outs = math.outputs.map((o) => `    ${o.port}: ${toCode(o.ast, 'js')},`);
       body.push(
-        `\n/** ${track.name} — ${mode} */\nexport function ${name}(n, k = 0) {\n${[...clock, ...binds].map((l) => `  ${l}`).join('\n')}${clock.length + binds.length ? '\n' : ''}  return {\n${outs.join('\n')}\n  };\n}`,
+        `\n/** ${track.name} — ${mode} */\nexport function ${name}(n, k = 0${vars.has('np') ? ', np = 0' : ''}) {\n${[...clock, ...binds].map((l) => `  ${l}`).join('\n')}${clock.length + binds.length ? '\n' : ''}  return {\n${outs.join('\n')}\n  };\n}`,
       );
     } else {
       const outs = math.outputs.map((o) => `        "${o.port}": ${toCode(o.ast, 'py')},`);
       body.push(
-        `\n\ndef ${name}(n, k=0):\n    """${track.name} — ${mode}"""\n${[...clock, ...binds].map((l) => `    ${l}`).join('\n')}${clock.length + binds.length ? '\n' : ''}    return {\n${outs.join('\n')}\n    }`,
+        `\n\ndef ${name}(n, k=0${vars.has('np') ? ', np=0' : ''}):\n    """${track.name} — ${mode}"""\n${[...clock, ...binds].map((l) => `    ${l}`).join('\n')}${clock.length + binds.length ? '\n' : ''}    return {\n${outs.join('\n')}\n    }`,
       );
     }
   }

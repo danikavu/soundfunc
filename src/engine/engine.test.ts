@@ -85,7 +85,7 @@ describe('graph', () => {
       ],
     });
     expect(p.errors.size).toBeGreaterThan(0);
-    expect(p.run({ n: 0, x: 0, t: 0, k: 0, steps: 1, h: 0, bar: 0, L: 7, beat: 0, vars: {} })).not.toBeNull();
+    expect(p.run({ n: 0, x: 0, t: 0, k: 0, steps: 1, h: 0, bar: 0, L: 7, beat: 0, np: 0, vars: {} })).not.toBeNull();
   });
   it('every preset renders notes without errors', () => {
     const song = defaultProject().song;
@@ -321,7 +321,7 @@ describe('symbolic: the written-out function equals the graph', () => {
   const scopeFor = (track: Track, song: Project['song'], n: number, k: number) => {
     const t = n * track.stepBeats;
     const beat = k * track.steps * track.stepBeats + t;
-    return { ...Object.fromEntries((track.sliders ?? []).map((s) => [s.name, s.value])), n, x: n / track.steps, t, k, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / 4 + 1e-9), L: scaleLength(song), beat } as Record<string, number>;
+    return { ...Object.fromEntries((track.sliders ?? []).map((s) => [s.name, s.value])), n, x: n / track.steps, t, k, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / 4 + 1e-9), L: scaleLength(song), beat, np: 0 } as Record<string, number>;
   };
 
   it('symbolic expressions reproduce every preset and kit track', () => {
@@ -344,7 +344,7 @@ describe('symbolic: the written-out function equals the graph', () => {
     for (const { label, track, song } of all()) {
       const c = compose(track);
       const code = trackCode([c], song, 'js').replace(/^export /gm, '');
-      const fnName = code.match(/function (\w+)\(n, k = 0\)/)![1];
+      const fnName = code.match(/function (\w+)\(n, k = 0/)![1];
       const fn = new Function(`${code}\nreturn ${fnName};`)() as (n: number, k: number) => Record<string, number>;
       const r = renderTrack(track, song, 1, false);
       for (let n = 0; n < track.steps; n++) {
@@ -367,7 +367,7 @@ describe('symbolic: the written-out function equals the graph', () => {
     for (const { label, track, song } of all()) {
       const c = compose(track);
       const code = trackCode([c], song, 'py');
-      const fnName = code.match(/def (\w+)\(n, k=0\)/)![1];
+      const fnName = code.match(/def (\w+)\(n, k=0/)![1];
       const file = join(dir, 'track.py');
       writeFileSync(file, `${code}\nimport json\nprint(json.dumps([${fnName}(n, 1) for n in range(${track.steps})]))\n`);
       const rows = JSON.parse(execFileSync('python3', ['-I', file]).toString().trim().split('\n').pop()!) as Record<string, number>[];
@@ -1114,7 +1114,7 @@ describe('channel colours', () => {
 
 describe('Curve node', () => {
   const run = (data: Record<string, string | number>, x: number) =>
-    compileGraph({ nodes: [{ id: 'c', type: 'curve', position: { x: 0, y: 0 }, data }, { id: 'o', type: 'output', position: { x: 0, y: 0 }, data: {} }], edges: [{ id: 'e', source: 'c', sourceHandle: 'out', target: 'o', targetHandle: 'pitch' }] }).run({ n: 0, x, t: 0, k: 0, steps: 16, h: 0, bar: 0, L: 7, beat: 0, vars: {} })!.pitch;
+    compileGraph({ nodes: [{ id: 'c', type: 'curve', position: { x: 0, y: 0 }, data }, { id: 'o', type: 'output', position: { x: 0, y: 0 }, data: {} }], edges: [{ id: 'e', source: 'c', sourceHandle: 'out', target: 'o', targetHandle: 'pitch' }] }).run({ n: 0, x, t: 0, k: 0, steps: 16, h: 0, bar: 0, L: 7, beat: 0, np: 0, vars: {} })!.pitch;
   it('straight lines between corners, flat outside them, scaled between bottom and top', () => {
     const pts = parseCurve('0.25:0:0 0.75:1:0');
     expect(evalCurve(pts, 0)).toBe(0);
@@ -1197,5 +1197,99 @@ describe('exporting curves: simplified', () => {
     expect(simple.kept).toBeLessThan(simple.raw / 5);
     expect(a.length).toBeLessThan(b.length / 3);
     expect(CURVE_TOLERANCE.semis).toBeLessThanOrEqual(0.05);
+  });
+});
+
+describe('curves on pitch & MPE', () => {
+  /** read a .mid back: every track's channel events, in order */
+  const readMidi = (bytes: Uint8Array) => {
+    const tracks: { tick: number; status: number; data: number[] }[][] = [];
+    let i = 14;
+    while (i < bytes.length) {
+      const len = (bytes[i + 4] << 24) | (bytes[i + 5] << 16) | (bytes[i + 6] << 8) | bytes[i + 7];
+      let j = i + 8;
+      const end = j + len;
+      let tick = 0;
+      const evs: { tick: number; status: number; data: number[] }[] = [];
+      while (j < end) {
+        let d = 0;
+        for (;;) {
+          const b = bytes[j++];
+          d = (d << 7) | (b & 0x7f);
+          if (!(b & 0x80)) break;
+        }
+        tick += d;
+        const st = bytes[j++];
+        if (st === 0xff) {
+          j++;
+          let l = 0;
+          for (;;) {
+            const b = bytes[j++];
+            l = (l << 7) | (b & 0x7f);
+            if (!(b & 0x80)) break;
+          }
+          j += l;
+          continue;
+        }
+        const n = (st & 0xf0) === 0xc0 || (st & 0xf0) === 0xd0 ? 1 : 2;
+        evs.push({ tick, status: st, data: [...bytes.slice(j, j + n)] });
+        j += n;
+      }
+      tracks.push(evs);
+      i = end;
+    }
+    return tracks;
+  };
+  const project = (presetId: string, midi: 'standard' | 'mpe') => {
+    const p = defaultProject();
+    return { ...p, song: { ...p.song, exportMidi: midi, exportLoops: 1 }, tracks: [trackFromPreset(PRESETS.find((x) => x.id === presetId)!, 0)] };
+  };
+
+  it('a bend Curve on np scoops into every note, however long', () => {
+    const t = trackFromPreset(PRESETS.find((x) => x.id === 'scooplead')!, 0);
+    const r = renderTrack(t, defaultProject().song, 0, false);
+    expect(r.notes.length).toBeGreaterThan(4);
+    for (const n of r.notes) {
+      expect(n.expr!.bend[0]).toBeCloseTo(-2, 9); // starts low…
+      expect(n.expr!.bend.at(-1)!).toBeCloseTo(0, 6); // …and lands on the note
+      expect(n.expr!.at.at(-1)!).toBeCloseTo(n.duration, 6);
+    }
+  });
+  it('channels without bend / pressure / slide wired carry no expression (and cost nothing)', () => {
+    const r = renderTrack(trackFromPreset(PRESETS.find((x) => x.id === 'pond')!, 0), defaultProject().song, 0, false);
+    expect(r.notes.every((n) => n.expr === undefined)).toBe(true);
+  });
+  it('MPE: a zone of 15 members, chord notes on their own channels, each with its own bend and pressure', () => {
+    const [, tr] = readMidi(exportMidi(project('bloomchords', 'mpe')));
+    const cc = (ch: number, c: number) => tr.filter((e) => e.status === (0xb0 | ch) && e.data[0] === c).map((e) => e.data[1]);
+    expect(cc(0, 100)).toContain(6); // MPE Configuration Message on the master channel…
+    expect(cc(0, 6)).toContain(15); // …15 member channels
+    expect(cc(1, 6)).toContain(48); // members bend ±48
+    const ons = tr.filter((e) => (e.status & 0xf0) === 0x90 && e.data[1] > 0);
+    const firstChord = ons.filter((e) => e.tick === ons[0].tick);
+    expect(firstChord.length).toBe(3);
+    const chans = new Set(firstChord.map((e) => e.status & 0x0f));
+    expect(chans.size).toBe(3);
+    expect([...chans].every((c) => c >= 1 && c <= 15)).toBe(true);
+    for (const c of chans) {
+      expect(tr.some((e) => e.status === (0xe0 | c))).toBe(true); // its own pitch bend
+      expect(tr.some((e) => e.status === (0xd0 | c))).toBe(true); // its own pressure
+    }
+  });
+  it('standard MIDI: one channel, the bends on it, and centred again after each note', () => {
+    const [, tr] = readMidi(exportMidi(project('slide808', 'standard')));
+    const ch = tr.find((e) => (e.status & 0xf0) === 0x90)!.status & 0x0f;
+    const bends = tr.filter((e) => e.status === (0xe0 | ch));
+    expect(bends.length).toBeGreaterThan(4);
+    expect(bends.at(-1)!.data).toEqual([0, 64]); // back to centre
+    const lowest = Math.min(...bends.map((e) => e.data[0] | (e.data[1] << 7)));
+    expect(lowest).toBeLessThan(8192 - 8192 * (6 / 24)); // the dive reaches about a fifth down
+  });
+  it('a glide exported as MPE is one long note per phrase, not a retrigger every two octaves', () => {
+    const [, mpe] = readMidi(exportMidi(project('riser', 'mpe')));
+    const [, std] = readMidi(exportMidi(project('riser', 'standard')));
+    const ons = (t: typeof mpe) => t.filter((e) => (e.status & 0xf0) === 0x90 && e.data[1] > 0).length;
+    expect(ons(mpe)).toBeLessThanOrEqual(ons(std));
+    expect(ons(mpe)).toBe(1);
   });
 });

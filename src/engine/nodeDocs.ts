@@ -11,6 +11,7 @@ export const NODE_DOCS: Record<string, string> = {
   'step.k': 'k — the loop count: 0 the first time round, then 1, 2, 3… — use it to change each pass',
   'step.h': 'h — the chord the song’s Harmony is on right now, as a scale degree (0 = the key’s root)',
   'step.bar': 'bar — the bar number since the song began (4 beats per bar)',
+  'step.np': 'np — note phase: 0 when a note starts, 1 when it ends. Wire it into a Curve’s phase and the curve plays once per note — scoops, falls, vibrato that restart on every note',
 
   'number.out': 'The number you set',
   'number.value': 'A constant — drag the slider or type a value',
@@ -108,6 +109,9 @@ export const NODE_DOCS: Record<string, string> = {
   'output.chord': 'chord — how many notes to stack (1 = a single note, 3 = a triad, 4 = a seventh chord)',
   'output.stack': 'stack — scale steps between chord notes: 2 = thirds (ordinary chords), 3 = fourths (open, modal), 1 = clusters',
   'output.inversion': 'inversion — lift the lowest chord notes an octave (0, 1, 2…) so the voicing changes shape',
+  'output.bend': 'bend — semitones added to each note while it sounds, read continuously: scoops, falls, vibrato, 808 slides. Chords bend together. Exports per note with MPE',
+  'output.pressure': 'pressure — how hard each note is held, 0 … 1, while it sounds: swells and fades inside a note. Exports as MPE pressure',
+  'output.slide': 'slide — MPE’s timbre axis (CC74), 0 … 1, while each note sounds. SoundFunc’s own voices ignore it; MPE synths use it for brightness',
   'output.strum': 'strum — spread the chord’s notes in time, in steps (0.05 = a quick strum; negative strums downward)',
 };
 

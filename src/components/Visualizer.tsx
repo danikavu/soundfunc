@@ -417,6 +417,20 @@ export function Visualizer() {
           roundRect(g, x, y - (sounding ? 1 : 0), w, h + (sounding ? 2 : 0), h * P.round);
           g.fill();
           g.shadowBlur = 0;
+          // a note that bends: draw the bend as a line leaving the note (a semitone per row)
+          const e = note.expr;
+          if (e && e.bend.some((b) => Math.abs(b) > 1e-3) && note.duration > 0) {
+            g.globalAlpha = isSel ? 0.95 : 0.55;
+            g.strokeStyle = track.color;
+            g.lineWidth = 1.4;
+            g.beginPath();
+            e.at.forEach((a, i) => {
+              const px = x + (a / note.duration) * w, py = y + h / 2 - e.bend[i] * rowH;
+              if (i) g.lineTo(px, py);
+              else g.moveTo(px, py);
+            });
+            g.stroke();
+          }
           // ripples from freshly struck stones
           if (playBeat !== null) {
             let age = (playBeat - note.beat) * secPerBeat;
