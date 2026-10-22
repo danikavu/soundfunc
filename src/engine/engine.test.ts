@@ -1297,6 +1297,31 @@ describe('curves on pitch & MPE', () => {
     expect(pitches.length).toBeGreaterThan(8); // a two-octave climb, step by step
     expect(pitches.every((m, i) => i === 0 || m >= pitches[i - 1])).toBe(true); // …always upward
   });
+  it('pitch bends are written for the chosen range: decoded with it, they give back the pitch you hear', () => {
+    for (const range of [2, 12, 24, 48]) {
+      const base = project('riser', 'standard');
+      const p = { ...base, song: { ...base.song, lengthMode: 'free' as const, bendRange: range } };
+      const glide = collectNotes(p)[0].glide;
+      const [, tr] = readMidi(exportMidi(p, { raw: 0, kept: 0 }, 'standard'));
+      expect(tr.filter((e) => (e.status & 0xf0) === 0xb0 && e.data[0] === 6).map((e) => e.data[1])).toContain(range); // announced
+      // the note a bend belongs to: the last one started at or before it (a retrigger's bend comes just before its note-on, at the same tick)
+      const ons = tr.filter((e) => (e.status & 0xf0) === 0x90 && e.data[1] > 0);
+      let checked = 0;
+      for (const e of tr) {
+        const on = ons.filter((o) => o.tick <= e.tick).at(-1);
+        const note = on ? on.data[0] : -1;
+        if ((e.status & 0xf0) !== 0xe0 || note < 0) continue;
+        const semis = (((e.data[1] << 7) | e.data[0]) - 8192) / 8192 * range;
+        const beat = e.tick / 480;
+        const at = glide.reduce((a, g) => (Math.abs(g.beat - beat) < Math.abs(a.beat - beat) ? g : a));
+        if (Math.abs(at.beat - beat) > 1e-6 || at.velocity < 0.01) continue;
+        expect(Math.abs(note + semis - at.midi), `±${range} at beat ${beat}`).toBeLessThan(0.05);
+        expect(Math.abs(semis)).toBeLessThanOrEqual(range);
+        checked++;
+      }
+      expect(checked, `±${range}`).toBeGreaterThan(5);
+    }
+  });
   it('the export menu’s mode wins over the saved setting', () => {
     const p = project('bloomchords', 'standard');
     const [, mpe] = readMidi(exportMidi(p, { raw: 0, kept: 0 }, 'mpe'));

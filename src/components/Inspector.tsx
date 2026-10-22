@@ -10,6 +10,7 @@ import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Info, NumberField, Seg, Slider, Stepper, TextField, getRender } from './ui';
 import { StepPicker } from './StepPicker';
+import { BEND_RANGES, MPE_BEND_RANGES } from '../engine/midi';
 import { FormulaEditor } from './FormulaEditor';
 import { Dropdown } from './Dropdown';
 import { MAX_STEPS, shortBeats, stepLabel } from '../engine/steps';
@@ -464,6 +465,31 @@ function SoundTab() {
 
       <div className="eyebrow">Export</div>
       <Slider label="Loops" value={project.song.exportLoops} min={1} max={32} step={1} format={(v) => `×${v}`} onChange={(exportLoops) => setSong({ exportLoops })} />
+      <div className="eyebrow-sub row" style={{ gap: 6, marginTop: 14, alignItems: 'center' }}>
+        <span className="muted" style={{ fontSize: 11.5 }}>Pitch-bend range</span>
+        <Info>
+          A MIDI file only says how far a bend goes from −8192 to +8191; the instrument that plays it decides how many semitones that is — its
+          pitch-bend range. If the two differ, bends come out bigger or smaller than you hear here (half the size when SoundFunc writes ±24 and the
+          instrument is set to ±12). Set this to your instrument’s range — or set the instrument to this one (in Ableton: the instrument’s Pitch Bend
+          Range / PB setting). Glides that slide further than the range start a new note on the way.
+        </Info>
+      </div>
+      <div className="row export-curves seg-tight" style={{ gap: 8, marginTop: 6, alignItems: 'center' }}>
+        <span className="muted" style={{ fontSize: 11.5, width: 44 }}>Classic</span>
+        <Seg<number>
+          value={project.song.bendRange ?? 24}
+          onChange={(bendRange) => setSong({ bendRange })}
+          options={BEND_RANGES.map((r) => ({ value: r, label: `±${r}` }))}
+        />
+      </div>
+      <div className="row export-curves seg-tight" style={{ gap: 8, marginTop: 6, alignItems: 'center' }}>
+        <span className="muted" style={{ fontSize: 11.5, width: 44 }}>MPE</span>
+        <Seg<number>
+          value={project.song.mpeBendRange ?? 48}
+          onChange={(mpeBendRange) => setSong({ mpeBendRange })}
+          options={MPE_BEND_RANGES.map((r) => ({ value: r, label: `±${r}` }))}
+        />
+      </div>
       <div className="row export-curves" style={{ gap: 8, marginTop: 10, alignItems: 'center' }}>
         <span className="muted" style={{ fontSize: 11.5, width: 44 }}>Curves</span>
         <Seg<'simple' | 'full'>

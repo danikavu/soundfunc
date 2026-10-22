@@ -1,8 +1,11 @@
 import { audibleTracks, isDrum, keyLabel, patternBeats, renderTrack, songBeats, songWindows, type Note, type Project, type Track, type Waveform } from './project';
 
 const PPQ = 480;
-/** pitch-bend range we program into each glide channel, in semitones */
-const BEND_RANGE = 24;
+/** the pitch-bend ranges we offer: the instrument receiving the file must be set to the same */
+export const BEND_RANGES = [2, 5, 7, 12, 24, 48] as const;
+export const MPE_BEND_RANGES = [24, 48, 96] as const;
+/** a bend range in semitones, or the fallback if the setting is missing or nonsense */
+const rangeOf = (v: unknown, fallback: number) => (typeof v === 'number' && v >= 1 && v <= 96 ? v : fallback);
 
 const GM_PROGRAM: Partial<Record<Waveform, number>> = {
   sine: 79, // ocarina
@@ -144,14 +147,14 @@ export interface CurveStats {
   kept: number;
 }
 
-function glideEvents(points: GlidePoint[], ch: number, total: number, simplify: boolean, stats: CurveStats): Ev[] {
+function glideEvents(points: GlidePoint[], ch: number, total: number, simplify: boolean, stats: CurveStats, range: number): Ev[] {
   const cc = (t: number, c: number, v: number): Ev => ({ tick: t, order: 0.5, bytes: [0xb0 | ch, c, v] });
   // RPN 0 = pitch-bend sensitivity, then null the RPN so later CC6 can't change it
-  const evs: Ev[] = [cc(0, 101, 0), cc(0, 100, 0), cc(0, 6, BEND_RANGE), cc(0, 38, 0), cc(0, 101, 127), cc(0, 100, 127)];
+  const evs: Ev[] = [cc(0, 101, 0), cc(0, 100, 0), cc(0, 6, range), cc(0, 38, 0), cc(0, 101, 127), cc(0, 100, 127)];
   let base = -1;
   let lastBend = -1, lastExpr = -1;
   const bend = (t: number, semis: number) => {
-    const v = Math.max(0, Math.min(16383, Math.round(8192 + (semis / BEND_RANGE) * 8192)));
+    const v = bendCode(range)(semis);
     if (v === lastBend) return;
     lastBend = v;
     evs.push({ tick: t, order: 0.5, bytes: [0xe0 | ch, v & 0x7f, v >> 7] });
@@ -170,7 +173,8 @@ function glideEvents(points: GlidePoint[], ch: number, total: number, simplify: 
       continue;
     }
     // retrigger when the slide wanders past the bend range
-    if (cur && Math.abs(p.midi - cur.base) > BEND_RANGE - 1) (cur.end = t), (cur = null);
+    // retrigger before the slide leaves the bend range (a new note starts within half a semitone of it)
+    if (cur && Math.abs(p.midi - cur.base) > range - 0.5) (cur.end = t), (cur = null);
     if (!cur) phrases.push((cur = { t: [], semis: [], expr: [], base: Math.round(p.midi), end: null }));
     cur.t.push(t);
     cur.semis.push(p.midi - cur.base);
@@ -208,8 +212,6 @@ function glideEvents(points: GlidePoint[], ch: number, total: number, simplify: 
 
 // ---------- per-note expression ----------
 
-/** MPE member channels bend ±48 semitones (the MPE default) */
-const MPE_RANGE = 48;
 const EXPR_TOLERANCE = { semis: CURVE_TOLERANCE.semis, unit: 1.5 / 127 };
 
 /**
@@ -262,9 +264,9 @@ interface ExprNote {
  * takes the member channel that has been free longest, so overlapping notes and chords
  * bend, press and slide independently. Glides become one long note per phrase.
  */
-function mpeEvents(program: number, notes: Note[], glide: GlidePoint[], total: number, simplify: boolean, stats: CurveStats): Ev[] {
+function mpeEvents(program: number, notes: Note[], glide: GlidePoint[], total: number, simplify: boolean, stats: CurveStats, range: number): Ev[] {
   const evs: Ev[] = [...rpn(0, 6, 15)]; // MPE Configuration Message: 15 member channels
-  for (let ch = 1; ch <= 15; ch++) evs.push(...rpn(ch, 0, MPE_RANGE), { tick: 0, order: 0.45, bytes: [0xc0 | ch, program] });
+  for (let ch = 1; ch <= 15; ch++) evs.push(...rpn(ch, 0, range), { tick: 0, order: 0.45, bytes: [0xc0 | ch, program] });
   const list: ExprNote[] = [
     ...notes.map((n) => {
       const on = tick(n.beat), off = Math.max(on + 1, tick(n.beat + n.duration));
@@ -280,7 +282,7 @@ function mpeEvents(program: number, notes: Note[], glide: GlidePoint[], total: n
         slide: e?.slide ?? [0.5],
       };
     }),
-    ...gliding(glide, total, MPE_RANGE - 1),
+    ...gliding(glide, total, range - 0.5),
   ].sort((a, b) => a.on - b.on);
   const freeAt = new Array<number>(16).fill(-Infinity);
   for (const n of list) {
@@ -290,7 +292,7 @@ function mpeEvents(program: number, notes: Note[], glide: GlidePoint[], total: n
     freeAt[ch] = n.off;
     const ticks = n.at.map((a) => n.on + Math.min(a, n.off - n.on));
     // the note's state is set just before it sounds (order 0.7), then follows its curves
-    evs.push(...curveEvents(ticks, n.bend, EXPR_TOLERANCE.semis, simplify, bendCode(MPE_RANGE), (t, v) => bendEv(ch, t === n.on ? 0.7 : 0.5)(t, v), stats));
+    evs.push(...curveEvents(ticks, n.bend, EXPR_TOLERANCE.semis, simplify, bendCode(range), (t, v) => bendEv(ch, t === n.on ? 0.7 : 0.5)(t, v), stats));
     evs.push(...curveEvents(ticks, n.pressure, EXPR_TOLERANCE.unit, simplify, unit127, (t, v) => pressEv(ch, t === n.on ? 0.7 : 0.5)(t, v), stats));
     evs.push(...curveEvents(ticks, n.slide, EXPR_TOLERANCE.unit, simplify, unit127, (t, v) => slideEv(ch, t === n.on ? 0.7 : 0.5)(t, v), stats));
     evs.push({ tick: n.on, order: 1, bytes: [0x90 | ch, n.midi, n.vel] }, { tick: n.off, order: 0, bytes: [0x80 | ch, n.midi, 0] });
@@ -320,10 +322,10 @@ function gliding(points: GlidePoint[], total: number, reach: number): ExprNote[]
 }
 
 /** without MPE: each note's bend / pressure / slide on the channel, the bend centred again as it ends */
-function channelExpression(notes: Note[], ch: number, simplify: boolean, stats: CurveStats): Ev[] {
+function channelExpression(notes: Note[], ch: number, simplify: boolean, stats: CurveStats, range: number): Ev[] {
   const evs: Ev[] = [];
   const anyBend = notes.some((n) => n.expr?.bend.some((b) => b !== 0));
-  if (anyBend) evs.push(...rpn(ch, 0, BEND_RANGE));
+  if (anyBend) evs.push(...rpn(ch, 0, range));
   const seen = new Set<Note['expr']>();
   for (const n of notes) {
     const e = n.expr;
@@ -332,7 +334,7 @@ function channelExpression(notes: Note[], ch: number, simplify: boolean, stats: 
     const on = tick(n.beat);
     const ticks = e.at.map((a) => tick(n.beat + a));
     if (anyBend) {
-      evs.push(...curveEvents(ticks, e.bend, EXPR_TOLERANCE.semis, simplify, bendCode(BEND_RANGE), (t, v) => bendEv(ch, t === on ? 0.7 : 0.5)(t, v), stats));
+      evs.push(...curveEvents(ticks, e.bend, EXPR_TOLERANCE.semis, simplify, bendCode(range), (t, v) => bendEv(ch, t === on ? 0.7 : 0.5)(t, v), stats));
       // centred as the note ends: after its own last bend (0.5), before the next note's first (0.7)
       evs.push(bendEv(ch, 0.65)(Math.max(on + 1, tick(n.beat + n.duration)), 8192));
     }
@@ -411,13 +413,13 @@ export function exportMidi(project: Project, stats: CurveStats = { raw: 0, kept:
     }
     // MPE: every note on its own channel of a 15-channel zone, with its own bend, pressure and slide
     if (!drum && mode === 'mpe') {
-      evs.push(...mpeEvents(GM_PROGRAM[track.waveform] ?? 0, notes, glide, total, simplify, stats));
+      evs.push(...mpeEvents(GM_PROGRAM[track.waveform] ?? 0, notes, glide, total, simplify, stats, rangeOf(song.mpeBendRange, 48)));
       return chunk(evs);
     }
     if (!drum) evs.push({ tick: 0, order: 0, bytes: [0xc0 | ch, GM_PROGRAM[track.waveform] ?? 0] });
-    if (glide.length) evs.push(...glideEvents(glide, ch, total, simplify, stats));
+    if (glide.length) evs.push(...glideEvents(glide, ch, total, simplify, stats, rangeOf(song.bendRange, 24)));
     // without MPE, per-note expression goes out on the channel (exact for one note at a time)
-    if (!drum && notes.some((n) => n.expr)) evs.push(...channelExpression(notes, ch, simplify, stats));
+    if (!drum && notes.some((n) => n.expr)) evs.push(...channelExpression(notes, ch, simplify, stats, rangeOf(song.bendRange, 24)));
     for (const n of notes) {
       const on = tick(n.beat);
       const off = Math.max(on + 1, tick(n.beat + n.duration));

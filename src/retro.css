@@ -953,3 +953,13 @@ body {
   stroke-width: 1;
   stroke-dasharray: 1.5 1.5;
 }
+
+/* compact segment rows (bend ranges) stay on one line */
+.seg-tight .seg {
+  flex-wrap: nowrap;
+  gap: 3px;
+}
+.seg-tight .seg button {
+  padding: 4px 6px;
+  font-size: 11px;
+}

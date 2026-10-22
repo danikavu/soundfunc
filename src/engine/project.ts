@@ -128,6 +128,13 @@ export interface Song {
   exportCurves: 'simple' | 'full';
   /** MIDI export: standard channels, or MPE — each note on its own channel with its own bend, pressure and slide */
   exportMidi: 'standard' | 'mpe';
+  /**
+   * pitch-bend range written into exports, in semitones: a MIDI file only carries −8192…8191,
+   * the receiving instrument decides what that spans — so this must match its setting
+   */
+  bendRange: number;
+  /** the same for MPE exports (MPE's default is 48) */
+  mpeBendRange: number;
 }
 
 export type RepeatMode = 'evolve' | 'exact';
@@ -145,7 +152,7 @@ export interface Slider {
 export const sliderNames = (track: Track) => (track.sliders ?? []).map((s) => s.name);
 export const sliderValues = (track: Track): Record<string, number> => Object.fromEntries((track.sliders ?? []).map((s) => [s.name, s.value]));
 
-export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16, repeat: 'evolve', exportCurves: 'simple', exportMidi: 'standard' };
+export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16, repeat: 'evolve', exportCurves: 'simple', exportMidi: 'standard', bendRange: 24, mpeBendRange: 48 };
 export const BEATS_PER_BAR = 4;
 
 const harmonyCache = new Map<string, Compiled | null>();
