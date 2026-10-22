@@ -10,7 +10,7 @@ import { docFor } from './nodeDocs';
 import { exportMidi, collectNotes } from './midi';
 import { patternBeats, songWindows, stretchOf } from './project';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
-import { KITS, PRESETS, defaultProject, trackFromPreset, trackFromTemplate } from './presets';
+import { CHANNEL_PALETTE, KITS, PRESETS, defaultProject, pickColor, trackFromPreset, trackFromTemplate } from './presets';
 import { harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
 import { chordName, chordTones, limitPitch } from './music';
 import { mulberry32, mutateFormula, mutateOneNode, mutateTrack, musicalScore } from './mutate';
@@ -1053,5 +1053,21 @@ describe('stretch: a channel played out over more or less time', () => {
       const r = renderTrack(t, song, k, false);
       for (let n = 0; n < t.steps; n++) expect(fn(n, k).pitch, `k=${k} n=${n}`).toBeCloseTo(r.pitchCurve[n], 9);
     }
+  });
+});
+
+describe('channel colours', () => {
+  it('a new channel gets a colour no other channel has, until the palette is used up', () => {
+    const taken: string[] = [];
+    for (let i = 0; i < CHANNEL_PALETTE.length; i++) taken.push(pickColor(taken));
+    expect(new Set(taken).size).toBe(CHANNEL_PALETTE.length);
+    expect(CHANNEL_PALETTE).toContain(pickColor(taken)); // all used: any palette colour
+  });
+  it('new channels in the store come out in different colours', () => {
+    useStore.setState({ project: defaultProject(), past: [], future: [] });
+    for (let i = 0; i < 5; i++) useStore.getState().addTrack('blank');
+    useStore.getState().duplicateTrack(useStore.getState().project.tracks[0].id);
+    const colors = useStore.getState().project.tracks.map((t) => t.color);
+    expect(new Set(colors).size).toBe(colors.length);
   });
 });

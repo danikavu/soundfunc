@@ -25,12 +25,17 @@ interface Palette {
   line: string;
   rake: string;
   accent: string;
+  /** how much notes glow (0 = none), and how round they are (0.5 = pills, 0 = bars) */
+  glow: number;
+  round: number;
 }
 
-function readPalette(): Palette {
-  const cs = getComputedStyle(document.documentElement);
+/** the view's colours come from its own element, so the screen can have a palette of its own */
+function readPalette(el: Element): Palette {
+  const cs = getComputedStyle(el);
   const v = (n: string) => cs.getPropertyValue(n).trim();
-  return { paper: v('--paper'), ink: v('--ink'), ink2: v('--ink-2'), ink3: v('--ink-3'), line: v('--line'), rake: v('--rake'), accent: v('--accent') };
+  const num = (n: string, d: number) => (v(n) === '' || !Number.isFinite(Number(v(n))) ? d : Number(v(n)));
+  return { paper: v('--paper'), ink: v('--ink'), ink2: v('--ink-2'), ink3: v('--ink-3'), line: v('--line'), rake: v('--rake'), accent: v('--accent'), glow: num('--viz-glow', 0), round: num('--viz-note-round', 0.5) };
 }
 
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -298,7 +303,7 @@ export function Visualizer() {
       const g = canvas.getContext('2d')!;
       const dpr = window.devicePixelRatio || 1;
       const W = canvas.width / dpr, H = canvas.height / dpr;
-      const P = (palette.current ??= readPalette());
+      const P = (palette.current ??= readPalette(wrapRef.current!));
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, W, H);
       const secPerBeat = 60 / project.song.bpm;
@@ -402,10 +407,16 @@ export function Visualizer() {
         const stone = (track: Track, note: Note, x: number, y: number, w: number, h: number, isSel: boolean) => {
           placed.push({ track, note, x, y, w, h });
           const sounding = playBeat !== null && playBeat >= note.beat && playBeat < note.beat + Math.max(note.duration, 0.05);
-          g.globalAlpha = isSel ? 0.35 + 0.65 * note.velocity : 0.2 + 0.3 * note.velocity;
+          // on a lit screen notes read like a display: brighter, even when not selected
+          g.globalAlpha = P.glow > 0 ? (isSel ? 0.55 + 0.45 * note.velocity : 0.35 + 0.35 * note.velocity) : isSel ? 0.35 + 0.65 * note.velocity : 0.2 + 0.3 * note.velocity;
           g.fillStyle = track.color;
-          roundRect(g, x, y - (sounding ? 1 : 0), w, h + (sounding ? 2 : 0), h / 2);
+          if (P.glow > 0) {
+            g.shadowColor = track.color;
+            g.shadowBlur = P.glow * (sounding ? 14 : 7);
+          }
+          roundRect(g, x, y - (sounding ? 1 : 0), w, h + (sounding ? 2 : 0), h * P.round);
           g.fill();
+          g.shadowBlur = 0;
           // ripples from freshly struck stones
           if (playBeat !== null) {
             let age = (playBeat - note.beat) * secPerBeat;

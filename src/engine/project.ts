@@ -193,6 +193,9 @@ export function normalizeProject(p: Project): Project {
       // tracks used to carry their own loop length; the song's length rules now
       const { lengthMode: _m, lengthBeats: _l, ...rest } = t as Track & { lengthMode?: unknown; lengthBeats?: unknown };
       const track = { ...TRACK_DEFAULTS, ...rest };
+      // the palette changed: an old colour becomes the new colour in the same place
+      const old = LEGACY_COLORS.indexOf(String(track.color).toLowerCase());
+      if (old >= 0) track.color = NEW_COLORS[old];
       // sliders used to belong to the whole song; each track now keeps the ones its formulas read
       if (legacySliders?.length && !t.sliders) {
         const used = formulaNames(track.graph);
@@ -202,6 +205,9 @@ export function normalizeProject(p: Project): Project {
     }),
   };
 }
+
+const LEGACY_COLORS = ['#c4583d', '#6f8a63', '#4a5d7e', '#b39561', '#8a6a7e', '#5e8a86', '#6f6a62'];
+const NEW_COLORS = ['#e2483a', '#e8a93a', '#4fc98a', '#4f86d9', '#a865d6', '#3fb7b0', '#e07a3c'];
 
 /** every name the track's formulas read */
 export function formulaNames(graph: Graph): Set<string> {

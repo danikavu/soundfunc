@@ -4,7 +4,7 @@ import type { GEdge, GNode, Graph, NodeData } from '../engine/graph';
 import type { EditResult } from '../engine/graphEdit';
 import { applyGrid, fixedLengthFor, gridOf, type Grid } from '../engine/steps';
 import type { SavedFunction } from './library';
-import { defaultProject, KITS, PRESETS, trackFromPreset, trackFromTemplate, uid } from '../engine/presets';
+import { defaultProject, KITS, pickColor, PRESETS, trackFromPreset, trackFromTemplate, uid } from '../engine/presets';
 import { mutateHarmony, mutateOneNode, mutateTrack } from '../engine/mutate';
 import { blockFromSelection, insertBlock, type Block } from '../engine/graphEdit';
 import { formulaNames, harmonyCycleBars, isDrum, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
@@ -136,7 +136,7 @@ export const useStore = create<State>()(
         addTrack: (presetId) => {
           const preset = PRESETS.find((p) => p.id === presetId) ?? PRESETS[0];
           const made = trackFromPreset(preset, get().project.tracks.length);
-          const track = fitToSong(made, get().project.song);
+          const track = fitToSong({ ...made, color: pickColor(colorsIn(get().project)) }, get().project.song);
           commit((p) => ({ ...p, tracks: [...p.tracks, track] }));
           set({ selectedTrackId: track.id });
         },
@@ -144,7 +144,10 @@ export const useStore = create<State>()(
           const kit = KITS.find((k) => k.id === kitId);
           if (!kit) return;
           const start = layer ? get().project.tracks.length : 0;
-          const tracks = kit.tracks.map((t, i) => trackFromTemplate(t, t.name, start + i));
+          const tracks = withNewColors(
+            kit.tracks.map((t, i) => trackFromTemplate(t, t.name, start + i)),
+            layer ? colorsIn(get().project) : [],
+          );
           const cur = get().project.song;
           // replacing the garden: tracks that share a length make a fixed song, long enough for
           // the progression too; tracks of different lengths (polyrhythms) make a free song
@@ -168,7 +171,8 @@ export const useStore = create<State>()(
           if (!layer) set({ currentProjectId: null });
           set({ selectedTrackId: tracks[0]?.id ?? null });
         },
-        plantTrack: (track) => {
+        plantTrack: (planted) => {
+          const track = { ...planted, color: pickColor(colorsIn(get().project)) };
           commit((p) => ({ ...p, tracks: [...p.tracks, fitToSong(track, p.song)] }));
           set({ selectedTrackId: track.id });
         },
@@ -213,7 +217,7 @@ export const useStore = create<State>()(
         },
         plantFunction: (fn) => {
           const { project } = get();
-          const track = fitToSong(trackFromTemplate(structuredClone(fn.track), fn.name, project.tracks.length), project.song);
+          const track = fitToSong({ ...trackFromTemplate(structuredClone(fn.track), fn.name, project.tracks.length), color: pickColor(colorsIn(project)) }, project.song);
           commit((p) => ({ ...p, tracks: [...p.tracks, track] }));
           set({ selectedTrackId: track.id });
         },
@@ -223,7 +227,10 @@ export const useStore = create<State>()(
           const kit = KITS.find((k) => k.id === kitId);
           if (!kit || !trackIndexes.length) return;
           const start = get().project.tracks.length;
-          const tracks = trackIndexes.map((i, j) => trackFromTemplate(kit.tracks[i], kit.tracks[i].name, start + j));
+          const tracks = withNewColors(
+            trackIndexes.map((i, j) => trackFromTemplate(kit.tracks[i], kit.tracks[i].name, start + j)),
+            colorsIn(get().project),
+          );
           commit((p) => {
             const song = adoptSong ? { ...p.song, ...kit.song } : p.song;
             return { ...p, song, tracks: [...p.tracks, ...tracks.map((t) => fitToSong(t, song))] };
@@ -272,7 +279,7 @@ export const useStore = create<State>()(
         duplicateTrack: (id) => {
           const src = get().project.tracks.find((t) => t.id === id);
           if (!src) return;
-          const copy: Track = { ...structuredClone(src), id: uid('track'), name: copyName(src.name, get().project.tracks.map((t) => t.name)), solo: false };
+          const copy: Track = { ...structuredClone(src), id: uid('track'), name: copyName(src.name, get().project.tracks.map((t) => t.name)), color: pickColor(colorsIn(get().project)), solo: false };
           commit((p) => {
             const i = p.tracks.findIndex((t) => t.id === id);
             const tracks = [...p.tracks];
@@ -411,4 +418,16 @@ function copyName(name: string, taken: string[]): string {
   let n = base;
   for (let i = 2; taken.includes(n); i++) n = `${base} ${i}`;
   return n;
+}
+
+const colorsIn = (p: Project) => p.tracks.map((t) => t.color);
+
+/** give each new channel its own random colour, unused by the others */
+function withNewColors(tracks: Track[], taken: string[]): Track[] {
+  const used = [...taken];
+  return tracks.map((t) => {
+    const color = pickColor(used);
+    used.push(color);
+    return { ...t, color };
+  });
 }

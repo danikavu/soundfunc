@@ -9,6 +9,10 @@ npm test         # engine tests
 npm run build
 ```
 
+## Look
+
+A 1980s lab workstation: beige instrument chrome with bevelled plates and riveted section headers, green-black screens (the Score / Function view and the node board) with glowing lines, LCD displays for every value, numbered channel keys with status LEDs, and a nameplate with just the name and the lab clock. Day and night modes both keep the screens dark. The skin lives in `src/retro.css`, loaded after `styles.css`.
+
 ## Using it
 
 - **Space** plays / stops. **⌘Z / ⇧⌘Z** undo / redo. Edits are heard live while playing.
@@ -20,6 +24,7 @@ npm run build
 - **Top bar — the whole song**: **Tempo** (with ▲/▼ arrows), **Length**, **Key**, **Scale** (44, grouped: none — every semitone; major/minor/pentatonic/blues/bebop; the modes; Japanese; from around the world — double harmonic, Hungarian, Persian, pélog…; symmetric — whole tone, octatonic, augmented), **Harmony** (type a formula, or pick a progression by name from the box beside it) and **Reverb**. **Length** is 4, 8, 16, 32 or 64 beats — *every* channel is exactly that long; the step length you pick fits as many steps as it takes (an irrational step is nudged to land on the beat), up to 1024 steps — or **Free**, where each channel loops on its own (steps × step length, for polyrhythms) and the song is its longest channel. The Score, the Function view and MIDI export use it; the chord progression repeats or carries on inside it. Kits whose channels share a length plant fixed; polyrhythm kits plant free. **Each pass** (in the same menu): *Evolves* (default) — time runs on, so `k`, `bar` and the harmony carry on and every pass can differ; *Repeats exactly* (⟲) — the clock starts again each pass, note for note, in playback and MIDI export alike. Either way the Score and Function views draw the pass you are hearing (the legend says which), and their pitch scale holds steady while playing, only widening if a later pass reaches further.
 - **Words**: a **track** is the whole piece (what you save, open and export); its **channels** are the stems — each with its own nodes, voice and sliders.
 - **Channel tab → Grid** (right panel): the selected channel's steps × step length and **Octave** (type it, use the ▲/▼ arrows, or ↑/↓ keys; −4 … 9). **All channels**: *Glide all / Unglide all* and *Snap all / Free pitch all* set every melodic channel at once (drums have neither); one ⌘Z undoes it.
+- **Colours**: every new channel (empty, preset, kit, pasted, planted or duplicated) gets a random colour no other channel in the track has. Channel tab: the seven basic colours, then **+** for the full palette of 24 and *Any colour*.
 - **Stretch** (Channel tab → Grid): play a channel out over more or less time — **÷2**, **×2**, or type any factor (1/16 … 16). Its function keeps its shape (it still reads the same `n`, `x`, `t`, `k`); only where its notes and glide land is scaled, so ×2 is twice as long and slow, ×0.5 twice as fast, at the same pitches. Bars and the harmony follow real time, so a stretched channel still meets the song's chords. A stretched channel shows its factor (×2) in the list. With a fixed Length, a channel stretched past the song plays across passes (with *Repeats exactly*, only its start is heard); with Free, the song grows to the longest stretched channel.
 - **ⓘ** buttons hold the explanations — hover, focus or click one to read it.
 - **My functions** and **Function presets** (sidebar) fold open and closed, and remember how you left them.

@@ -1,0 +1,920 @@
+/*
+ * The 1980s lab-workstation skin: beige instrument chrome with bevelled edges,
+ * green-black screens with a glow, LCD value boxes, riveted section plates.
+ * Loaded after styles.css; it restyles, it doesn't rearrange.
+ */
+
+/* ---------- palette ---------- */
+
+:root {
+  /* chrome: the instrument's beige case */
+  --paper: #d6ceb6;
+  --paper-2: #cbc2a7;
+  --paper-3: #c0b698;
+  --card: #e3dcc7;
+  --ink: #23211b;
+  --ink-2: #4a463a;
+  --ink-3: #777059;
+  --line: #9a9177;
+  --line-soft: #b6ac90;
+  --accent: #c0392b;
+  --accent-soft: rgba(192, 57, 43, 0.14);
+  --rake: rgba(35, 33, 27, 0.06);
+  --shadow: none;
+  /* bevels: light from the top left */
+  --hi: #f6f1e2;
+  --lo: #8c836b;
+  --edge: #5c5543;
+  /* screens and LCDs */
+  --lcd: #0e1f17;
+  --lcd-2: #142a1f;
+  --lcd-ink: #a8f5c4;
+  --lcd-ink-2: #62c48c;
+  --lcd-edge: #06110b;
+  --glow-ink: 0 0 6px rgba(120, 240, 170, 0.45);
+  --radius: 3px;
+}
+
+:root[data-theme='dark'] {
+  --paper: #2c2b25;
+  --paper-2: #35332c;
+  --paper-3: #403d34;
+  --card: #3a3830;
+  --ink: #e8e1cc;
+  --ink-2: #bdb49b;
+  --ink-3: #8a826c;
+  --line: #5e5848;
+  --line-soft: #4a463a;
+  --accent: #e5533f;
+  --accent-soft: rgba(229, 83, 63, 0.18);
+  --rake: rgba(232, 225, 204, 0.05);
+  --hi: #4d4a3f;
+  --lo: #1c1b17;
+  --edge: #12110e;
+  --lcd: #08140e;
+  --lcd-2: #0e1e15;
+  --lcd-edge: #000;
+}
+
+/* inside a screen, everything takes the screen's colours */
+.viz,
+.nodes-canvas {
+  --paper: #0d1c15;
+  --paper-2: #12261b;
+  --paper-3: #183223;
+  --card: #10231a;
+  --ink: #a8f5c4;
+  --ink-2: #6fca95;
+  --ink-3: #4c8d68;
+  --line: #2c4c39;
+  --line-soft: #1e382a;
+  --rake: rgba(120, 230, 160, 0.075);
+  --accent: #ff6a55;
+  --accent-soft: rgba(255, 106, 85, 0.16);
+  --viz-glow: 1;
+  --viz-note-round: 0.12;
+  color: var(--ink);
+}
+
+/* ---------- bevels ---------- */
+
+/* raised: a plate standing out of the case */
+.title-plate,
+.topbar,
+.app aside.panel,
+.toolbar,
+.fold-trigger,
+.kit-trigger,
+.btn,
+.seg button,
+.play,
+.stepper-arrows button,
+.stretch-btn,
+.ms,
+.tracks-head-tools .icon-btn,
+.mutator {
+  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
+}
+
+/* sunken: a screen or a display set into the case */
+.viz,
+.nodes-canvas,
+.app .input,
+.app .select,
+.app .dropdown-field,
+.app .stepper,
+.app .stretch-ctl,
+.app textarea.formula {
+  box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi);
+}
+
+body {
+  background: var(--paper);
+}
+
+/* ---------- the frame: panels as plates, screens set in ---------- */
+
+.app {
+  grid-template-rows: 40px 60px 1fr;
+  gap: 0;
+  padding: 0 6px 6px;
+}
+.main {
+  gap: 6px;
+  padding-top: 6px;
+}
+.app aside.panel {
+  background: var(--paper);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+}
+.center {
+  border: none;
+  gap: 6px;
+}
+.viz,
+.nodes {
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.viz {
+  background: var(--paper);
+}
+.nodes {
+  background: var(--paper);
+}
+.nodes > .toolbar {
+  background: linear-gradient(var(--card), var(--paper-2));
+  color: #23211b;
+  border: none;
+  border-bottom: 1px solid var(--edge);
+  /* the toolbar is chrome, not screen */
+  --paper: #d6ceb6;
+  --card: #e3dcc7;
+  --ink: #23211b;
+  --ink-2: #4a463a;
+  --ink-3: #777059;
+  --line: #9a9177;
+  --line-soft: #b6ac90;
+}
+:root[data-theme='dark'] .nodes > .toolbar {
+  --paper: #2c2b25;
+  --card: #3a3830;
+  --ink: #e8e1cc;
+  --ink-2: #bdb49b;
+  --ink-3: #8a826c;
+  --line: #5e5848;
+  --line-soft: #4a463a;
+  color: var(--ink);
+}
+.nodes-canvas {
+  border: none;
+  border-radius: 0;
+}
+
+/* ---------- title strip: the nameplate ---------- */
+
+.title-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px 0 0;
+  min-width: 0;
+}
+.title-plate {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: linear-gradient(var(--card), var(--paper-2));
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+.title-main {
+  flex: 1;
+}
+.title-main b {
+  font: 700 16px/1 var(--sans);
+  letter-spacing: 0.04em;
+}
+.title-clock {
+  font: 400 13px/1 var(--mono);
+  letter-spacing: 0.08em;
+}
+.title-clock b {
+  font-weight: 400;
+  margin: 0 4px;
+}
+/* ---------- top bar: the control panel ---------- */
+
+.topbar {
+  margin-top: 6px;
+  background: linear-gradient(var(--card), var(--paper-2));
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 0 14px;
+}
+.topbar .field-inline > span:first-child,
+.field-inline > span {
+  color: var(--ink-2);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+/* the play button: a square key */
+.play {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
+  border: 1px solid var(--edge);
+  background: linear-gradient(var(--card), var(--paper-2));
+  color: var(--ink);
+}
+.play:hover {
+  background: var(--card);
+}
+.play.on {
+  background: linear-gradient(var(--card), var(--paper-2));
+  border-color: var(--edge);
+  color: var(--accent);
+  box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi);
+}
+
+/* ---------- LCD value boxes ---------- */
+
+.app .topbar .input,
+.app .topbar .input.num,
+.app .topbar .dropdown-field,
+.app .topbar .stepper,
+.app aside.panel .input.num,
+.app aside.panel .dropdown-field,
+.app aside.panel .stepper,
+.app aside.panel .stretch-ctl,
+.app .channel-grid .input.num,
+.app .import-sheet .input,
+.app textarea.formula,
+.app .harmony .input {
+  background: var(--lcd);
+  color: var(--lcd-ink);
+  border: 1px solid var(--lcd-edge);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  text-shadow: var(--glow-ink);
+}
+.app .topbar .stepper .input,
+.app aside.panel .stepper .input,
+.app .stretch-ctl .input {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+.app .dropdown-field .dropdown-value,
+.app .dropdown-field b,
+.app .dropdown-field .unit {
+  color: var(--lcd-ink);
+  font-family: var(--mono);
+}
+.app .dropdown-field small,
+.app .dropdown-field .dropdown-hint,
+.app .topbar .dropdown-field .unit {
+  color: var(--lcd-ink-2);
+  text-shadow: none;
+}
+.app .dropdown-field .dropdown-chevron,
+.app .stepper-arrows button {
+  color: var(--lcd-ink-2);
+}
+.app .stepper-arrows {
+  border-left-color: var(--lcd-edge);
+}
+.app .stepper-arrows button {
+  background: var(--lcd-2);
+  box-shadow: none;
+}
+.app .stepper-arrows button + button {
+  border-top-color: var(--lcd-edge);
+}
+.app .stepper-arrows button:hover:not(:disabled) {
+  background: #1d3a2b;
+  color: var(--lcd-ink);
+}
+.app .stretch-btn {
+  background: var(--lcd-2);
+  color: var(--lcd-ink-2);
+  border-color: var(--lcd-edge) !important;
+  box-shadow: none;
+}
+.app .stretch-btn:hover:not(:disabled) {
+  background: #1d3a2b;
+  color: var(--lcd-ink);
+}
+.app .stretch-x {
+  color: var(--lcd-ink-2);
+}
+.app .topbar .input:hover,
+.app .topbar .input:focus,
+.app .dropdown-field:hover,
+.app .dropdown-field.open {
+  border-color: var(--lcd-edge);
+  outline: 1px solid var(--lcd-ink-2);
+  outline-offset: -2px;
+}
+/* the garden… the track's name stays printed on the case, not in a display */
+.app .topbar .project-name {
+  background: transparent;
+  color: var(--accent);
+  font-family: var(--sans);
+  text-shadow: none;
+  box-shadow: none;
+  border-color: transparent;
+}
+.app .topbar .project-name:hover,
+.app .topbar .project-name:focus {
+  background: var(--card);
+  border-color: var(--line);
+}
+.app .harmony .lock {
+  color: var(--ink-3);
+}
+/* reverb slider and other ranges: a groove with a square knob */
+.app input[type='range'] {
+  accent-color: var(--ink);
+}
+
+/* ---------- buttons, segments ---------- */
+
+.btn,
+.seg button {
+  border-radius: var(--radius);
+  border: 1px solid var(--edge);
+  background: linear-gradient(var(--card), var(--paper-2));
+  color: var(--ink);
+}
+.btn:hover,
+.seg button:hover {
+  background: var(--card);
+  border-color: var(--edge);
+}
+.btn:active,
+.seg button:active {
+  box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi);
+}
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.btn.ghost:hover {
+  border-color: var(--line);
+  background: var(--card);
+}
+.btn.primary {
+  background: var(--accent);
+  color: #fff6ea;
+  border-color: #7a1f16;
+}
+.btn.primary:hover {
+  background: #d24434;
+}
+/* the chosen segment is lit: a dark display with green type */
+.seg button.on,
+.seg button[aria-pressed='true'] {
+  background: var(--lcd);
+  color: var(--lcd-ink);
+  border-color: var(--lcd-edge);
+  text-shadow: var(--glow-ink);
+  box-shadow: inset 1px 1px 0 #000, inset -1px -1px 0 #24402f;
+}
+.icon-btn {
+  border-radius: var(--radius);
+}
+.icon-btn:hover {
+  background: var(--card);
+}
+.toolbar .btn,
+.toolbar .mutator,
+.toolbar .lock-status .btn.tool,
+.toolbar .lock-status .dropdown.compact .dropdown-field {
+  border-radius: var(--radius) !important;
+}
+.toolbar .lock-status .dropdown.compact .dropdown-field {
+  background: linear-gradient(var(--card), var(--paper-2));
+  color: var(--ink);
+  border: 1px solid var(--edge);
+  text-shadow: none;
+  font-family: var(--sans);
+}
+.toolbar .mutator {
+  background: linear-gradient(var(--card), var(--paper-2));
+  border: 1px solid var(--edge);
+}
+.toolbar .mutator .btn {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ---------- section plates with rivets ---------- */
+
+.app aside.panel .eyebrow {
+  position: relative;
+  margin: 18px -8px 10px;
+  padding: 7px 26px;
+  background: linear-gradient(var(--card), var(--paper-2));
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
+  color: var(--ink);
+  font: 700 11px/1 var(--sans);
+  letter-spacing: 0.16em;
+}
+.app aside.panel .eyebrow:first-child {
+  margin-top: 0;
+}
+.app aside.panel .eyebrow::after {
+  display: none;
+}
+.app aside.panel .eyebrow::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, var(--hi), var(--lo) 70%);
+  box-shadow: 0 0 0 1px var(--edge), 0 0 0 1px var(--edge), calc(100% + 0px) 0 0 0 transparent;
+}
+/* a second rivet on the right */
+.app aside.panel .eyebrow {
+  background-image: radial-gradient(circle at calc(100% - 12.5px) 50%, var(--lo) 0 2.6px, var(--edge) 2.6px 3.6px, transparent 3.6px), linear-gradient(var(--card), var(--paper-2));
+}
+.app aside.panel .eyebrow .info {
+  margin-left: 4px;
+}
+
+/* ---------- channels ---------- */
+
+.track {
+  grid-template-columns: 38px 22px 1fr 12px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+}
+.track:hover {
+  background: var(--paper-2);
+}
+.track.selected {
+  background: var(--card);
+  border-color: var(--edge);
+  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
+}
+.track.selected .track-name {
+  color: var(--accent);
+}
+.ch-num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  color: #fff;
+  font: 700 12px/1 var(--mono);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(0, 0, 0, 0.35);
+}
+.led {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #4a3a2a;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--edge);
+}
+.led.on {
+  background: radial-gradient(circle at 35% 35%, #c9ffd9, #2fdc73 60%);
+  box-shadow: 0 0 6px #2fdc73, 0 0 0 1px var(--edge);
+}
+.ms-col .ms,
+.tracks-head .ms {
+  border-radius: 2px;
+  border: 1px solid var(--edge);
+  background: linear-gradient(var(--card), var(--paper-2));
+  color: var(--ink-2);
+  font-size: 10px;
+}
+.ms.on {
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: inset 1px 1px 0 #000;
+}
+.ms.on.solo {
+  background: var(--accent);
+  color: #fff;
+}
+.ms.remove {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+.tracks-head {
+  border-bottom-color: var(--line);
+}
+.tracks-head-tools .icon-btn {
+  border: 1px solid var(--edge);
+  background: linear-gradient(var(--card), var(--paper-2));
+  color: var(--ink);
+  width: 30px;
+  height: 30px;
+}
+
+/* ---------- folds, kits ---------- */
+
+.fold-trigger,
+.kit-trigger {
+  border-radius: var(--radius);
+  border: 1px solid var(--edge);
+  background: linear-gradient(var(--card), var(--paper-2));
+  color: var(--ink);
+}
+.fold-trigger:hover,
+.fold.open .fold-trigger,
+.kit-trigger:hover,
+.kit-trigger.open {
+  background: var(--card);
+  border-color: var(--edge);
+}
+.fold.open .fold-trigger {
+  box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi);
+}
+.preset {
+  border-radius: var(--radius);
+}
+
+/* ---------- menus, sheets, toasts ---------- */
+
+.menu-pop,
+.dropdown-pop,
+.kit-pop,
+.info-pop,
+.range-pop,
+.slider-pop {
+  border-radius: var(--radius) !important;
+  border: 1px solid var(--edge) !important;
+  background: var(--card) !important;
+  box-shadow: inset 1px 1px 0 var(--hi), 2px 3px 0 rgba(0, 0, 0, 0.18) !important;
+}
+.sheet {
+  border-radius: 4px;
+  border: 1px solid var(--edge);
+  background: var(--paper);
+  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo), 4px 6px 0 rgba(0, 0, 0, 0.2);
+}
+.toast {
+  border-radius: var(--radius);
+  background: var(--lcd);
+  color: var(--lcd-ink);
+  font-family: var(--mono);
+  border: 1px solid var(--lcd-edge);
+  text-shadow: var(--glow-ink);
+}
+
+/* ---------- screens: the score view ---------- */
+
+.viz-legend h2 {
+  font: 700 15px/1 var(--sans);
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  text-shadow: var(--glow-ink);
+}
+.viz-legend .muted {
+  font-family: var(--mono);
+}
+.viz .seg button,
+.viz .icon-btn,
+.viz .range-pill {
+  border-radius: var(--radius);
+}
+.viz .seg button {
+  background: linear-gradient(#e3dcc7, #cbc2a7);
+  color: #23211b;
+  border-color: #000;
+}
+.viz .seg button.on {
+  background: var(--lcd-2);
+  color: var(--lcd-ink);
+}
+.viz-zoom,
+.range-pill {
+  border-radius: var(--radius) !important;
+}
+
+/* ---------- screens: the node board ---------- */
+
+.react-flow {
+  --xy-background-color: var(--paper);
+  --xy-edge-stroke: #5fd394;
+  --xy-edge-stroke-selected: #ff6a55;
+}
+.react-flow__edge-path {
+  filter: drop-shadow(0 0 2px rgba(95, 211, 148, 0.6));
+}
+.react-flow__controls-button {
+  background: #1a3326;
+  color: var(--ink);
+  border-color: #000;
+}
+.fnode {
+  border-radius: var(--radius);
+  border: 1px solid #b6ac90;
+  background: var(--card);
+  box-shadow: 0 0 0 1px #000, 2px 3px 0 rgba(0, 0, 0, 0.45);
+}
+/* the node's name sits on a beige plate, like a module's faceplate */
+.fnode-head {
+  background: linear-gradient(#e3dcc7, #cbc2a7);
+  color: #23211b;
+  border-bottom: 1px solid #000;
+  box-shadow: inset 1px 1px 0 #f6f1e2;
+  --ink: #23211b;
+  --ink-2: #4a463a;
+  --ink-3: #6e6752;
+  --accent: #c0392b;
+  --accent-soft: rgba(192, 57, 43, 0.14);
+}
+.fnode-head .val {
+  color: #4a463a;
+}
+.fnode.locked {
+  border-color: #ff6a55;
+}
+.fnode .react-flow__handle {
+  background: var(--paper);
+  border-color: var(--ink-2);
+}
+.fnode .react-flow__handle.connected {
+  background: var(--ink);
+}
+.nodes-canvas .input,
+.nodes-canvas .select,
+.nodes-canvas textarea {
+  color: var(--ink);
+  font-family: var(--mono);
+}
+
+/* hover actions only exist while hovering, so they never cover the LED */
+.track .track-actions {
+  background: transparent;
+  box-shadow: none;
+  visibility: hidden;
+}
+.track:hover .track-actions,
+.track .track-actions:focus-within {
+  visibility: visible;
+  background: var(--paper-2);
+  box-shadow: -10px 0 10px var(--paper-2);
+}
+.track.selected:hover .track-actions {
+  background: var(--card);
+  box-shadow: -10px 0 10px var(--card);
+}
+
+/* every dropdown field is a display — wherever it sits (sheets too) */
+.app .dropdown-field,
+.sheet .dropdown-field {
+  background: var(--lcd);
+  color: var(--lcd-ink);
+  border: 1px solid var(--lcd-edge);
+  border-radius: var(--radius);
+  text-shadow: var(--glow-ink);
+}
+.sheet .dropdown-field .dropdown-value,
+.sheet .dropdown-field b {
+  color: var(--lcd-ink);
+  font-family: var(--mono);
+}
+.sheet .dropdown-field small,
+.sheet .dropdown-field .dropdown-hint {
+  color: var(--lcd-ink-2);
+}
+/* display text never touches the bezel */
+.app .topbar .input,
+.app aside.panel .input.num,
+.app .channel-grid .input.num,
+.app .import-sheet .input,
+.app .harmony .input,
+.sheet .input {
+  padding-left: 7px;
+  padding-right: 5px;
+}
+.sheet .input {
+  background: var(--lcd);
+  color: var(--lcd-ink);
+  border: 1px solid var(--lcd-edge);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  text-shadow: var(--glow-ink);
+  min-height: 28px;
+}
+.app .stepper .input,
+.app .stretch-ctl .input {
+  padding-left: 6px;
+}
+/* the paste sheet's plot is a little screen */
+.import-plot-box,
+.import-read {
+  --paper: #0d1c15;
+  --ink: #a8f5c4;
+  --line: #2c4c39;
+  --line-soft: #1e382a;
+}
+.import-plot-box .import-plot {
+  border-color: #000;
+  border-radius: var(--radius);
+  box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi);
+}
+.import-plot-box path {
+  filter: drop-shadow(0 0 2px rgba(120, 240, 170, 0.7));
+}
+.import-read {
+  --ink: inherit;
+}
+
+/* the toolbar's Copy-to is a key, not a display */
+.app .toolbar .lock-status .dropdown.compact .dropdown-field {
+  background: linear-gradient(var(--card), var(--paper-2));
+  color: var(--ink);
+  border: 1px solid var(--edge);
+  text-shadow: none;
+  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
+}
+.app .toolbar .lock-status .dropdown.compact .dropdown-value {
+  color: var(--ink);
+}
+/* values inside nodes get a little room too */
+.nodes-canvas .fnode .input,
+.nodes-canvas .fnode .select,
+.nodes-canvas .fnode input[type='text'],
+.nodes-canvas .fnode input[type='number'] {
+  padding-left: 5px;
+}
+
+/* ---------- second pass ---------- */
+
+/* the channel's colours: small square swatches */
+.app aside.panel button.stone[aria-label^='color'] {
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 1px !important;
+  border: 1px solid var(--edge) !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(0, 0, 0, 0.3);
+  outline-offset: 2px !important;
+}
+
+/* the progressions list opens wide enough to read each progression and its formula */
+.topbar .w-prog .dropdown-pop {
+  width: 420px;
+  max-width: calc(100vw - 24px);
+  left: auto;
+  right: 0;
+}
+.topbar .w-prog .dropdown-row {
+  white-space: nowrap;
+}
+
+/* steppers have their own arrows — never the browser's as well */
+.stepper .stepper-input {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.stepper .stepper-input::-webkit-inner-spin-button,
+.stepper .stepper-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* the buttons on a node's faceplate: darker, always readable */
+.fnode-head .lock {
+  color: #2a271f;
+  opacity: 0.85;
+}
+.fnode:hover .fnode-head .lock {
+  opacity: 1;
+}
+.fnode-head .lock:hover {
+  background: rgba(35, 33, 27, 0.12);
+  color: #000;
+}
+.fnode-head .lock:disabled {
+  opacity: 0.35;
+}
+.fnode-head .lock.on {
+  color: #a8281c;
+}
+
+/* the "+" swatch and the full palette */
+.color-more {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px dashed var(--ink-3);
+  border-radius: 1px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.color-more:hover,
+.color-more.on {
+  border-style: solid;
+  border-color: var(--edge);
+  background: var(--card);
+  color: var(--ink);
+}
+.color-pop {
+  position: fixed;
+  z-index: 90;
+  width: 236px;
+  padding: 10px;
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: inset 1px 1px 0 var(--hi), 2px 3px 0 rgba(0, 0, 0, 0.18);
+}
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+}
+.color-cell {
+  aspect-ratio: 1;
+  border: 1px solid var(--edge);
+  border-radius: 1px;
+  cursor: pointer;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(0, 0, 0, 0.3);
+}
+.color-cell.on {
+  outline: 1.5px solid var(--ink);
+  outline-offset: 2px;
+}
+.color-cell:hover {
+  transform: scale(1.12);
+}
+.color-custom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.color-custom input[type='color'] {
+  width: 44px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--edge);
+  border-radius: 2px;
+  background: none;
+  cursor: pointer;
+}
+
+/* scrolling a list stops at its ends instead of carrying on into the panel or the page */
+.dropdown-pop,
+.menu-pop,
+.kit-pop,
+.kit-pop *,
+.range-pop,
+.color-pop,
+.garden-pop,
+.notes-table-wrap {
+  overscroll-behavior: contain;
+}
+
+.range-pop {
+  z-index: 90;
+}
+/* the harmony formula gets room to be read */
+.app .harmony .input {
+  width: 230px;
+}
+@media (max-width: 1440px) {
+  .app .harmony .input {
+    width: 180px;
+  }
+}
+@media (max-width: 1280px) {
+  .app .harmony .input {
+    width: 140px;
+  }
+}
+@media (max-width: 1160px) {
+  .app .harmony .input {
+    width: 110px;
+  }
+}

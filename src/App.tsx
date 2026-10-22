@@ -5,6 +5,7 @@ import { useStore } from './state/store';
 import { togglePlay } from './state/transport';
 import { withAudition } from './state/audition';
 import { TopBar } from './components/TopBar';
+import { TitleStrip } from './components/TitleStrip';
 import { Sidebar } from './components/Sidebar';
 import { Visualizer } from './components/Visualizer';
 import { NodeEditor, copySelected, pasteInto, runMutate, toggleLockSelected } from './components/NodeEditor';
@@ -70,6 +71,7 @@ export function App() {
 
   return (
     <div className="app">
+      <TitleStrip />
       <TopBar />
       <div className="main">
         <Sidebar />

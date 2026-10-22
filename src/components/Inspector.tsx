@@ -1,8 +1,8 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { engine } from '../engine/audio';
 import { CONSTANTS, FUNCTIONS } from '../engine/expr';
 import { PITCH_MODES, midiToName, type PitchMode } from '../engine/music';
-import { TRACK_COLORS } from '../engine/presets';
+import { CHANNEL_PALETTE, TRACK_COLORS } from '../engine/presets';
 import { DRUMS, STRETCH_MAX, STRETCH_MIN, WAVEFORMS, isDrum, keyLabel, patternBeats, stretchOf, voiceLabel, type PlayMode, type Waveform } from '../engine/project';
 import { useLibrary, voiceOf, wearsVoice } from '../state/library';
 import { toast } from './TopBar';
@@ -316,6 +316,66 @@ function ChannelGrid() {
   );
 }
 
+const swatch = (c: string, on: boolean) => ({ background: c, border: 'none', cursor: 'pointer', width: 16, height: 13, outline: on ? '1.5px solid var(--ink)' : 'none', outlineOffset: 2 });
+
+/** The basic colours, the channel's own colour if it is another, and a palette with every colour — plus any colour at all. */
+function ColorRow({ color, onColor }: { color: string; onColor: (c: string) => void }) {
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  const lower = color.toLowerCase();
+  const isBasic = TRACK_COLORS.includes(lower);
+  useEffect(() => {
+    if (!pos) return;
+    const close = (e: MouseEvent) => !pop.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node) && setPos(null);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setPos(null);
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [pos]);
+  const open = () => {
+    const r = btn.current!.getBoundingClientRect();
+    const W = 236;
+    setPos({ left: Math.min(Math.max(8, r.right - W), window.innerWidth - W - 8), top: r.bottom + 8 });
+  };
+  return (
+    <div className="row color-row" style={{ gap: 6, marginBottom: 4 }}>
+      {TRACK_COLORS.map((c) => (
+        <button key={c} onClick={() => onColor(c)} className="stone" style={swatch(c, c === lower)} aria-label={`color ${c}`} />
+      ))}
+      {!isBasic && <button className="stone" style={swatch(color, true)} aria-label={`color ${color} (this channel's)`} title="This channel’s colour" />}
+      <button ref={btn} className={`color-more ${pos ? 'on' : ''}`} onClick={() => (pos ? setPos(null) : open())} aria-label="More colours" aria-expanded={!!pos} title="More colours">
+        <Icon name="plus" size={11} />
+      </button>
+      {pos && (
+        <div ref={pop} className="color-pop" style={{ left: pos.left, top: pos.top }} role="dialog" aria-label="Colour palette">
+          <div className="color-grid">
+            {CHANNEL_PALETTE.map((c) => (
+              <button
+                key={c}
+                className={`color-cell ${c === lower ? 'on' : ''}`}
+                style={{ background: c }}
+                aria-label={`color ${c}`}
+                onClick={() => {
+                  onColor(c);
+                  setPos(null);
+                }}
+              />
+            ))}
+          </div>
+          <label className="color-custom">
+            <span>Any colour</span>
+            <input type="color" value={/^#[0-9a-f]{6}$/i.test(color) ? color : '#888888'} onChange={(e) => onColor(e.target.value)} aria-label="Pick any colour" />
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SoundTab() {
   const track = useSelectedTrack()!;
   const { project, updateTrack, setSong, duplicateTrack, removeTrack, checkpoint } = useStore();
@@ -327,17 +387,7 @@ function SoundTab() {
   return (
     <>
       <TextField className="track-title" value={track.name} onFocus={checkpoint} onValue={(name) => updateTrack(track.id, { name }, false)} />
-      <div className="row" style={{ gap: 6, marginBottom: 4 }}>
-        {TRACK_COLORS.map((c) => (
-          <button
-            key={c}
-            onClick={() => up({ color: c })}
-            className="stone"
-            style={{ background: c, border: 'none', cursor: 'pointer', width: 16, height: 13, outline: c === track.color ? '1.5px solid var(--ink)' : 'none', outlineOffset: 2 }}
-            aria-label={`color ${c}`}
-          />
-        ))}
-      </div>
+      <ColorRow color={track.color} onColor={(color) => up({ color })} />
       <div className="muted" style={{ fontSize: 11 }}>
         {glide ? 'continuous glide' : `${render.notes.length} ${drum ? 'hits' : 'notes'}`} · {keyLabel(project.song)}
       </div>
