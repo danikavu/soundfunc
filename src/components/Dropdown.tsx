@@ -37,7 +37,13 @@ export function Dropdown({ value, groups, footer, label, compact = false }: { va
 
   // keep the highlighted row in view
   useEffect(() => {
-    listRef.current?.querySelector<HTMLElement>(`[data-i="${hl}"]`)?.scrollIntoView({ block: 'nearest' });
+    // scroll the list itself — never the panel or the page behind it
+    const list = listRef.current;
+    const row = list?.querySelector<HTMLElement>(`[data-i="${hl}"]`);
+    if (!list || !row) return;
+    const lr = list.getBoundingClientRect(), rr = row.getBoundingClientRect();
+    if (rr.top < lr.top) list.scrollTop -= lr.top - rr.top;
+    else if (rr.bottom > lr.bottom) list.scrollTop += rr.bottom - lr.bottom;
   }, [hl]);
 
   const pick = (i: number) => {

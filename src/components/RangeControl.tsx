@@ -9,14 +9,27 @@ export function RangeControl() {
   const setSong = useStore((s) => s.setSong);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const pill = useRef<HTMLButtonElement>(null);
+  /** the box floats above every panel (fixed to the window), under its button and inside the screen */
+  const [place, setPlace] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
+  const W = 330;
+  const measure = () => {
+    const r = pill.current?.getBoundingClientRect();
+    if (!r) return;
+    const top = r.bottom + 6;
+    setPlace({ left: Math.min(Math.max(8, r.right - W), window.innerWidth - W - 8), top, maxHeight: Math.max(160, window.innerHeight - top - 10) });
+  };
 
   useEffect(() => {
     if (!open) return;
+    measure();
+    window.addEventListener('resize', measure);
     const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     window.addEventListener('mousedown', close);
     window.addEventListener('keydown', esc);
     return () => {
+      window.removeEventListener('resize', measure);
       window.removeEventListener('mousedown', close);
       window.removeEventListener('keydown', esc);
     };
@@ -31,11 +44,16 @@ export function RangeControl() {
 
   return (
     <div className="range-control" ref={ref}>
-      <button className={`range-pill ${range.mode === 'off' ? 'off' : ''}`} onClick={() => setOpen((o) => !o)} aria-expanded={open} title="Pitch range — keep notes where you can hear them">
+      <button ref={pill} className={`range-pill ${range.mode === 'off' ? 'off' : ''}`} onClick={() => setOpen((o) => !o)} aria-expanded={open} title="Pitch range — keep notes where you can hear them">
         <span className="eyebrow-label">Pitch</span> {summary}
       </button>
       {open && (
-        <div className="range-pop" role="dialog" aria-label="Pitch range">
+        <div
+          className="range-pop"
+          role="dialog"
+          aria-label="Pitch range"
+          style={place ? { position: 'fixed', left: place.left, top: place.top, right: 'auto', width: W, maxHeight: place.maxHeight, overflowY: 'auto' } : { visibility: 'hidden' }}
+        >
           <p className="muted">
             Functions can wander far — to −8373 or beyond. The range keeps every note you hear and export where it is musical. Drums are left as they are.
           </p>
