@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { exportMidi, exportNotesCsv } from '../engine/midi';
+import { exportMidi, exportNotesCsv, type MidiMode } from '../engine/midi';
 import { NOTE_NAMES, PROGRESSIONS, SCALE_GROUPS, SCALES, type ScaleGroup } from '../engine/music';
 import { tryCompile } from '../engine/expr';
 import { useStore } from '../state/store';
@@ -29,6 +29,25 @@ function Toast() {
   return msg ? <div className="toast">{msg}</div> : null;
 }
 
+/** the three MIDI files: plain notes, notes with automation (classic), notes with per-note automation (MPE) */
+const MIDI_EXPORTS: { mode: MidiMode; label: string; hint: string; suffix: string; done: string }[] = [
+  { mode: 'notes', label: 'MIDI — notes only', hint: 'Plain notes, tempo & key. Glides become stepped notes; no bends or controllers', suffix: '', done: 'MIDI (notes only)' },
+  {
+    mode: 'standard',
+    label: 'MIDI + automation',
+    hint: 'Classic: one MIDI channel per channel — glides and bends as pitch bend, volume as expression, pressure, CC74',
+    suffix: '-automation',
+    done: 'MIDI with automation',
+  },
+  {
+    mode: 'mpe',
+    label: 'MIDI + MPE automation',
+    hint: 'Each note on its own channel with its own bend, pressure and slide — for MPE instruments',
+    suffix: '-mpe',
+    done: 'MIDI with MPE automation',
+  },
+];
+
 function FileMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -55,24 +74,27 @@ function FileMenu() {
       </button>
       {open && (
         <div className="menu-pop">
-          <button
-            onClick={run(() => {
-              const stats = { raw: 0, kept: 0 };
-              download(`${name}.mid`, exportMidi(project, stats) as BlobPart, 'audio/midi');
-              const loops = `${project.song.exportLoops} loop${project.song.exportLoops > 1 ? 's' : ''}`;
-              toast(
-                stats.raw && project.song.exportCurves !== 'full'
-                  ? `Exported ${loops} as ${project.song.exportMidi === 'mpe' ? 'MPE ' : ''}MIDI · curves simplified: ${stats.raw.toLocaleString()} → ${stats.kept.toLocaleString()} points`
-                  : `Exported ${loops} as ${project.song.exportMidi === 'mpe' ? 'MPE ' : ''}MIDI`,
-              );
-            })}
-          >
-            MIDI file{' '}
-            <small>
-              {project.song.exportMidi === 'mpe' ? 'MPE — every note its own channel' : 'Multi-channel .mid with tempo & key'}
-              {project.song.exportCurves === 'full' ? ' · every curve sample' : ' · curves simplified'}
-            </small>
-          </button>
+          {MIDI_EXPORTS.map((x) => (
+            <button
+              key={x.mode}
+              onClick={run(() => {
+                const stats = { raw: 0, kept: 0 };
+                download(`${name}${x.suffix}.mid`, exportMidi(project, stats, x.mode) as BlobPart, 'audio/midi');
+                const loops = `${project.song.exportLoops} loop${project.song.exportLoops > 1 ? 's' : ''}`;
+                toast(
+                  stats.raw && project.song.exportCurves !== 'full'
+                    ? `Exported ${loops} as ${x.done} · curves simplified: ${stats.raw.toLocaleString()} → ${stats.kept.toLocaleString()} points`
+                    : `Exported ${loops} as ${x.done}`,
+                );
+              })}
+            >
+              {x.label}{' '}
+              <small>
+                {x.hint}
+                {x.mode !== 'notes' && (project.song.exportCurves === 'full' ? ' · every curve sample' : ' · curves simplified')}
+              </small>
+            </button>
+          ))}
           <button onClick={run(() => download(`${name}-notes.csv`, exportNotesCsv(project), 'text/csv'))}>
             Note data <small>CSV of pitch, velocity, key, timing</small>
           </button>

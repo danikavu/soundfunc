@@ -1285,6 +1285,23 @@ describe('curves on pitch & MPE', () => {
     const lowest = Math.min(...bends.map((e) => e.data[0] | (e.data[1] << 7)));
     expect(lowest).toBeLessThan(8192 - 8192 * (6 / 24)); // the dive reaches about a fifth down
   });
+  it('MIDI, notes only: no bends, pressure or controllers — glides become the notes they pass through', () => {
+    for (const id of ['riser', 'scooplead', 'bloomchords']) {
+      const [, tr] = readMidi(exportMidi(project(id, 'standard'), { raw: 0, kept: 0 }, 'notes'));
+      const kinds = new Set(tr.map((e) => e.status & 0xf0));
+      expect([...kinds].sort(), id).toEqual([0x80, 0x90, 0xc0]);
+    }
+    const whole = project('riser', 'standard');
+    const [, riser] = readMidi(exportMidi({ ...whole, song: { ...whole.song, lengthMode: 'free' } }, { raw: 0, kept: 0 }, 'notes'));
+    const pitches = riser.filter((e) => (e.status & 0xf0) === 0x90).map((e) => e.data[0]);
+    expect(pitches.length).toBeGreaterThan(8); // a two-octave climb, step by step
+    expect(pitches.every((m, i) => i === 0 || m >= pitches[i - 1])).toBe(true); // …always upward
+  });
+  it('the export menu’s mode wins over the saved setting', () => {
+    const p = project('bloomchords', 'standard');
+    const [, mpe] = readMidi(exportMidi(p, { raw: 0, kept: 0 }, 'mpe'));
+    expect(new Set(mpe.filter((e) => (e.status & 0xf0) === 0x90).map((e) => e.status & 0x0f)).size).toBeGreaterThan(1);
+  });
   it('a glide exported as MPE is one long note per phrase, not a retrigger every two octaves', () => {
     const [, mpe] = readMidi(exportMidi(project('riser', 'mpe')));
     const [, std] = readMidi(exportMidi(project('riser', 'standard')));

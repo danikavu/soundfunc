@@ -465,23 +465,6 @@ function SoundTab() {
       <div className="eyebrow">Export</div>
       <Slider label="Loops" value={project.song.exportLoops} min={1} max={32} step={1} format={(v) => `×${v}`} onChange={(exportLoops) => setSong({ exportLoops })} />
       <div className="row export-curves" style={{ gap: 8, marginTop: 10, alignItems: 'center' }}>
-        <span className="muted" style={{ fontSize: 11.5, width: 44 }}>MIDI</span>
-        <Seg<'standard' | 'mpe'>
-          value={project.song.exportMidi ?? 'standard'}
-          onChange={(exportMidi) => setSong({ exportMidi })}
-          options={[
-            { value: 'standard', label: 'Standard' },
-            { value: 'mpe', label: 'MPE' },
-          ]}
-        />
-        <Info>
-          MPE (MIDI Polyphonic Expression): every note gets its own MIDI channel — a 15-channel zone per SoundFunc channel, bending ±48 semitones — so
-          each note keeps its own bend, pressure and slide, chords included. Glides become one long note per phrase. Use it with MPE instruments
-          (Ableton’s MPE devices, Bitwig, Logic, Roli, Osmose…). Standard puts everything on one channel per SoundFunc channel: exact for one note at a
-          time, shared when notes overlap.
-        </Info>
-      </div>
-      <div className="row export-curves" style={{ gap: 8, marginTop: 8, alignItems: 'center' }}>
         <span className="muted" style={{ fontSize: 11.5, width: 44 }}>Curves</span>
         <Seg<'simple' | 'full'>
           value={project.song.exportCurves ?? 'simple'}
@@ -492,8 +475,9 @@ function SoundTab() {
           ]}
         />
         <Info>
-          Glides export as MIDI pitch bend and expression. Simplified keeps only the points that redraw each curve when a DAW joins them with straight
-          lines — corners stay, straight runs collapse to their two ends (within 3 cents of pitch). Every sample writes all of them, 16 per step.
+          For the two automation exports (Export → MIDI + automation, MIDI + MPE automation): glides and note bends go out as pitch bend, volume as
+          expression or pressure. Simplified keeps only the points that redraw each curve when a DAW joins them with straight lines — corners stay,
+          straight runs collapse to their two ends (within 3 cents of pitch). Every sample writes all of them, 16 per step.
         </Info>
       </div>
 

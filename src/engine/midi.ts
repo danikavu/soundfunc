@@ -342,7 +342,38 @@ function channelExpression(notes: Note[], ch: number, simplify: boolean, stats: 
   return evs;
 }
 
-export function exportMidi(project: Project, stats: CurveStats = { raw: 0, kept: 0 }): Uint8Array {
+/**
+ * What a MIDI file carries:
+ * - notes: notes only — glides become stepped notes, no bends or controllers
+ * - standard: notes plus automation on one channel per SoundFunc channel (pitch bend, expression, pressure, CC74)
+ * - mpe: notes plus per-note automation, each note on its own channel (MPE)
+ */
+export type MidiMode = 'notes' | 'standard' | 'mpe';
+
+/** a glide as plain notes: a new note each time the slide reaches another semitone, or after a rest */
+function glideAsNotes(points: GlidePoint[], total: number): Note[] {
+  const out: Note[] = [];
+  let cur: Note | null = null;
+  const close = (beat: number) => {
+    if (cur) cur.duration = Math.max(0.01, beat - cur.beat);
+    cur = null;
+  };
+  for (const p of points) {
+    if (p.velocity < 0.01) {
+      close(p.beat);
+      continue;
+    }
+    const midi = Math.round(p.midi);
+    if (cur && midi === cur.midi) continue;
+    close(p.beat);
+    cur = { step: 0, loop: 0, beat: p.beat, duration: 0, midi, name: '', freq: 0, velocity: p.velocity, raw: 0, tune: 0, key: '', h: 0 };
+    out.push(cur);
+  }
+  close(total);
+  return out;
+}
+
+export function exportMidi(project: Project, stats: CurveStats = { raw: 0, kept: 0 }, mode: MidiMode = project.song.exportMidi ?? 'standard'): Uint8Array {
   const { song } = project;
   const all = collectNotes(project);
   const total = exportBeats(project);
@@ -367,8 +398,19 @@ export function exportMidi(project: Project, stats: CurveStats = { raw: 0, kept:
     }
     const evs: Ev[] = [meta(0, 0x03, ascii(track.name))];
     const simplify = song.exportCurves !== 'full';
+    // notes only: no automation at all — a glide becomes the notes it passes through
+    if (mode === 'notes') {
+      if (!drum) evs.push({ tick: 0, order: 0, bytes: [0xc0 | ch, GM_PROGRAM[track.waveform] ?? 0] });
+      for (const n of [...notes, ...glideAsNotes(glide, total)]) {
+        const on = tick(n.beat);
+        const off = Math.max(on + 1, tick(n.beat + n.duration));
+        const vel = Math.max(1, Math.min(127, Math.round(n.velocity * 127)));
+        evs.push({ tick: on, order: 1, bytes: [0x90 | ch, n.midi, vel] }, { tick: off, order: 0, bytes: [0x80 | ch, n.midi, 0] });
+      }
+      return chunk(evs);
+    }
     // MPE: every note on its own channel of a 15-channel zone, with its own bend, pressure and slide
-    if (!drum && song.exportMidi === 'mpe') {
+    if (!drum && mode === 'mpe') {
       evs.push(...mpeEvents(GM_PROGRAM[track.waveform] ?? 0, notes, glide, total, simplify, stats));
       return chunk(evs);
     }
