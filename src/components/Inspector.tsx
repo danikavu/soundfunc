@@ -464,6 +464,21 @@ function SoundTab() {
 
       <div className="eyebrow">Export</div>
       <Slider label="Loops" value={project.song.exportLoops} min={1} max={32} step={1} format={(v) => `×${v}`} onChange={(exportLoops) => setSong({ exportLoops })} />
+      <div className="row export-curves" style={{ gap: 8, marginTop: 10, alignItems: 'center' }}>
+        <span className="muted" style={{ fontSize: 11.5 }}>Curves</span>
+        <Seg<'simple' | 'full'>
+          value={project.song.exportCurves ?? 'simple'}
+          onChange={(exportCurves) => setSong({ exportCurves })}
+          options={[
+            { value: 'simple', label: 'Simplified' },
+            { value: 'full', label: 'Every sample' },
+          ]}
+        />
+        <Info>
+          Glides export as MIDI pitch bend and expression. Simplified keeps only the points that redraw each curve when a DAW joins them with straight
+          lines — corners stay, straight runs collapse to their two ends (within 3 cents of pitch). Every sample writes all of them, 16 per step.
+        </Info>
+      </div>
 
       <div className="row" style={{ marginTop: 22, flexWrap: 'wrap' }}>
         <button className="btn small" onClick={() => duplicateTrack(track.id)}>

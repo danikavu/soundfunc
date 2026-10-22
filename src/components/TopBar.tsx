@@ -57,11 +57,17 @@ function FileMenu() {
         <div className="menu-pop">
           <button
             onClick={run(() => {
-              download(`${name}.mid`, exportMidi(project) as BlobPart, 'audio/midi');
-              toast(`Exported ${project.song.exportLoops} loop${project.song.exportLoops > 1 ? 's' : ''} as MIDI`);
+              const stats = { raw: 0, kept: 0 };
+              download(`${name}.mid`, exportMidi(project, stats) as BlobPart, 'audio/midi');
+              const loops = `${project.song.exportLoops} loop${project.song.exportLoops > 1 ? 's' : ''}`;
+              toast(
+                stats.raw && project.song.exportCurves !== 'full'
+                  ? `Exported ${loops} as MIDI · glide curves simplified: ${stats.raw.toLocaleString()} → ${stats.kept.toLocaleString()} points`
+                  : `Exported ${loops} as MIDI`,
+              );
             })}
           >
-            MIDI file <small>Multi-channel .mid with tempo & key</small>
+            MIDI file <small>Multi-channel .mid with tempo & key{project.song.exportCurves === 'full' ? ' · every curve sample' : ' · curves simplified'}</small>
           </button>
           <button onClick={run(() => download(`${name}-notes.csv`, exportNotesCsv(project), 'text/csv'))}>
             Note data <small>CSV of pitch, velocity, key, timing</small>

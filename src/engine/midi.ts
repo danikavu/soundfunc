@@ -106,7 +106,45 @@ export function exportBeats(project: Project): number {
 
 const tick = (beat: number) => Math.round(beat * PPQ);
 
-function glideEvents(points: GlidePoint[], ch: number, total: number): Ev[] {
+/** how far a simplified curve may stray from the real one: pitch in semitones, expression in CC steps */
+export const CURVE_TOLERANCE = { semis: 0.03, expr: 1.5 };
+
+/**
+ * The fewest points that redraw a curve when joined by straight lines (as DAWs draw
+ * automation), never straying more than `tol` from it — Ramer–Douglas–Peucker, measuring
+ * the vertical error at each sample. Corners always survive; straight runs collapse.
+ */
+export function simplifyCurve(xs: number[], ys: number[], tol: number): number[] {
+  const n = xs.length;
+  if (n <= 2) return xs.map((_, i) => i);
+  const keep = new Uint8Array(n);
+  keep[0] = keep[n - 1] = 1;
+  const stack: [number, number][] = [[0, n - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    let worst = -1, err = tol;
+    for (let i = a + 1; i < b; i++) {
+      const line = xs[b] === xs[a] ? ys[a] : ys[a] + ((ys[b] - ys[a]) * (xs[i] - xs[a])) / (xs[b] - xs[a]);
+      const e = Math.abs(ys[i] - line);
+      if (e > err) (err = e), (worst = i);
+    }
+    if (worst > 0) {
+      keep[worst] = 1;
+      stack.push([a, worst], [worst, b]);
+    }
+  }
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(i);
+  return out;
+}
+
+export interface CurveStats {
+  /** curve points (pitch bend + expression) before and after simplifying */
+  raw: number;
+  kept: number;
+}
+
+function glideEvents(points: GlidePoint[], ch: number, total: number, simplify: boolean, stats: CurveStats): Ev[] {
   const cc = (t: number, c: number, v: number): Ev => ({ tick: t, order: 0.5, bytes: [0xb0 | ch, c, v] });
   // RPN 0 = pitch-bend sensitivity, then null the RPN so later CC6 can't change it
   const evs: Ev[] = [cc(0, 101, 0), cc(0, 100, 0), cc(0, 6, BEND_RANGE), cc(0, 38, 0), cc(0, 101, 127), cc(0, 100, 127)];
@@ -122,31 +160,53 @@ function glideEvents(points: GlidePoint[], ch: number, total: number): Ev[] {
     evs.push({ tick: t, order: 0, bytes: [0x80 | ch, base, 0] });
     base = -1;
   };
+  // phrases: the stretches one note holds (between its note-on and note-off), each with its bend and expression samples
+  const phrases: { t: number[]; semis: number[]; expr: number[]; base: number; end: number | null }[] = [];
+  let cur: (typeof phrases)[number] | null = null;
   for (const p of points) {
     const t = tick(p.beat);
     if (p.velocity < 0.01) {
-      if (base >= 0) off(t);
+      if (cur) (cur.end = t), (cur = null);
       continue;
     }
     // retrigger when the slide wanders past the bend range
-    if (base >= 0 && Math.abs(p.midi - base) > BEND_RANGE - 1) off(t);
-    if (base < 0) {
-      base = Math.round(p.midi);
-      bend(t, p.midi - base);
-      evs.push({ tick: t, order: 1, bytes: [0x90 | ch, base, 100] });
-    } else bend(t, p.midi - base);
-    const expr = Math.round(p.velocity * 127);
-    if (Math.abs(expr - lastExpr) >= 2) {
-      lastExpr = expr;
-      evs.push(cc(t, 11, expr));
-    }
+    if (cur && Math.abs(p.midi - cur.base) > BEND_RANGE - 1) (cur.end = t), (cur = null);
+    if (!cur) phrases.push((cur = { t: [], semis: [], expr: [], base: Math.round(p.midi), end: null }));
+    cur.t.push(t);
+    cur.semis.push(p.midi - cur.base);
+    cur.expr.push(p.velocity * 127);
   }
-  if (base >= 0) off(tick(total));
+  for (const ph of phrases) {
+    base = ph.base;
+    const n = ph.t.length;
+    stats.raw += 2 * n;
+    // each curve keeps only the points that redraw it (or every sample, if asked)
+    const bi = simplify ? simplifyCurve(ph.t, ph.semis, CURVE_TOLERANCE.semis) : ph.t.map((_, i) => i);
+    const ei = simplify ? simplifyCurve(ph.t, ph.expr, CURVE_TOLERANCE.expr) : ph.t.map((_, i) => i);
+    bend(ph.t[0], ph.semis[0]);
+    evs.push({ tick: ph.t[0], order: 1, bytes: [0x90 | ch, base, 100] });
+    let kept = 0;
+    for (const i of bi) {
+      const before = lastBend;
+      bend(ph.t[i], ph.semis[i]);
+      if (lastBend !== before) kept++;
+    }
+    for (const i of ei) {
+      const expr = Math.round(ph.expr[i]);
+      if (simplify ? expr !== lastExpr : Math.abs(expr - lastExpr) >= 2) {
+        lastExpr = expr;
+        evs.push(cc(ph.t[i], 11, expr));
+        kept++;
+      }
+    }
+    stats.kept += kept;
+    off(ph.end ?? tick(total));
+  }
   evs.push({ tick: tick(total), order: 0.5, bytes: [0xe0 | ch, 0, 64] }); // bend back to centre
   return evs;
 }
 
-export function exportMidi(project: Project): Uint8Array {
+export function exportMidi(project: Project, stats: CurveStats = { raw: 0, kept: 0 }): Uint8Array {
   const { song } = project;
   const all = collectNotes(project);
   const total = exportBeats(project);
@@ -171,7 +231,7 @@ export function exportMidi(project: Project): Uint8Array {
     }
     const evs: Ev[] = [meta(0, 0x03, ascii(track.name))];
     if (!drum) evs.push({ tick: 0, order: 0, bytes: [0xc0 | ch, GM_PROGRAM[track.waveform] ?? 0] });
-    if (glide.length) evs.push(...glideEvents(glide, ch, total));
+    if (glide.length) evs.push(...glideEvents(glide, ch, total, song.exportCurves !== 'full', stats));
     for (const n of notes) {
       const on = tick(n.beat);
       const off = Math.max(on + 1, tick(n.beat + n.duration));

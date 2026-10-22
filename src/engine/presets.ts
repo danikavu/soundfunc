@@ -702,6 +702,129 @@ export const PRESETS: Preset[] = [
       ),
     },
   },
+  // ---------- drawn with Curve nodes: automation as music ----------
+  {
+    id: 'riser',
+    name: 'Riser',
+    description: 'A drawn Curve climbs two octaves — slow, then urgent — while a second one swells the volume. A build-up you can reshape by dragging.',
+    formula: 'pitch = 14 · bend(x, 0.6) · volume = bend(x, 0.5)',
+    track: {
+      waveform: 'sawtooth',
+      pitchMode: 'degree',
+      playMode: 'glide',
+      quantize: false,
+      glide: 0.02,
+      steps: 16,
+      stepBeats: 1,
+      octave: 3,
+      volume: 0.5,
+      attack: 0.05,
+      release: 0.4,
+      send: 0.6,
+      graph: graph(
+        [
+          ['time', 'step', 0, 80],
+          ['up', 'curve', 260, 0, { points: '0:0:0.6 1:1:0', repeats: 1, lo: 0, hi: 14 }],
+          ['vol', 'curve', 260, 300, { points: '0:0.2:0.5 1:1:0', repeats: 1, lo: 0, hi: 0.85 }],
+          ['out', 'output', OUT_X, 100],
+        ],
+        [
+          ['up', 'out', 'out', 'pitch'],
+          ['vol', 'out', 'out', 'velocity'],
+        ],
+      ),
+    },
+  },
+  {
+    id: 'pump',
+    name: 'Pumping Pad',
+    description: 'A pad on the song’s chord, ducked by a Curve on every beat — the sidechain pump, drawn instead of compressed.',
+    formula: 'pitch = h · volume = duck curve × 4 per loop',
+    track: {
+      waveform: 'pad',
+      pitchMode: 'degree',
+      playMode: 'glide',
+      quantize: true,
+      glide: 0.08,
+      steps: 16,
+      stepBeats: 0.25,
+      octave: 4,
+      volume: 0.6,
+      attack: 0.02,
+      release: 0.3,
+      send: 0.7,
+      graph: graph(
+        [
+          ['time', 'step', 0, 80],
+          ['p', 'expr', 260, 20, { formula: 'h + pick(floor(x * 2), 0, 2)' }],
+          ['duck', 'curve', 260, 200, { points: '0:0.1:0.7 0.9:1:0 1:0.1:0', repeats: 4, lo: 0, hi: 0.85 }],
+          ['out', 'output', OUT_X, 100],
+        ],
+        [
+          ['p', 'out', 'out', 'pitch'],
+          ['duck', 'out', 'out', 'velocity'],
+        ],
+      ),
+    },
+  },
+  {
+    id: 'drawn',
+    name: 'Drawn Melody',
+    description: 'A melody drawn as one Curve — rises, dips and leaps between seven corners — read as notes on the scale. Drag a corner to rewrite it.',
+    formula: 'pitch = −2 + 11 · curve(x)',
+    track: {
+      waveform: 'pluck',
+      pitchMode: 'degree',
+      steps: 16,
+      stepBeats: 0.25,
+      octave: 4,
+      volume: 0.7,
+      send: 0.45,
+      graph: graph(
+        [
+          ['time', 'step', 0, 80],
+          ['mel', 'curve', 260, 0, { points: '0:0.2:0 0.12:0.55:-0.4 0.3:0.35:0.3 0.45:0.9:-0.6 0.62:0.6:0 0.78:0.75:0.5 1:0.2:0', repeats: 1, lo: -2, hi: 9 }],
+          ['v', 'expr', 260, 260, { formula: '0.5 + 0.35 * every(n, 4) + 0.1 * every(n, 2)' }],
+          ['out', 'output', OUT_X, 100],
+        ],
+        [
+          ['mel', 'out', 'out', 'pitch'],
+          ['v', 'out', 'out', 'velocity'],
+        ],
+      ),
+    },
+  },
+  {
+    id: 'wobble',
+    name: 'Bent Wobble',
+    description: 'A Reese bass on the chord root, its volume cut by a bent Curve eight times a loop — the wobble, with a shape you can drag.',
+    formula: 'pitch = h · volume = bend(1 − u, −0.7), 8 per loop',
+    track: {
+      waveform: 'reese',
+      pitchMode: 'degree',
+      playMode: 'glide',
+      quantize: true,
+      glide: 0.05,
+      steps: 16,
+      stepBeats: 0.25,
+      octave: 2,
+      volume: 0.7,
+      release: 0.1,
+      send: 0.15,
+      graph: graph(
+        [
+          ['time', 'step', 0, 80],
+          ['p', 'expr', 260, 20, { formula: 'h' }],
+          ['wob', 'curve', 260, 200, { points: '0:1:-0.7 1:0.05:0', repeats: 8, lo: 0.1, hi: 0.9 }],
+          ['out', 'output', OUT_X, 100],
+        ],
+        [
+          ['p', 'out', 'out', 'pitch'],
+          ['wob', 'out', 'out', 'velocity'],
+        ],
+      ),
+    },
+  },
   {
     id: 'blank',
     name: 'Empty Track',
@@ -778,7 +901,49 @@ const AMEN = {
   snare: 'bits(pick(floor(n / 16), 0x0808, 0x0808, 0x0802, 0x0802), n) + 0.4 * bits(pick(floor(n / 16), 0x0141, 0x0141, 0x4140, 0x4140), n)',
 };
 
+/** the boom-bap kick: two bars as 16-bit masks — the second answers the first */
+const BOOM_KICK = 'bits(pick(floor(n / 16), 0x8120, 0x9024), n)';
+
 export const KITS: Kit[] = [
+  {
+    id: 'boombap',
+    name: 'Boom Bap',
+    description:
+      '90 bpm, head-nod hip-hop. A kick that skips around the backbeat, a fat snare with ghost notes, lazy swung hats, a sub that lands with the kick, and dusty 7th chords on the harmony — the keys breathe with a sidechain Curve.',
+    song: { bpm: 90, root: 9, scale: 'minor', harmony: 'pick(bar, 0, 5, 3, 4)' },
+    tracks: [
+      drum('Kick', 'kick', 32, `${BOOM_KICK} * (0.88 + 0.1 * rand(n + 32k, 3))`, { volume: 0.95, swing: 0.1 }),
+      drum('Snare', 'snare', 32, 'max(every(n, 8, 4), 0.28 * bits(pick(floor(n / 16), 0x0001, 0x0101), n))', { volume: 0.85, send: 0.22, swing: 0.1 }),
+      drum('Hats', 'hat', 32, 'every(n, 2) * (0.45 + 0.3 * every(n, 4) + 0.12 * rand(n + 32k, 5))', { swing: 0.16, volume: 0.5 }),
+      drum('Open hat', 'openhat', 32, 'n % 32 == 30 ? 0.42 : 0', { swing: 0.16, volume: 0.45 }),
+      voice('Sub', 'sine', 'h', `0.85 * ${BOOM_KICK}`, { length: 3 }, { octave: 2, steps: 32, volume: 0.75, attack: 0.005, release: 0.18, swing: 0.1, send: 0.05 }),
+      {
+        name: 'Keys',
+        waveform: 'bell',
+        steps: 32,
+        stepBeats: 0.25,
+        octave: 4,
+        volume: 0.5,
+        send: 0.6,
+        swing: 0.16,
+        attack: 0.01,
+        release: 0.9,
+        graph: wire(
+          {
+            pitch: ['expr', { formula: 'h' }],
+            hit: ['expr', { formula: 'bits(pick(floor(n / 16), 0x8202, 0x8020), n)' }],
+            duck: ['curve', { points: '0:0.5:0.6 0.9:1:0 1:0.5:0', repeats: 8, lo: 0, hi: 0.7 }],
+            v: ['math', { op: 'mul' }],
+            chord: ['number', { value: 4, min: 1, max: 8 }],
+            length: ['number', { value: 6, min: 0, max: 16 }],
+            strum: ['number', { value: 0.04, min: -0.5, max: 0.5 }],
+            out: ['output'],
+          },
+          ['pitch.out>out.pitch', 'hit.out>v.a', 'duck.out>v.b', 'v.out>out.velocity', 'chord.out>out.chord', 'length.out>out.length', 'strum.out>out.strum'],
+        ),
+      },
+    ],
+  },
   {
     id: 'dnb',
     name: 'Two-Step DnB',
@@ -913,7 +1078,7 @@ export function defaultProject(): Project {
   tracks[1].pan = 0.3;
   return {
     name: 'Untitled',
-    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', pitchRange: { ...DEFAULT_PITCH_RANGE }, lengthMode: 'fixed', lengthBeats: 8, repeat: 'evolve' },
+    song: { bpm: 84, root: 2, scale: 'hirajoshi', reverb: 0.35, exportLoops: 4, harmony: '0', pitchRange: { ...DEFAULT_PITCH_RANGE }, lengthMode: 'fixed', lengthBeats: 8, repeat: 'evolve', exportCurves: 'simple' },
     tracks,
   };
 }

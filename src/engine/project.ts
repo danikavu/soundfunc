@@ -124,6 +124,8 @@ export interface Song {
    * exact: every pass of the song starts the clock again, so it repeats note for note
    */
   repeat: RepeatMode;
+  /** MIDI export of glides: simplified (fewest points that redraw the curve) or every sample */
+  exportCurves: 'simple' | 'full';
 }
 
 export type RepeatMode = 'evolve' | 'exact';
@@ -141,7 +143,7 @@ export interface Slider {
 export const sliderNames = (track: Track) => (track.sliders ?? []).map((s) => s.name);
 export const sliderValues = (track: Track): Record<string, number> => Object.fromEntries((track.sliders ?? []).map((s) => [s.name, s.value]));
 
-export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16, repeat: 'evolve' };
+export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16, repeat: 'evolve', exportCurves: 'simple' };
 export const BEATS_PER_BAR = 4;
 
 const harmonyCache = new Map<string, Compiled | null>();

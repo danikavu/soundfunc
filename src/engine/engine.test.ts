@@ -7,7 +7,7 @@ import { compile, compileAst, parse } from './expr';
 import { compose, toSource, toTex, trackCode } from './symbolic';
 import { compileGraph, euclid, evalCurve, NODE_DEFS, parseCurve } from './graph';
 import { docFor } from './nodeDocs';
-import { exportMidi, collectNotes } from './midi';
+import { exportMidi, collectNotes, simplifyCurve, CURVE_TOLERANCE } from './midi';
 import { patternBeats, songWindows, stretchOf } from './project';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
 import { CHANNEL_PALETTE, KITS, PRESETS, defaultProject, pickColor, trackFromPreset, trackFromTemplate } from './presets';
@@ -1163,5 +1163,39 @@ describe('Curve node', () => {
       expect(q.y).toBeLessThanOrEqual(1);
       expect(Math.abs(q.b)).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe('exporting curves: simplified', () => {
+  const redraw = (xs: number[], ys: number[], keep: number[]) =>
+    xs.map((x) => {
+      let j = 0;
+      while (j < keep.length - 2 && xs[keep[j + 1]] <= x) j++;
+      const a = keep[j], b = keep[j + 1];
+      return xs[b] === xs[a] ? ys[a] : ys[a] + ((ys[b] - ys[a]) * (x - xs[a])) / (xs[b] - xs[a]);
+    });
+  it('a triangle needs only its three corners', () => {
+    const xs = Array.from({ length: 129 }, (_, i) => i);
+    const ys = xs.map((x) => (x <= 64 ? x / 64 : (128 - x) / 64));
+    expect(simplifyCurve(xs, ys, 0.001)).toEqual([0, 64, 128]);
+  });
+  it('a bent curve keeps enough points to stay within the tolerance — everywhere', () => {
+    const xs = Array.from({ length: 400 }, (_, i) => i);
+    const ys = xs.map((x) => 12 * ((Math.exp(3 * (x % 100) / 100) - 1) / (Math.exp(3) - 1)) + 2 * Math.sin(x / 13));
+    const keep = simplifyCurve(xs, ys, 0.03);
+    expect(keep.length).toBeLessThan(xs.length / 3);
+    const back = redraw(xs, ys, keep);
+    xs.forEach((_, i) => expect(Math.abs(back[i] - ys[i])).toBeLessThanOrEqual(0.03 + 1e-9));
+  });
+  it('the MIDI file shrinks; "every sample" keeps all of it', () => {
+    const p = defaultProject();
+    const riser = trackFromPreset(PRESETS.find((x) => x.id === 'riser')!, 0);
+    const project = { ...p, tracks: [riser] };
+    const simple = { raw: 0, kept: 0 }, full = { raw: 0, kept: 0 };
+    const a = exportMidi(project, simple);
+    const b = exportMidi({ ...project, song: { ...project.song, exportCurves: 'full' } }, full);
+    expect(simple.kept).toBeLessThan(simple.raw / 5);
+    expect(a.length).toBeLessThan(b.length / 3);
+    expect(CURVE_TOLERANCE.semis).toBeLessThanOrEqual(0.05);
   });
 });
