@@ -139,6 +139,7 @@ export const FUNCTIONS: Record<string, { fn: (...a: number[]) => number; doc: st
   ceil: { fn: Math.ceil, doc: 'round up' },
   round: { fn: Math.round, doc: 'round to nearest' },
   fract: { fn: fract, doc: 'fractional part' },
+  bend: { fn: (t, b) => bendCurve(t, b), doc: 'bend(t, b): t (0 → 1) bent like an automation curve — b > 0 starts slow, b < 0 starts fast, 0 is straight' },
   sqrt: { fn: Math.sqrt, doc: 'square root' },
   exp: { fn: Math.exp, doc: 'e^x' },
   log: { fn: Math.log, doc: 'natural log' },
@@ -545,4 +546,13 @@ export function tryCompile(src: string, allowedVars?: readonly string[]): { fn: 
   } catch (e) {
     return { fn: null, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * An automation-style bend of t ∈ [0, 1]: (e^(c·t) − 1) / (e^c − 1) with c = 6·b.
+ * b = 0 is a straight line; b > 0 eases in (slow start), b < 0 eases out (fast start).
+ */
+export function bendCurve(t: number, b: number): number {
+  const c = 6 * b;
+  return Math.abs(c) < 1e-6 ? t : (Math.exp(c * t) - 1) / (Math.exp(c) - 1);
 }

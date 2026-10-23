@@ -1,4 +1,4 @@
-import { compile, euclid, FUNCTIONS, CONSTANTS } from './expr';
+import { bendCurve, compile, euclid, FUNCTIONS, CONSTANTS } from './expr';
 
 export { euclid };
 
@@ -21,6 +21,8 @@ export interface StepCtx {
   L: number;
   /** beats since the song started (loop k included) */
   beat: number;
+  /** note phase: 0 → 1 across the note that is sounding (0 at a step's start) — for per-note bends */
+  np: number;
   /** the song's sliders, by name */
   vars: Record<string, number>;
 }
@@ -58,7 +60,9 @@ export type ParamDef =
   | { key: string; label: string; kind: 'number'; min?: number; max?: number; step?: number }
   | { key: string; label: string; kind: 'select'; options: { value: string; label: string }[] }
   | { key: string; label: string; kind: 'formula' }
-  | { key: string; label: string; kind: 'text'; placeholder?: string };
+  | { key: string; label: string; kind: 'text'; placeholder?: string }
+  /** breakpoints with bendable segments, edited by drawing */
+  | { key: string; label: string; kind: 'curve' };
 
 export type Category = 'source' | 'math' | 'wave' | 'series' | 'rhythm' | 'form' | 'output';
 
@@ -159,7 +163,7 @@ export function parseList(src: string): number[] {
 }
 
 
-export const ctxVars = ['n', 'x', 't', 'k', 'steps', 'h', 'bar', 'L', 'beat'] as const;
+export const ctxVars = ['n', 'x', 't', 'k', 'steps', 'h', 'bar', 'L', 'beat', 'np'] as const;
 
 export const NODE_DEFS: Record<string, NodeDef> = {
   step: {
@@ -176,9 +180,10 @@ export const NODE_DEFS: Record<string, NodeDef> = {
       { id: 'k', label: 'k loop' },
       { id: 'h', label: 'h chord' },
       { id: 'bar', label: 'bar' },
+      { id: 'np', label: 'np note' },
     ],
     params: [],
-    build: () => (_i, c) => [c.n, c.x, c.t, c.k, c.h, c.bar],
+    build: () => (_i, c) => [c.n, c.x, c.t, c.k, c.h, c.bar, c.np ?? 0],
   },
   number: {
     type: 'number',
@@ -213,6 +218,7 @@ export const NODE_DEFS: Record<string, NodeDef> = {
       return (ins, c) => {
         for (const s of sliders) scope[s] = c.vars[s] ?? 0;
         scope.beat = c.beat;
+        scope.np = c.np ?? 0;
         scope.a = ins[0];
         scope.b = ins[1];
         scope.c = ins[2];
@@ -364,6 +370,29 @@ export const NODE_DEFS: Record<string, NodeDef> = {
       return (ins) => [pat.length ? pat[FUNCTIONS.mod.fn(Math.floor(ins[0]) + r, pat.length)] : 0];
     },
   },
+  curve: {
+    type: 'curve',
+    label: 'Curve',
+    category: 'wave',
+    hint: 'Breakpoints joined by bendable segments — automation, envelopes, swells, ducks',
+    defaults: { points: '0:0:0 1:1:0', repeats: 1, lo: 0, hi: 1 },
+    inputs: [{ id: 'p', label: 'phase', fallback: (c) => c.x }],
+    outputs: [{ id: 'out', label: 'out' }],
+    params: [
+      { key: 'points', label: 'curve', kind: 'curve' },
+      { key: 'repeats', label: 'repeats', kind: 'number', step: 1, min: 1 },
+      { key: 'lo', label: 'bottom', kind: 'number', step: 0.5 },
+      { key: 'hi', label: 'top', kind: 'number', step: 0.5 },
+    ],
+    build: (d) => {
+      const pts = parseCurve(String(d.points ?? ''));
+      const rep = curveRepeats(d), lo = num(d.lo), hi = num(d.hi, 1);
+      return (ins) => {
+        const u = ins[0] * rep;
+        return [lo + (hi - lo) * evalCurve(pts, u - Math.floor(u))];
+      };
+    },
+  },
   list: {
     type: 'list',
     label: 'Steps',
@@ -488,6 +517,10 @@ export const NODE_DEFS: Record<string, NodeDef> = {
       { id: 'stack', label: 'stack', fallback: 2 },
       { id: 'inversion', label: 'inversion', fallback: 0 },
       { id: 'strum', label: 'strum', fallback: 0 },
+      // per-note expression, read continuously while each note sounds (MPE's three dimensions)
+      { id: 'bend', label: 'bend', fallback: 0 },
+      { id: 'pressure', label: 'pressure', fallback: 1 },
+      { id: 'slide', label: 'slide', fallback: 0.5 },
     ],
     outputs: [],
     params: [],
@@ -517,12 +550,20 @@ export interface StepOutput {
   stack: number;
   inversion: number;
   strum: number;
+  /** semitones added to the note while it sounds */
+  bend: number;
+  /** 0 → 1: how hard the note is held while it sounds */
+  pressure: number;
+  /** 0 → 1: MPE's timbre axis (CC74) */
+  slide: number;
 }
 
 export interface GraphProgram {
   /** evaluate one step; also fills `trace` if provided */
   run: (ctx: StepCtx, trace?: Map<string, number[]>) => StepOutput | null;
   errors: Map<string, string>;
+  /** which per-note expression inputs of Note Out are wired (only those are sampled inside notes) */
+  expression: { bend: boolean; pressure: boolean; slide: boolean };
 }
 
 export function compileGraph(graph: Graph, sliders: readonly string[] = []): GraphProgram {
@@ -583,9 +624,11 @@ export function compileGraph(graph: Graph, sliders: readonly string[] = []): Gra
 
   const outputNode = steps.find((s) => s.def.type === 'output');
   const values = new Map<string, number[]>();
+  const wiredIn = (port: string) => !!outputNode && (incoming.get(outputNode.node.id) ?? []).some((e) => e.targetHandle === port);
 
   return {
     errors,
+    expression: { bend: wiredIn('bend'), pressure: wiredIn('pressure'), slide: wiredIn('slide') },
     run(ctx, trace) {
       values.clear();
       for (const s of steps) {
@@ -612,7 +655,51 @@ export function compileGraph(graph: Graph, sliders: readonly string[] = []): Gra
       }
       if (!outputNode) return null;
       const o = values.get(outputNode.node.id)!;
-      return { pitch: o[0], velocity: o[1], length: o[2], shift: o[3], ratchet: o[4], chord: o[5], stack: o[6], inversion: o[7], strum: o[8] };
+      return { pitch: o[0], velocity: o[1], length: o[2], shift: o[3], ratchet: o[4], chord: o[5], stack: o[6], inversion: o[7], strum: o[8], bend: o[9], pressure: o[10], slide: o[11] };
     },
   };
+}
+
+// ---------- curves: breakpoints and bends ----------
+
+/** one breakpoint: where (0 → 1 across a repeat), how high (0 → 1 between bottom and top), and the bend of the segment that follows */
+export interface CurvePoint {
+  x: number;
+  y: number;
+  b: number;
+}
+
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+const r4 = (v: number) => Math.round(v * 10000) / 10000;
+
+/** "0:0:0 0.5:1:0.4 1:0:0" → points, sorted by x */
+export function parseCurve(src: string): CurvePoint[] {
+  const pts = src
+    .trim()
+    .split(/[\s,;]+/)
+    .filter(Boolean)
+    .map((tok) => {
+      const [x, y, b] = tok.split(':').map(Number);
+      return { x: clamp01(Number.isFinite(x) ? x : 0), y: clamp01(Number.isFinite(y) ? y : 0), b: Math.max(-1, Math.min(1, Number.isFinite(b) ? b : 0)) };
+    })
+    .sort((a, c) => a.x - c.x);
+  return pts.length ? pts : [{ x: 0, y: 0, b: 0 }, { x: 1, y: 1, b: 0 }];
+}
+
+export const formatCurve = (pts: CurvePoint[]) => [...pts].sort((a, c) => a.x - c.x).map((p) => `${r4(p.x)}:${r4(p.y)}:${r4(p.b)}`).join(' ');
+
+export const curveRepeats = (d: NodeData) => Math.max(1, Math.round(num(d.repeats, 1)));
+
+/** the curve's height (0 → 1) at u ∈ [0, 1): flat before the first point and after the last */
+export function evalCurve(pts: CurvePoint[], u: number): number {
+  if (!pts.length) return 0;
+  if (u < pts[0].x) return pts[0].y;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], c = pts[i + 1];
+    if (u < c.x) {
+      const dx = c.x - a.x;
+      return dx <= 0 ? c.y : a.y + (c.y - a.y) * bendCurve((u - a.x) / dx, a.b);
+    }
+  }
+  return pts[pts.length - 1].y;
 }

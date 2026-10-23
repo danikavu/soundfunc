@@ -1,5 +1,5 @@
 import { midiToFreq } from './music';
-import { audibleTracks, isDrum, patternBeats, renderTrack, songBeats, songWindows, type Project, type Track, type TrackRender } from './project';
+import { audibleTracks, isDrum, patternBeats, renderTrack, songBeats, songWindows, type Note, type Project, type Track, type TrackRender } from './project';
 import { timbreHarmonics } from './timbre';
 
 const LOOKAHEAD_SEC = 0.12;
@@ -216,7 +216,7 @@ export class AudioEngine {
             const beat = k * len + note.beat;
             if (beat < w.from || beat >= w.to) continue;
             const freq = isDrum(track.waveform) ? Math.pow(2, note.tune / 12) : note.freq;
-            this.voice(track, bus, this.timeAt(w.base + beat), note.duration * secPerBeat, freq, note.velocity);
+            this.voice(track, bus, this.timeAt(w.base + beat), note.duration * secPerBeat, freq, note.velocity, voiceExpr(note, secPerBeat));
           }
         }
       }
@@ -482,23 +482,34 @@ export class AudioEngine {
 
   // ---------- melodic voices ----------
 
-  private voice(track: Track, bus: Bus, when: number, dur: number, freq: number, vel: number) {
+  private voice(track: Track, bus: Bus, when: number, dur: number, freq: number, vel: number, expr?: VoiceExpr) {
     if (isDrum(track.waveform)) return this.drum(track, bus.gain, when, dur, freq, vel);
     const ctx = this.ctx!;
     const amp = ctx.createGain();
-    amp.connect(bus.gain);
+    // pressure: a second gain after the envelope, following the note's pressure curve
+    let press: GainNode | null = null;
+    if (expr?.pressure) {
+      press = ctx.createGain();
+      press.connect(bus.gain);
+      amp.connect(press);
+      press.gain.setValueAtTime(expr.pressure[0], when);
+      for (let i = 1; i < expr.at.length; i++) press.gain.linearRampToValueAtTime(expr.pressure[i], when + expr.at[i]);
+    } else amp.connect(bus.gain);
+    /** oscillators that sound at the note's pitch — these follow the bend (an LFO doesn't) */
+    const pitched: OscillatorNode[] = [];
     const peak = 0.32 * vel;
     const a = Math.max(0.003, track.attack);
     const r = Math.max(0.02, track.release);
     const nodes: AudioScheduledSourceNode[] = [];
     let end = when + dur + r;
 
-    const osc = (type: OscillatorType, f: number, detune = 0) => {
+    const osc = (type: OscillatorType, f: number, detune = 0, followsPitch = true) => {
       const o = ctx.createOscillator();
       o.type = type;
       o.frequency.value = f;
       o.detune.value = detune;
       nodes.push(o);
+      if (followsPitch) pitched.push(o);
       return o;
     };
     const lowpass = (f: number, q = 0.7) => {
@@ -592,7 +603,7 @@ export class AudioEngine {
         h.gain.value = 0.12;
         o2.connect(h).connect(amp);
         // vibrato that blooms in
-        const lfo = osc('sine', 5.2);
+        const lfo = osc('sine', 5.2, 0, false);
         const depth = ctx.createGain();
         depth.gain.setValueAtTime(0, when);
         depth.gain.linearRampToValueAtTime(freq * 0.006, when + 0.4);
@@ -630,12 +641,36 @@ export class AudioEngine {
       }
     }
 
+    // bend: every pitched oscillator's detune follows the note's bend curve (in cents)
+    if (expr?.bend) {
+      for (const o of pitched) {
+        const base = o.detune.value;
+        o.detune.setValueAtTime(base + expr.bend[0] * 100, when);
+        for (let i = 1; i < expr.at.length; i++) o.detune.linearRampToValueAtTime(base + expr.bend[i] * 100, when + expr.at[i]);
+      }
+    }
     for (const n of nodes) {
       n.start(when);
       n.stop(end + 0.05);
     }
-    nodes[0].onended = () => amp.disconnect();
+    nodes[0].onended = () => (amp.disconnect(), press?.disconnect());
   }
 }
 
 export const engine = new AudioEngine();
+
+/** a note's bend and pressure for one voice, times in seconds from its start (only what is wired) */
+interface VoiceExpr {
+  at: number[];
+  bend?: number[];
+  pressure?: number[];
+}
+
+function voiceExpr(note: Note, secPerBeat: number): VoiceExpr | undefined {
+  const e = note.expr;
+  if (!e || !e.at.length) return undefined;
+  const bends = e.bend.some((b) => b !== 0);
+  const presses = e.pressure.some((p) => p !== 1);
+  if (!bends && !presses) return undefined;
+  return { at: e.at.map((a) => a * secPerBeat), bend: bends ? e.bend : undefined, pressure: presses ? e.pressure : undefined };
+}

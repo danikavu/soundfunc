@@ -14,6 +14,7 @@ export const NODE_VARS: Record<string, string> = {
   bar: 'bar number',
   L: 'scale degrees per octave',
   steps: 'loop length in steps',
+  np: 'note phase: 0 → 1 across the sounding note (for bends)',
   a: 'input a',
   b: 'input b',
   c: 'input c',

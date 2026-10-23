@@ -11,6 +11,7 @@ export const NODE_DOCS: Record<string, string> = {
   'step.k': 'k — the loop count: 0 the first time round, then 1, 2, 3… — use it to change each pass',
   'step.h': 'h — the chord the song’s Harmony is on right now, as a scale degree (0 = the key’s root)',
   'step.bar': 'bar — the bar number since the song began (4 beats per bar)',
+  'step.np': 'np — note phase: 0 when a note starts, 1 when it ends. Wire it into a Curve’s phase and the curve plays once per note — scoops, falls, vibrato that restart on every note',
 
   'number.out': 'The number you set',
   'number.value': 'A constant — drag the slider or type a value',
@@ -66,6 +67,14 @@ export const NODE_DOCS: Record<string, string> = {
   'pattern.rotate': 'Shift the pattern by this many steps',
   'pattern.out': 'The velocity for this step',
 
+  'curve.p': 'phase — where along the curve (the loop’s progress x, if nothing is wired in)',
+  'curve.points':
+    'Points sit on the corners; the lines between them bend. Click to add a point (it snaps to 1/16 — hold Shift to place it freely), drag a point to move it, drag a line up or down to bend it, double-click a point to remove it',
+  'curve.repeats': 'How many times the shape plays across the loop — draw it once, repeat it (4 = every bar of a 4-bar loop)',
+  'curve.lo': 'The value at the bottom of the box',
+  'curve.hi': 'The value at the top of the box',
+  'curve.out': 'The curve’s value, between bottom and top',
+
   'list.n': 'Which step (the step n, if nothing is wired in)',
   'list.values': 'The values to step through, in order — then round again',
   'list.every': 'Hold each value for this many steps',
@@ -100,6 +109,9 @@ export const NODE_DOCS: Record<string, string> = {
   'output.chord': 'chord — how many notes to stack (1 = a single note, 3 = a triad, 4 = a seventh chord)',
   'output.stack': 'stack — scale steps between chord notes: 2 = thirds (ordinary chords), 3 = fourths (open, modal), 1 = clusters',
   'output.inversion': 'inversion — lift the lowest chord notes an octave (0, 1, 2…) so the voicing changes shape',
+  'output.bend': 'bend — semitones added to each note while it sounds, read continuously: scoops, falls, vibrato, 808 slides. Chords bend together. Exports per note with MPE',
+  'output.pressure': 'pressure — how hard each note is held, 0 … 1, while it sounds: swells and fades inside a note. Exports as MPE pressure',
+  'output.slide': 'slide — MPE’s timbre axis (CC74), 0 … 1, while each note sounds. SoundFunc’s own voices ignore it; MPE synths use it for brightness',
   'output.strum': 'strum — spread the chord’s notes in time, in steps (0.05 = a quick strum; negative strums downward)',
 };
 

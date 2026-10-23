@@ -4,7 +4,8 @@ import { NODE_DEFS, sectionLengths, type Category, type NodeData, type ParamDef 
 import { useStore } from '../state/store';
 import { Icon, NumberField, TextField } from './ui';
 import { FormulaEditor, NODE_VARS } from './FormulaEditor';
-import { explodeFormula } from '../engine/graphEdit';
+import { curveToFormula, explodeFormula } from '../engine/graphEdit';
+import { CurveEditor } from './CurveEditor';
 import { toast } from './TopBar';
 import { docFor } from '../engine/nodeDocs';
 import type { Slider } from '../engine/project';
@@ -66,7 +67,8 @@ function NodeFormula(props: { value: string; onValue: (v: string) => void; onFoc
   return <FormulaEditor {...props} vars={vars} sliders={trackId || undefined} />;
 }
 
-function Param({ p, data, onChange, onFocus, doc }: { p: ParamDef; data: NodeData; onChange: (patch: NodeData) => void; onFocus: () => void; doc?: string }) {
+function Param({ p, data, onChange, onFocus, doc, color = 'currentColor' }: { p: ParamDef; data: NodeData; onChange: (patch: NodeData) => void; onFocus: () => void; doc?: string; color?: string }) {
+  if (p.kind === 'curve') return <CurveEditor value={String(data[p.key] ?? '')} onChange={(v) => onChange({ [p.key]: v })} onStart={onFocus} color={color} />;
   if (p.kind === 'formula') return <NodeFormula value={String(data[p.key] ?? '')} onValue={(v) => onChange({ [p.key]: v })} onFocus={onFocus} />;
   if (p.kind === 'text') {
     return (
@@ -229,6 +231,18 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
             <Icon name="split" size={12} />
           </button>
         )}
+        {type === 'curve' && (
+          <button
+            className="lock nodrag"
+            title="Write as a formula: replace this curve with a Formula node holding the same function"
+            onClick={() => {
+              const err = applyGraphEdit(ctx.trackId, (g) => curveToFormula(g, id));
+              if (err) toast(err);
+            }}
+          >
+            <Icon name="split" size={12} />
+          </button>
+        )}
         {def.params.length > 0 && (
           <button
             className="lock nodrag dice"
@@ -284,7 +298,7 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
         )}
         {type === 'sections' && <Timeline data={d} />}
         {def.params.map((p) => (
-          <Param key={p.key} p={p} data={d} onChange={onChange} onFocus={checkpoint} doc={docFor(type, p.key)} />
+          <Param key={p.key} p={p} data={d} onChange={onChange} onFocus={checkpoint} doc={docFor(type, p.key)} color={color} />
         ))}
         {/* formula nodes already show their own parse error under the text box */}
         {error && type !== 'expr' && <div className="fnode-error">{error}</div>}
@@ -298,7 +312,7 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
             ))}
           </div>
         )}
-        {type !== 'step' && <Sparkline values={trace} color={color} gates={def.category === 'rhythm'} />}
+        {type !== 'step' && type !== 'curve' && <Sparkline values={trace} color={color} gates={def.category === 'rhythm'} />}
       </div>
     </div>
   );

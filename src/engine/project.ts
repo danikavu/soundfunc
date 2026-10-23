@@ -124,6 +124,17 @@ export interface Song {
    * exact: every pass of the song starts the clock again, so it repeats note for note
    */
   repeat: RepeatMode;
+  /** MIDI export of glides: simplified (fewest points that redraw the curve) or every sample */
+  exportCurves: 'simple' | 'full';
+  /** MIDI export: standard channels, or MPE — each note on its own channel with its own bend, pressure and slide */
+  exportMidi: 'standard' | 'mpe';
+  /**
+   * pitch-bend range written into exports, in semitones: a MIDI file only carries −8192…8191,
+   * the receiving instrument decides what that spans — so this must match its setting
+   */
+  bendRange: number;
+  /** the same for MPE exports (MPE's default is 48) */
+  mpeBendRange: number;
 }
 
 export type RepeatMode = 'evolve' | 'exact';
@@ -141,7 +152,7 @@ export interface Slider {
 export const sliderNames = (track: Track) => (track.sliders ?? []).map((s) => s.name);
 export const sliderValues = (track: Track): Record<string, number> => Object.fromEntries((track.sliders ?? []).map((s) => [s.name, s.value]));
 
-export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16, repeat: 'evolve' };
+export const SONG_DEFAULTS: Song = { bpm: 90, root: 0, scale: 'major', reverb: 0.3, exportLoops: 4, harmony: '0', pitchRange: DEFAULT_PITCH_RANGE, lengthMode: 'fixed', lengthBeats: 16, repeat: 'evolve', exportCurves: 'simple', exportMidi: 'standard', bendRange: 24, mpeBendRange: 48 };
 export const BEATS_PER_BAR = 4;
 
 const harmonyCache = new Map<string, Compiled | null>();
@@ -242,6 +253,19 @@ export interface Note {
   key: string;
   /** the song's chord (scale degree) when this note starts */
   h: number;
+  /** per-note expression while it sounds (only when Note Out's bend / pressure / slide are wired) — shared by a chord's notes */
+  expr?: NoteExpr;
+}
+
+/** a note's expression over its life: times in beats from the note's start */
+export interface NoteExpr {
+  at: number[];
+  /** semitones */
+  bend: number[];
+  /** 0 → 1 */
+  pressure: number[];
+  /** 0 → 1 */
+  slide: number[];
 }
 
 /** A finely sampled view of the function — drives glide voices and the x/y plot. */
@@ -292,10 +316,28 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
   /** a step's length in real beats — the grid's, stretched */
   const sb = track.stepBeats * stretchOf(track);
   /** clock for a (possibly fractional) step position u: the function's own time t, and the song's real beat */
-  const clock = (u: number) => {
+  const clock = (u: number, np = 0) => {
     const t = u * track.stepBeats;
     const beat = loopBeat + u * sb;
-    return { n: Math.floor(u), x: u / track.steps, t, k: loop, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), L, beat, vars };
+    return { n: Math.floor(u), x: u / track.steps, t, k: loop, steps: track.steps, h: harmonyAt(song, beat), bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), L, beat, vars, np };
+  };
+  const { expression } = program;
+  const expressive = expression.bend || expression.pressure || expression.slide;
+  /** sample a note's expression across its life: 16 times a step, np running 0 → 1 */
+  const noteExpr = (u0: number, lenSteps: number): NoteExpr => {
+    const count = Math.max(2, Math.min(256, Math.ceil(lenSteps * 16) + 1));
+    const e: NoteExpr = { at: [], bend: [], pressure: [], slide: [] };
+    for (let i = 0; i < count; i++) {
+      // np runs 0 → 1 but never reaches it: shapes that repeat (fract) would wrap back to their start at the note's last instant
+      const np = (i / (count - 1)) * (1 - 1e-9);
+      const o = program.run(clock(u0 + np * lenSteps, np));
+      if (!o) break;
+      e.at.push(np * lenSteps * sb);
+      e.bend.push(clamp(o.bend, -48, 48));
+      e.pressure.push(clamp(o.pressure, 0, 1));
+      e.slide.push(clamp(o.slide, 0, 1));
+    }
+    return e;
   };
 
   for (let n = 0; n < track.steps; n++) {
@@ -325,6 +367,9 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
     const shift = clamp(clamp(out.shift, 0, 0.95) + (n % 2 === 1 ? track.swing : 0), 0, 0.95);
     const len = clamp(out.length, 0.05, 64);
     for (let r = 0; r < ratchet; r++) {
+      // one expression per strike, shared by the chord's notes
+      const u0 = n + Math.min(0.97, shift) + r / ratchet;
+      const expr = expressive ? noteExpr(u0, ratchet > 1 ? 0.9 / ratchet : Math.max(0.05, len)) : undefined;
       tones.forEach((midi, i) => {
         // negative strum rolls the chord downward
         const roll = (strum >= 0 ? i : tones.length - 1 - i) * Math.abs(strum);
@@ -341,6 +386,7 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
           tune,
           key,
           h: ctx.h,
+          expr,
         });
       });
     }
@@ -352,14 +398,16 @@ export function renderTrack(track: Track, song: Song, loop = 0, withTraces = tru
   if (hasOutput) {
     for (let i = 0; i < track.steps * res; i++) {
       const u = i / res;
-      const out = program.run(clock(u))!;
+      // a glide is one long note: np is the phase within each step, and bend / pressure shape the slide itself
+      const out = program.run(clock(u, u - Math.floor(u)))!;
       curve.beat.push(u * sb);
       curve.raw.push(out.pitch);
-      curve.velocity.push(clamp(out.velocity, 0, 1));
+      curve.velocity.push(clamp(out.velocity, 0, 1) * (glide && expression.pressure ? clamp(out.pressure, 0, 1) : 1));
       curve.midi.push(
         drum
           ? drum.gm + clamp(out.pitch, -24, 24)
-          : limitPitch(valueToPitch(out.pitch, track.pitchMode, song.root, song.scale, track.octave, !glide || track.quantize, false), song.pitchRange ?? DEFAULT_PITCH_RANGE),
+          : limitPitch(valueToPitch(out.pitch, track.pitchMode, song.root, song.scale, track.octave, !glide || track.quantize, false), song.pitchRange ?? DEFAULT_PITCH_RANGE) +
+              (glide && expression.bend ? clamp(out.bend, -48, 48) : 0),
       );
     }
   }
