@@ -9,6 +9,7 @@ import { toast } from './TopBar';
 import { Icon, NumberField, Seg, TextField } from './ui';
 import { Tex, useKatex } from './tex';
 import { StepPicker } from './StepPicker';
+import { fixedLengthFor, shortBeats } from '../engine/steps';
 
 type XMeans = 'beats' | 'steps' | 'loop';
 type YMeans = 'octaves' | 'semitones' | 'degrees';
@@ -38,6 +39,9 @@ export function ImportSheet() {
   const [timeChoice, setTimeChoice] = useState<string | null>(null);
   /** slider starting values the user typed, by name */
   const [paramEdits, setParamEdits] = useState<Record<string, number>>({});
+  /** when the function's length isn't the song's: free (each channel loops on its own), grow the song, or fit the song */
+  const [fit, setFit] = useState<'free' | 'grow' | 'song'>('free');
+  const song = useStore((s) => s.project.song);
   const katex = useKatex(open);
 
   useEffect(() => {
@@ -74,7 +78,15 @@ export function ImportSheet() {
   };
   const toSf = (a: Ast) => simplify(substitute(a, { t: timeAst() }));
 
-  // sample the function across the chosen length, for the plot
+  // what will be heard: the channel's own length, unless the song's fixed Length decides
+  const steps = Math.max(1, Math.min(1024, Math.round(length / stepBeats)));
+  const ownLength = steps * stepBeats;
+  const songFixed = song.lengthMode !== 'free';
+  const mismatch = songFixed && Math.abs(ownLength - song.lengthBeats) > 1e-6;
+  const grown = fixedLengthFor(ownLength);
+  const heard = !mismatch || fit === 'free' ? ownLength : fit === 'grow' ? grown : song.lengthBeats;
+
+  // sample the function across exactly what the channel will play, for the plot
   const plot = useMemo(() => {
     const r = parsed.ok;
     if (!r) return null;
@@ -83,7 +95,7 @@ export function ImportSheet() {
     const pts: (number | null)[] = [];
     let lo = Infinity, hi = -Infinity;
     for (let i = 0; i < N; i++) {
-      const beats = (i / N) * length;
+      const beats = (i / N) * heard;
       const x = xStart + (xMeans === 'beats' ? beats : xMeans === 'steps' ? beats / stepBeats : i / N);
       const scope = { ...paramScope, t: x };
       const y = g(scope) ? v(scope) : NaN;
@@ -95,11 +107,9 @@ export function ImportSheet() {
     if (!Number.isFinite(lo)) return { pts, lo: -1, hi: 1, silent: true };
     if (hi - lo < 1e-9) (lo -= 1), (hi += 1);
     return { pts, lo, hi, silent: false };
-  }, [parsed.ok, length, xMeans, stepBeats, xStart, paramScope]);
+  }, [parsed.ok, heard, xMeans, stepBeats, xStart, paramScope]);
 
   if (!open) return null;
-
-  const steps = Math.max(1, Math.min(1024, Math.round(length / stepBeats)));
 
   const plant = () => {
     const r = parsed.ok;
@@ -121,7 +131,10 @@ export function ImportSheet() {
       nodes: Object.entries(nodes).map(([id, [type, data]]) => ({ id, type, position: { x: 0, y: 0 }, data })),
       edges: edges.map(([source, sourceHandle, target, targetHandle]) => ({ id: `${source}.${sourceHandle}-${target}.${targetHandle}`, source, sourceHandle, target, targetHandle })),
     });
-    const { project, plantTrack } = useStore.getState();
+    const { project, plantTrack, setSongLength } = useStore.getState();
+    // make room first, so the channel plays exactly what the preview shows
+    if (mismatch && fit === 'free') setSongLength('free');
+    if (mismatch && fit === 'grow') setSongLength(grown);
     // the function's parameters become the new track's own sliders
     const sliders: Slider[] = params.map(({ name: n, value: v }) => ({ name: n, value: v, ...(v > 0 ? { min: 0, max: v * 2 } : v < 0 ? { min: v * 2, max: 0 } : { min: -1, max: 1 }) }));
     const made = sliders.map((sl) => sl.name);
@@ -146,7 +159,8 @@ export function ImportSheet() {
     };
     plantTrack(track);
     setOpen(false);
-    toast(`Planted “${track.name}” — ${steps} steps, ${glide ? 'glide' : 'notes'}${made.length ? ` · new slider${made.length > 1 ? 's' : ''}: ${made.join(', ')}` : ''}`);
+    const room = !mismatch ? '' : fit === 'free' ? ' · the song is now Free' : fit === 'grow' ? ` · the song is now ${grown} beats` : '';
+    toast(`Planted “${track.name}” — ${shortBeats(heard)}, ${glide ? 'glide' : 'notes'}${room}${made.length ? ` · new slider${made.length > 1 ? 's' : ''}: ${made.join(', ')}` : ''}`);
   };
 
   const W = 640, H = 140;
@@ -234,11 +248,37 @@ export function ImportSheet() {
                 <div className="import-plot empty" />
               )}
               {parsed.error && <p className="import-error import-overlay">{parsed.error}</p>}
+              {parsed.ok && <span className="import-heard">{shortBeats(heard)}</span>}
               {parsed.ok && plot?.silent && <p className="import-error import-overlay">The function is undefined (silent) over the whole length.</p>}
             </div>
           </div>
           {parsed.ok && (
             <>
+              {mismatch && (
+                <div className="import-fit">
+                  <span>
+                    The song is <b>{shortBeats(song.lengthBeats)}</b> long; this function lasts <b>{shortBeats(ownLength)}</b>. The preview shows what you will hear:
+                  </span>
+                  <Seg<'free' | 'grow' | 'song'>
+                    value={fit}
+                    onChange={setFit}
+                    options={[
+                      { value: 'free', label: `Play all ${shortBeats(ownLength)} — song becomes Free` },
+                      ...(grown !== song.lengthBeats ? [{ value: 'grow' as const, label: `Make the song ${grown} beats` }] : []),
+                      { value: 'song', label: ownLength > song.lengthBeats ? `Cut to ${shortBeats(song.lengthBeats)}` : `Run on to ${shortBeats(song.lengthBeats)}` },
+                    ]}
+                  />
+                  <small className="muted">
+                    {fit === 'free'
+                      ? 'Free: every channel loops on its own length — the others don’t change.'
+                      : fit === 'grow'
+                        ? `Every channel is re-gridded to fill ${grown} beats.`
+                        : ownLength > song.lengthBeats
+                          ? 'Only the start plays — like the song’s other channels, it fills the song’s Length.'
+                          : 'The function carries on past its length to fill the song.'}
+                  </small>
+                </div>
+              )}
               {parsed.ok.warnings.map((w) => (
                 <p key={w} className="import-warn">
                   {w}

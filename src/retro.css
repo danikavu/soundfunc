@@ -963,3 +963,27 @@ body {
   padding: 4px 6px;
   font-size: 11px;
 }
+
+/* the paste sheet: how long the channel will be, and what to do when it isn't the song's length */
+.import-heard {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  font: 400 11px/1 var(--mono);
+  color: var(--lcd-ink-2);
+  pointer-events: none;
+}
+.import-fit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
+  font-size: 12px;
+}
+.import-fit small {
+  font-size: 11px;
+}
