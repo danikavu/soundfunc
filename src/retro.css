@@ -987,3 +987,59 @@ body {
 .import-fit small {
   font-size: 11px;
 }
+
+/* ---------- the Sound section ---------- */
+.sound-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+.sauce-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: linear-gradient(var(--card), var(--paper-2));
+  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
+}
+.sauce-row > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.sauce-row .slider > span {
+  font-weight: 700;
+  color: var(--accent);
+}
+.sound-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 2px 0;
+}
+.sound-wave {
+  margin: 2px 0 6px;
+}
+.sound-panel .seg button {
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
+.sauce-row {
+  flex-wrap: wrap;
+  position: relative;
+}
+.sauce-row > div:first-child {
+  flex: 1 1 100%;
+}
+.sauce-actions {
+  display: flex;
+  gap: 4px;
+}
+.sauce-row > .info {
+  position: absolute;
+  right: 8px;
+  bottom: 9px;
+}

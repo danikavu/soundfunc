@@ -17,6 +17,10 @@ const GM_PROGRAM: Partial<Record<Waveform, number>> = {
   pad: 89, // warm pad
   flute: 77, // shakuhachi
   reese: 38, // synth bass 1
+  supersaw: 81, // saw lead
+  keys: 4, // electric piano 1
+  brass: 61, // brass section
+  acid: 39, // synth bass 2
   custom: 82, // calliope lead
 };
 

@@ -17,6 +17,8 @@ import { mulberry32, mutateFormula, mutateOneNode, mutateTrack, musicalScore } f
 import { useStore } from '../state/store';
 import { parsePattern } from './graph';
 import { timbreHarmonics } from './timbre';
+import { PATCHES, applySauce, cutoffHz, drumOf, surprise, synthOf } from './synth';
+import { WAVEFORMS, type Waveform } from './project';
 import { importMath } from './importMath';
 import { auditionGraph, blockFromSelection, collapseNodes, curveToFormula, explodeFormula, insertBlock } from './graphEdit';
 import { BLOCKS } from './blocks';
@@ -1419,5 +1421,62 @@ describe('chords, bass and style kits', () => {
         expect(first.midi % 12, `${id} first note`).toBe((song.root! + scale[((h0 % scale.length) + scale.length) % scale.length]) % 12);
       }
     }
+  });
+});
+
+describe('the synth: patches, sauce and surprises', () => {
+  it('every melodic voice has a full patch, and a channel’s changes sit on top of it', () => {
+    for (const w of Object.keys(WAVEFORMS)) {
+      const p = synthOf(w as Waveform);
+      expect(p.unison, w).toBeGreaterThanOrEqual(1);
+      expect(p.gain, w).toBeGreaterThan(0);
+    }
+    const p = synthOf('pad', { cutoff: 0.2, unison: 2 });
+    expect(p.cutoff).toBe(0.2);
+    expect(p.unison).toBe(2);
+    expect(p.wave).toBe(PATCHES.pad.wave);
+  });
+  it('sauce only ever adds: never thinner, narrower or darker', () => {
+    for (const w of Object.keys(PATCHES) as (keyof typeof PATCHES)[]) {
+      const dry = PATCHES[w];
+      for (const s of [0.25, 0.5, 1]) {
+        const wet = applySauce({ ...dry, sauce: s });
+        for (const k of ['unison', 'detune', 'width', 'chorus', 'drive', 'delay', 'cutoff'] as const) expect(wet[k], `${w} ${k} @${s}`).toBeGreaterThanOrEqual(dry[k]);
+        for (const k of ['width', 'chorus', 'drive', 'delay', 'cutoff'] as const) expect(wet[k], `${w} ${k} @${s}`).toBeLessThanOrEqual(1);
+      }
+      expect(applySauce({ ...dry, sauce: 0 })).toEqual(dry);
+    }
+  });
+  it('surprise stays the same kind of sound, inside sensible ranges', () => {
+    const rng = mulberry32(5);
+    for (const w of Object.keys(PATCHES) as (keyof typeof PATCHES)[]) {
+      for (let i = 0; i < 20; i++) {
+        const v = { ...PATCHES[w], ...surprise(PATCHES[w], rng) };
+        expect(v.wave, w).toBe(PATCHES[w].wave);
+        expect(v.unison).toBeGreaterThanOrEqual(1);
+        expect(v.unison).toBeLessThanOrEqual(7);
+        expect(v.resonance).toBeLessThanOrEqual(0.85);
+        expect(v.cutoff).toBeGreaterThanOrEqual(0.1);
+      }
+    }
+  });
+  it('the cutoff knob is even: 30 Hz at the bottom, ~17 kHz at the top, rising all the way', () => {
+    expect(cutoffHz(0)).toBeCloseTo(30, 6);
+    expect(cutoffHz(1)).toBeGreaterThan(16000);
+    expect(cutoffHz(1)).toBeLessThan(18000);
+    for (let c = 0; c < 1; c += 0.1) expect(cutoffHz(c + 0.1)).toBeGreaterThan(cutoffHz(c));
+  });
+  it('drum sauce lengthens, warms and brightens a little', () => {
+    const d = drumOf({ sauce: 1 });
+    expect(d.decay).toBeGreaterThan(1);
+    expect(d.drive).toBeGreaterThan(0);
+    expect(drumOf()).toEqual({ tone: 0, decay: 1, drive: 0, sauce: 0 });
+  });
+  it('a saved voice keeps the whole patch, and recognises it', () => {
+    const t = { ...trackFromPreset(PRESETS.find((x) => x.id === 'pond')!, 0), synth: { cutoff: 0.3, sauce: 0.6 } };
+    const v = voiceOf(t, 'Dark pond');
+    expect(v.synth).toEqual({ cutoff: 0.3, sauce: 0.6 });
+    expect(wearsVoice(t, v)).toBe(true);
+    expect(wearsVoice({ ...t, synth: { cutoff: 0.3 } }, v)).toBe(false);
   });
 });

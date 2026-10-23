@@ -17,6 +17,9 @@ import { saveGarden } from './components/GardenMenu';
 const isTyping = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
 
+// development only: lets in-browser checks listen to the very engine that is playing
+if (import.meta.env.DEV) (window as unknown as { __engine: typeof engine }).__engine = engine;
+
 export function App() {
   const theme = useStore((s) => s.theme);
   const project = useStore((s) => s.project);

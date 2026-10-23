@@ -12,6 +12,8 @@ export interface Voice {
   timbre: string;
   attack: number;
   release: number;
+  /** the channel's changes to the voice's patch (filter, unison, sauce…) */
+  synth?: Track['synth'];
   savedAt: number;
 }
 
@@ -99,12 +101,16 @@ export function cleanProject(p: Project): Project {
 export const projectKey = (p: Project) => JSON.stringify(cleanProject(p));
 
 export function voiceOf(track: Track, name: string): Voice {
-  return { id: uid('voice'), name, waveform: track.waveform, timbre: track.timbre, attack: track.attack, release: track.release, savedAt: Date.now() };
+  return { id: uid('voice'), name, waveform: track.waveform, timbre: track.timbre, attack: track.attack, release: track.release, synth: track.synth ? { ...track.synth } : undefined, savedAt: Date.now() };
 }
 
 /** Does this track currently sound like this voice? */
 export const wearsVoice = (t: Track, v: Voice) =>
-  t.waveform === v.waveform && (v.waveform !== 'custom' || t.timbre === v.timbre) && Math.abs(t.attack - v.attack) < 1e-6 && Math.abs(t.release - v.release) < 1e-6;
+  t.waveform === v.waveform &&
+  (v.waveform !== 'custom' || t.timbre === v.timbre) &&
+  Math.abs(t.attack - v.attack) < 1e-6 &&
+  Math.abs(t.release - v.release) < 1e-6 &&
+  JSON.stringify(t.synth ?? {}) === JSON.stringify(v.synth ?? {});
 
 interface Library {
   voices: Voice[];

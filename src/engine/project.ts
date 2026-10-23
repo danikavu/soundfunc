@@ -1,10 +1,26 @@
 import { compileGraph, type Graph } from './graph';
 import { parse, renameVariable, tryCompile, type Compiled } from './expr';
 import { FIXED_LENGTHS, fixedLengthFor, type LengthMode } from './steps';
+import type { DrumParams, SynthParams } from './synth';
 import { chordTones, DEFAULT_PITCH_RANGE, limitPitch, midiToDegree, midiToFreq, midiToName, NOTE_NAMES, SCALES, valueToMidi, valueToPitch, type PitchMode, type PitchRange } from './music';
 
 export type DrumVoice = 'kick' | 'snare' | 'hat' | 'openhat' | 'clap' | 'rim' | 'tom' | 'crash';
-export type Waveform = 'sine' | 'triangle' | 'square' | 'sawtooth' | 'bell' | 'pluck' | 'pad' | 'flute' | 'reese' | 'custom' | DrumVoice;
+export type Waveform =
+  | 'sine'
+  | 'triangle'
+  | 'square'
+  | 'sawtooth'
+  | 'bell'
+  | 'pluck'
+  | 'pad'
+  | 'flute'
+  | 'reese'
+  | 'custom'
+  | 'supersaw'
+  | 'keys'
+  | 'brass'
+  | 'acid'
+  | DrumVoice;
 
 export const WAVEFORMS: Record<Exclude<Waveform, DrumVoice>, string> = {
   sine: 'Sine',
@@ -16,6 +32,10 @@ export const WAVEFORMS: Record<Exclude<Waveform, DrumVoice>, string> = {
   pad: 'Mist Pad',
   flute: 'Shakuhachi',
   reese: 'Reese Bass',
+  supersaw: 'Supersaw',
+  keys: 'E-Piano',
+  brass: 'Brass',
+  acid: 'Acid',
   custom: 'f(p) Custom',
 };
 
@@ -36,7 +56,7 @@ export const isDrum = (w: Waveform): w is DrumVoice => w in DRUMS;
 export const voiceLabel = (w: Waveform) => (isDrum(w) ? DRUMS[w].label : WAVEFORMS[w]);
 
 /** Waveforms that can hold one continuous, sliding voice. */
-export const GLIDE_WAVEFORMS: Waveform[] = ['sine', 'triangle', 'square', 'sawtooth', 'pad', 'flute', 'reese', 'custom'];
+export const GLIDE_WAVEFORMS: Waveform[] = ['sine', 'triangle', 'square', 'sawtooth', 'pad', 'flute', 'reese', 'custom', 'supersaw', 'brass', 'acid'];
 
 export type PlayMode = 'notes' | 'glide';
 
@@ -74,6 +94,8 @@ export interface Track {
   glide: number;
   muted: boolean;
   solo: boolean;
+  /** this channel's changes to its voice's sound (synth settings, or drum tone / decay / drive) — on top of the voice's patch */
+  synth?: Partial<SynthParams> & Partial<DrumParams>;
   /** named constants this track's formulas read, Desmos-style — each track has its own */
   sliders: Slider[];
 }
