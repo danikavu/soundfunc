@@ -243,13 +243,53 @@ export function chordName(degree: number, root: number, scaleKey: string, size =
   const numeral = ROMAN[idx] ?? String(idx + 1);
   const lower = q === 'm' || q === '°';
   return {
-    name: `${NOTE_NAMES[((r % 12) + 12) % 12]}${q}${ext}`,
+    name: `${spellDegree(degree, root, scaleKey)}${q}${ext}`,
     roman: (lower ? numeral.toLowerCase() : numeral) + (q === '°' ? '°' : q === '+' ? '+' : ''),
   };
 }
 
 /** Chord progressions as functions of `bar` — the song's harmony presets. */
-export const PROGRESSIONS: { label: string; formula: string }[] = [
+export interface Progression {
+  label: string;
+  formula: string;
+  group?: 'story' | 'groove';
+  /** what it tells, in a few words */
+  story?: string;
+  /** the scale it needs (picking the progression sets it) */
+  scale?: string;
+}
+
+export const PROGRESSION_GROUPS: Record<'story' | 'groove' | 'classic', string> = {
+  story: 'Stories — progressions that go somewhere',
+  groove: 'Grooves — the changes of a style',
+  classic: 'Classics',
+};
+
+export const PROGRESSIONS: Progression[] = [
+  // ---------- stories: 8–16 bars with somewhere to go ----------
+  { group: 'story', label: 'Coming Home  I–V–vi–iii–IV–I–ii–V', formula: 'pick(bar, 0, 4, 5, 2, 3, 0, 1, 4)', story: 'sets out, wanders, turns for home', scale: 'major' },
+  { group: 'story', label: 'Heartbreak  vi–IV–I–V–vi–IV–ii–V', formula: 'pick(bar, 5, 3, 0, 4, 5, 3, 1, 4)', story: 'starts sad, hopes, and never quite resolves', scale: 'major' },
+  { group: 'story', label: 'Sunrise  I–ii–iii–IV–V–vi–IV–V', formula: 'pick(bar, 0, 1, 2, 3, 4, 5, 3, 4)', story: 'a bass line climbing step by step into the light', scale: 'major' },
+  { group: 'story', label: 'Night Drive  i–VI–III–VII–i–VI–iv–v', formula: 'pick(bar, 0, 5, 2, 6, 0, 5, 3, 4)', story: 'minor, moving, headlights in the rain', scale: 'minor' },
+  { group: 'story', label: 'Descent  i–VII–VI–v–iv–III–ii°–v', formula: 'pick(bar, 0, -1, -2, -3, -4, -5, 1, 4)', story: 'a lament: the bass falls a step every bar', scale: 'minor' },
+  { group: 'story', label: 'The Long Way Round (16 bars)', formula: 'pick(bar, 0, 4, 5, 2, 3, 0, 3, 4, 5, 3, 0, 4, 1, 4, 0, 0)', story: 'verse, lift, the long way back — and home', scale: 'major' },
+  { group: 'story', label: 'Epic  i–VI–III–VII', formula: 'pick(bar, 0, 5, 2, 6)', story: 'film-score minor, banners in the wind', scale: 'minor' },
+  { group: 'story', label: '12-bar Blues  I–I–I–I–IV–IV–I–I–V–IV–I–V', formula: 'pick(bar, 0, 0, 0, 0, 3, 3, 0, 0, 4, 3, 0, 4)', story: 'the oldest story in the book', scale: 'major' },
+  { group: 'story', label: 'Doo-wop  I–vi–IV–V', formula: 'pick(bar, 0, 5, 3, 4)', story: 'a slow dance in 1958', scale: 'major' },
+  // ---------- grooves: the changes of a style (several move every two beats) ----------
+  { group: 'groove', label: 'Jazz turnaround  I–vi–ii–V (2 beats each)', formula: 'pick(floor(beat / 2), 0, 5, 1, 4)', story: 'round and round the cycle', scale: 'major' },
+  { group: 'groove', label: 'Rhythm changes A (8 bars)', formula: 'pick(floor(beat / 2), 0, 5, 1, 4, 2, 5, 1, 4, 0, 3, 2, 5, 1, 4, 0, 0)', story: 'bebop’s favourite changes, two chords a bar', scale: 'major' },
+  { group: 'groove', label: 'Minor ii–V–i  iv–ii°–V–i–VI–ii°–V–i', formula: 'pick(bar, 3, 1, 4, 0, 5, 1, 4, 0)', story: 'the dark cadence, twice, with a lift to VI', scale: 'harmonicMinor' },
+  { group: 'groove', label: 'Bossa  I–I–ii–V–iii–vi–ii–V', formula: 'pick(bar, 0, 0, 1, 4, 2, 5, 1, 4)', story: 'Ipanema at dusk', scale: 'major' },
+  { group: 'groove', label: 'Salsa montuno  i–iv–V–iv', formula: 'pick(bar, 0, 3, 4, 3)', story: 'the piano that never stops', scale: 'harmonicMinor' },
+  { group: 'groove', label: 'Funk vamp  i7–i7–IV7–IV7–i7–i7–VII–IV7', formula: 'pick(bar, 0, 0, 3, 3, 0, 0, 6, 3)', story: 'one chord, all night, then a turn', scale: 'dorian' },
+  { group: 'groove', label: 'Disco  i–iv–VII–III–VI–iv–v–v', formula: 'pick(bar, 0, 3, 6, 2, 5, 3, 4, 4)', story: 'strings, mirror ball, all the way round', scale: 'minor' },
+  { group: 'groove', label: 'Deep house  i–VII–VI–VII', formula: 'pick(bar, 0, 6, 5, 6)', story: '4 a.m., the same four bars forever', scale: 'minor' },
+  { group: 'groove', label: 'Neo-soul  IV–iii–ii–I', formula: 'pick(bar, 3, 2, 1, 0)', story: 'lazy seventh chords sliding down', scale: 'major' },
+  { group: 'groove', label: 'Gospel  I–IV–I–V (2 beats)', formula: 'pick(floor(beat / 2), 0, 3, 0, 4)', story: 'church on a Sunday', scale: 'major' },
+  { group: 'groove', label: 'Reggae  I–IV', formula: 'pick(bar, 0, 3)', story: 'one drop, two chords', scale: 'major' },
+  { group: 'groove', label: 'Mixolydian rock  I–VII–IV–I', formula: 'pick(bar, 0, 6, 3, 0)', story: 'the flat-seven riff of every stadium', scale: 'mixolydian' },
+  // ---------- classics ----------
   { label: 'Pop  I–V–vi–IV', formula: 'pick(bar, 0, 4, 5, 3)' },
   { label: 'Royal Road  IV–V–iii–vi', formula: 'pick(bar, 3, 4, 2, 5)' },
   { label: 'Andalusian  i–VII–VI–V', formula: 'pick(bar, 0, -1, -2, -3)' },
@@ -261,3 +301,34 @@ export const PROGRESSIONS: { label: string; formula: string }[] = [
   { label: 'Two-chord sway', formula: 'pick(bar, 0, 5)' },
   { label: 'Random walk', formula: 'wrap(floor(4 * noise(bar * 0.7, 3)) * 2, 0, 7)' },
 ];
+
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const NATURAL = [0, 2, 4, 5, 7, 9, 11];
+const FLAT_KEYS = new Set([1, 3, 5, 8, 10]);
+
+/**
+ * A scale degree's note name, spelled the way the key spells it: in a seven-note scale every
+ * degree gets its own letter (B♭ major is B♭ C D E♭ F G A, not A♯ C D D♯…), choosing whichever
+ * spelling of the key note needs fewer accidentals. Other scales: flats in flat keys.
+ */
+export function spellDegree(degree: number, root: number, scaleKey: string): string {
+  const steps = (SCALES[scaleKey] ?? SCALES.major).steps;
+  const d = Math.round(degree);
+  const idx = ((d % steps.length) + steps.length) % steps.length;
+  const pc = (((root + steps[idx]) % 12) + 12) % 12;
+  if (steps.length !== 7) return FLAT_KEYS.has(((root % 12) + 12) % 12) ? flatName(pc) : NOTE_NAMES[pc];
+  const spell = (rootLetter: number) =>
+    steps.map((st, i) => {
+      const letter = (rootLetter + i) % 7;
+      let acc = (((root + st - NATURAL[letter]) % 12) + 18) % 12 - 6; // −6 … 5 semitones away from the letter
+      return { letter, acc };
+    });
+  const options = [0, 1, 2, 3, 4, 5, 6].filter((l) => Math.abs(((((root % 12) - NATURAL[l]) % 12) + 18) % 12 - 6) <= 1).map(spell);
+  const cost = (o: ReturnType<typeof spell>) => o.reduce((c, x) => c + Math.abs(x.acc) + (Math.abs(x.acc) > 1 ? 4 : 0), 0);
+  const best = options.sort((a, b) => cost(a) - cost(b))[0];
+  if (!best) return NOTE_NAMES[pc];
+  const { letter, acc } = best[idx];
+  return LETTERS[letter] + (acc > 0 ? '♯'.repeat(acc) : '♭'.repeat(-acc));
+}
+
+const flatName = (pc: number) => ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'][pc];

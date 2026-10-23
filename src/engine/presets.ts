@@ -128,6 +128,92 @@ export interface Kit {
 
 const OUT_X = 640;
 
+// ---------- chords that move well: close position inside one octave ----------
+
+/**
+ * Voice-led chords: wrap the chord's root into the octave around the middle of the keys
+ * (degrees −2 … L−3), then invert exactly the notes that would stick out above it — every
+ * chord lands in close position inside one octave, so the hand barely moves between chords.
+ * (For a size-S chord stacked in thirds.)
+ */
+const LIFT = 'ceil((L - 2 - wrap(h, -2, L - 2)) / 2)';
+export const voicedPitch = (S: number) => `wrap(h, -2, L - 2) - (${LIFT} < ${S}) * L`;
+/** lift only when the chord was lowered: a chord that already fits stays in root position */
+export const voicedInversion = (S: number) => `(${LIFT} < ${S}) * ${LIFT}`;
+/** the bass: the chord's root, wrapped into one octave so it never wanders off */
+const ROOT = 'wrap(h, -3, 4)';
+
+// ---------- the parts of the style kits — also plantable alone (they follow any harmony) ----------
+
+const WALKING_BASS = voice('Walking bass', 'triangle', `${ROOT} + pick(n, 0, 2, 0, 4, 0, 5, 0, 2)`, '0.72 + 0.12 * (n % 2 == 0)', { length: 0.95 }, {
+  stepBeats: 1, steps: 8, octave: 2, attack: 0.005, release: 0.12, volume: 0.8, send: 0.15,
+});
+const RHODES_COMP = voice('Rhodes comp', 'bell', voicedPitch(4), 'pick(n % 8, 0.55, 0, 0, 0.42, 0.55, 0, 0, 0.35) * (0.85 + 0.15 * rand(n + 16k, 8))', {
+  chord: 4, inversion: voicedInversion(4), length: 1.2, strum: 0.015,
+}, { stepBeats: 0.5, steps: 16, octave: 4, swing: 0.33, volume: 0.5, send: 0.55 });
+const BOSSA_GUITAR = voice('Nylon guitar', 'pluck', voicedPitch(4), '0.48 * bits(pick(floor(n / 16), 0x9228, 0x2924), n)', {
+  chord: 4, inversion: voicedInversion(4), length: 1.5, strum: 0.03,
+}, { steps: 32, octave: 4, volume: 0.55, send: 0.4, swing: 0.04 });
+const BOSSA_BASS = voice('Bossa bass', 'triangle', `${ROOT} + (n % 16 >= 6) * 4`, '0.8 * bits(0x8280, n)', {
+  length: 'pick((n % 16 == 6) + 2 * (n % 16 == 8), 5.5, 1.8, 7)',
+}, { steps: 32, octave: 2, attack: 0.005, release: 0.15, volume: 0.8 });
+const MONTUNO = voice('Montuno piano', 'pluck', 'wrap(h, -2, 5) + pick(floor(n / 2) % 4, 0, 4, 2, 4)', 'every(n, 2) * (0.42 + 0.25 * bits(0x2222, n))', {
+  chord: 2, stack: 'L', length: 1.6,
+}, { steps: 32, octave: 4, volume: 0.5, send: 0.3 });
+const TUMBAO = voice('Tumbao bass', 'triangle', `${ROOT} + (n % 16 == 6) * 4`, '0.85 * bits(0x0208, n)', { length: 3.5 }, {
+  steps: 32, octave: 2, attack: 0.005, release: 0.12, volume: 0.85,
+});
+const SLAP_BASS = voice('Slap bass', 'pluck', `${ROOT} - L + pick(n % 16, 0, 0, 0, 0, 0, 0, L, 0, 0, 0, L - 1, 0, 0, 0, L, 0)`, 'bits(0x92A6, n) * (0.68 + 0.27 * bits(0x0202, n))', {
+  length: 0.8,
+}, { steps: 32, octave: 3, release: 0.1, volume: 0.8, send: 0.05 });
+const CLAV = voice('Clav', 'square', voicedPitch(3), '0.42 * bits(0x2452, n)', { chord: 3, inversion: voicedInversion(3), length: 0.5 }, {
+  steps: 32, octave: 4, attack: 0.003, release: 0.06, volume: 0.4, send: 0.15,
+});
+const DISCO_BASS = voice('Octave bass', 'sawtooth', `${ROOT} - L + L * (floor(n / 2) % 2)`, '0.8 * every(n, 2)', { length: 1.4 }, {
+  steps: 16, octave: 3, attack: 0.004, release: 0.08, volume: 0.6,
+});
+const DISCO_STRINGS = voice('Strings', 'pad', voicedPitch(3), '0.5 * every(n, 16)', { chord: 3, inversion: voicedInversion(3), length: 16 }, {
+  steps: 16, octave: 4, attack: 0.3, release: 1, volume: 0.45, send: 0.8,
+});
+const HOUSE_STABS = voice('Organ stabs', 'custom', voicedPitch(5), '0.5 * bits(0x1224, n)', { chord: 5, inversion: voicedInversion(5), length: 0.8 }, {
+  steps: 16, octave: 4, attack: 0.005, release: 0.25, volume: 0.42, send: 0.55, swing: 0.12,
+});
+const HOUSE_SUB = voice('Sub bass', 'sine', `${ROOT} - L`, '0.85 * every(n, 4, 2)', { length: 1.6 }, { steps: 16, octave: 3, release: 0.1, volume: 0.85 });
+/** a pad on the chord whose notes are held long and pumped by pressure — a Curve once a beat */
+const PUMP_PAD: Template & { name: string } = {
+  name: 'Pumping pad',
+  waveform: 'pad',
+  steps: 16,
+  stepBeats: 0.25,
+  octave: 4,
+  attack: 0.4,
+  release: 1.2,
+  volume: 0.4,
+  send: 0.8,
+  graph: wire(
+    {
+      pitch: ['expr', { formula: voicedPitch(4) }],
+      inv: ['expr', { formula: voicedInversion(4) }],
+      vel: ['expr', { formula: '0.45 * every(n, 16)' }],
+      chord: ['number', { value: 4, min: 1, max: 8 }],
+      length: ['number', { value: 16, min: 0, max: 64 }],
+      beats: ['expr', { formula: 't' }],
+      duck: ['curve', { points: '0:0.15:0.7 0.9:1:0 1:0.15:0', repeats: 1, lo: 0, hi: 1 }],
+      out: ['output'],
+    },
+    ['pitch.out>out.pitch', 'inv.out>out.inversion', 'vel.out>out.velocity', 'chord.out>out.chord', 'length.out>out.length', 'beats.out>duck.p', 'duck.out>out.pressure'],
+  ),
+};
+
+/** a part as a plantable preset */
+const part = (id: string, t: Template & { name: string }, description: string, formula: string): Preset => ({
+  id,
+  name: t.name,
+  description,
+  formula,
+  track: { pitchMode: 'degree', ...t, waveform: t.waveform ?? 'sine' },
+});
+
 export const PRESETS: Preset[] = [
   {
     id: 'pond',
@@ -702,6 +788,20 @@ export const PRESETS: Preset[] = [
       ),
     },
   },
+  // ---------- style parts: they follow whatever the Harmony says ----------
+  part('walking', WALKING_BASS, 'Jazz walking bass on the harmony: the root on each chord, a passing note between — quarter notes, swinging.', 'pitch = root + 0 2 0 4 0 5 0 2'),
+  part('rhodes', RHODES_COMP, 'Voice-led seventh chords comping on swung eighths — close position, so the hand barely moves between chords.', 'chord of 4 on h, voice-led'),
+  part('bossaguitar', BOSSA_GUITAR, 'Bossa nova guitar: voice-led seventh chords on the syncopated two-bar rhythm, strummed lightly.', 'chord of 4 · bits(0x9228 / 0x2924)'),
+  part('bossabass', BOSSA_BASS, 'Bossa bass: the root held, the fifth anticipating beat three — the surdo’s two-step.', 'pitch = root, fifth on the and-of-2'),
+  part('montuno', MONTUNO, 'Salsa piano montuno: chord tones in octaves, eighth notes with the offbeats leaning in.', 'octaves on h + 0 4 2 4'),
+  part('tumbao', TUMBAO, 'Salsa tumbao: the bass anticipates — the fifth on the and-of-2, the next root on four.', 'fifth on 6, root on 12'),
+  part('slap', SLAP_BASS, 'Funk slap bass: thumbed roots, octave pops and a flat-seven, syncopated sixteenths.', 'root · pops on L · bits(0x92A6)'),
+  part('clav', CLAV, 'Funk clavinet: short voice-led triads on the offbeat sixteenths.', 'chord of 3 · bits(0x2452)'),
+  part('discobass', DISCO_BASS, 'Disco octave bass: root, octave, root, octave — eighth notes that never sit still.', 'root ± L, every eighth'),
+  part('discostrings', DISCO_STRINGS, 'Disco strings: a voice-led triad held through every bar.', 'chord of 3, held'),
+  part('housestabs', HOUSE_STABS, 'Deep house organ stabs: minor ninth chords on a syncopated swing.', 'chord of 5 · bits(0x1224)'),
+  part('pumppad', PUMP_PAD, 'A pad held through each bar, pumped on every beat by a pressure Curve — sidechain without a compressor.', 'chord of 4 · pressure = duck(t)'),
+
   // ---------- drawn with Curve nodes: automation as music ----------
   {
     id: 'riser',
@@ -1013,6 +1113,111 @@ const AMEN = {
 const BOOM_KICK = 'bits(pick(floor(n / 16), 0x8120, 0x9024), n)';
 
 export const KITS: Kit[] = [
+  {
+    id: 'jazz',
+    name: 'Smoky Club',
+    description:
+      '132 bpm swing in B♭ over Rhythm changes, two chords a bar. Ride with the skip beat, feathered kick and brushes, a walking bass that lands on every root, voice-led Rhodes comping and a sax that wanders the chord tones.',
+    song: { bpm: 132, root: 10, scale: 'major', harmony: 'pick(floor(beat / 2), 0, 5, 1, 4, 2, 5, 1, 4, 0, 3, 2, 5, 1, 4, 0, 0)' },
+    tracks: [
+      drum('Ride', 'hat', 16, 'pick(n % 8, 0.75, 0, 0.6, 0.5, 0.75, 0, 0.6, 0.5) * (0.9 + 0.1 * rand(n + 16k, 2))', { stepBeats: 0.5, swing: 0.33, volume: 0.55, send: 0.35 }),
+      drum('Hi-hat foot', 'hat', 16, '0.35 * (n % 4 == 2)', { stepBeats: 0.5, swing: 0.33, volume: 0.4 }),
+      drum('Kick', 'kick', 16, '0.22 * every(n, 2) + 0.35 * (n % 16 == 15)', { stepBeats: 0.5, swing: 0.33, volume: 0.6 }),
+      drum('Brushes', 'snare', 16, '0.18 * chance(n + 16k, 0.3, 4) * (n % 2) + 0.45 * (n % 16 == 11) * (k % 2)', { stepBeats: 0.5, swing: 0.33, volume: 0.5, send: 0.3 }),
+      WALKING_BASS,
+      RHODES_COMP,
+      voice('Sax', 'flute', 'h + 2 * floor(4 * noise(n * 0.37 + k * 3, 5))', 'chance(n + 16k, 0.6, 11) * (0.4 + 0.2 * (n % 2 == 0))', { length: 0.9 }, {
+        stepBeats: 0.5, steps: 16, octave: 5, swing: 0.33, volume: 0.45, send: 0.5, attack: 0.03,
+      }),
+    ],
+  },
+  {
+    id: 'bossa',
+    name: 'Ipanema Dusk',
+    description:
+      '130 bpm bossa nova in D: the rim-shot clave, a surdo kick, shaker, the root-and-fifth bass, voice-led nylon guitar on the syncopated two-bar rhythm, and a flute line over I–ii–V–iii–vi.',
+    song: { bpm: 130, root: 2, scale: 'major', harmony: 'pick(bar, 0, 0, 1, 4, 2, 5, 1, 4)' },
+    tracks: [
+      drum('Clave (rim)', 'rim', 32, '0.6 * bits(pick(floor(n / 16), 0x9224, 0x2240), n)', { volume: 0.6, send: 0.2 }),
+      drum('Surdo', 'kick', 32, '0.7 * bits(0x8080, n) + 0.4 * bits(0x1010, n)', { volume: 0.75 }),
+      drum('Shaker', 'hat', 32, '0.18 + 0.14 * every(n, 2, 1) + 0.05 * rand(n + 32k, 3)', { volume: 0.4, swing: 0.06 }),
+      BOSSA_BASS,
+      BOSSA_GUITAR,
+      voice('Flute', 'flute', 'h + pick(floor(n / 4) % 8, 4, 2, 4, 6, 7, 6, 4, 2)', '0.5 * bits(0x8888, n) * chance(floor(n / 4) + 8k, 0.7, 5)', { length: 3.6 }, {
+        steps: 32, octave: 5, volume: 0.45, send: 0.6, attack: 0.04,
+      }),
+    ],
+  },
+  {
+    id: 'salsa',
+    name: 'Montuno',
+    description:
+      '96 bpm salsa in A harmonic minor, i–iv–V–iv a bar each. 2-3 son clave, tumbao congas and campana, the bombo, a tumbao bass (the fifth on the and-of-2, the root on four), the piano montuno in octaves and horn hits to close each phrase.',
+    song: { bpm: 96, root: 9, scale: 'harmonicMinor', harmony: 'pick(bar, 0, 3, 4, 3)' },
+    tracks: [
+      drum('Clave 2-3', 'rim', 32, '0.7 * bits(pick(floor(n / 16), 0x0880, 0x8208), n)', { volume: 0.6, send: 0.15 }),
+      drum('Congas', 'tom', 32, 'bits(0x2323, n) * (0.55 + 0.25 * (n % 16 == 2 || n % 16 == 10))', { tune: '(n % 16 == 2 || n % 16 == 10) ? 14 : 9', volume: 0.6 }),
+      drum('Campana', 'tom', 32, 'every(n, 4) * (0.35 + 0.2 * every(n, 8))', { tune: '22', volume: 0.35 }),
+      drum('Bombo', 'kick', 32, '0.6 * (n % 16 == 6) + 0.3 * (n % 16 == 12)', { volume: 0.7 }),
+      TUMBAO,
+      MONTUNO,
+      voice('Horns', 'sawtooth', voicedPitch(3), '0.55 * bits(pick(floor(n / 16), 0, 0x0012), n)', { chord: 3, inversion: voicedInversion(3), length: 1 }, {
+        steps: 32, octave: 4, attack: 0.02, release: 0.2, volume: 0.45, send: 0.35,
+      }),
+    ],
+  },
+  {
+    id: 'funk',
+    name: 'Get Down',
+    description:
+      '104 bpm funk in E dorian: a syncopated kick, backbeat with ghost notes, sixteenth hats and an open hat, slap bass with octave pops, clavinet on the offbeats, and horn stabs — i7 for a while, then IV7, then the turn.',
+    song: { bpm: 104, root: 4, scale: 'dorian', harmony: 'pick(bar, 0, 0, 3, 3, 0, 0, 6, 3)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.95 * bits(pick(floor(n / 16), 0x8220, 0x9092), n)', { volume: 0.9 }),
+      drum('Snare', 'snare', 32, 'max(every(n, 8, 4), 0.2 * bits(0x0542, n))', { send: 0.15 }),
+      drum('Hats', 'hat', 32, '(0.3 + 0.35 * every(n, 2)) * (n % 16 != 14) * (0.9 + 0.1 * rand(n + 32k, 2))', { volume: 0.5 }),
+      drum('Open hat', 'openhat', 32, '0.45 * (n % 16 == 14)', { volume: 0.45 }),
+      SLAP_BASS,
+      CLAV,
+      voice('Horns', 'sawtooth', `${voicedPitch(3)} + L`, '0.55 * bits(pick(floor(n / 16), 0, 0x000A), n)', { chord: 3, inversion: voicedInversion(3), length: 1 }, {
+        steps: 32, octave: 4, attack: 0.015, release: 0.15, volume: 0.42, send: 0.3,
+      }),
+    ],
+  },
+  {
+    id: 'disco',
+    name: 'Mirror Ball',
+    description:
+      '120 bpm disco in A minor, an eight-bar loop that goes all the way round: four-on-the-floor, claps, open hats on the offbeat, the octave bass, held strings and chicken-scratch guitar.',
+    song: { bpm: 120, root: 9, scale: 'minor', harmony: 'pick(bar, 0, 3, 6, 2, 5, 3, 4, 4)' },
+    tracks: [
+      drum('Kick', 'kick', 16, 'every(n, 4)', { volume: 0.9 }),
+      drum('Clap', 'clap', 16, '0.7 * every(n, 8, 4)', { send: 0.25 }),
+      drum('Open hat', 'openhat', 16, '0.5 * every(n, 4, 2)', { volume: 0.5 }),
+      drum('Hats', 'hat', 16, '0.2 * (n % 4 != 2) + 0.06 * rand(n + 16k, 4)', { volume: 0.4 }),
+      DISCO_BASS,
+      DISCO_STRINGS,
+      voice('Guitar', 'pluck', `${voicedPitch(3)} + L`, '0.45 * (n % 4 == 2) + 0.15 * (n % 2)', { chord: 2, length: 0.5 }, {
+        steps: 16, octave: 4, release: 0.05, volume: 0.35, swing: 0.05,
+      }),
+    ],
+  },
+  {
+    id: 'deephouse',
+    name: 'Deep Hours',
+    description:
+      '122 bpm deep house in D minor, i–VII–VI–VII (Dm–C–B♭–C): kick on every beat, swung claps and hats, an offbeat sub, ninth-chord organ stabs, and a pad pumped on every beat by a pressure Curve.',
+    song: { bpm: 122, root: 2, scale: 'minor', harmony: 'pick(bar, 0, 6, 5, 6)' },
+    tracks: [
+      drum('Kick', 'kick', 16, 'every(n, 4)', { volume: 0.9 }),
+      drum('Clap', 'clap', 16, '0.6 * every(n, 8, 4)', { swing: 0.08, send: 0.3 }),
+      drum('Hats', 'hat', 16, '0.25 + 0.2 * every(n, 4, 2) + 0.08 * rand(n + 16k, 6)', { swing: 0.12, volume: 0.45 }),
+      drum('Open hat', 'openhat', 16, '0.4 * every(n, 4, 2)', { swing: 0.12, volume: 0.4 }),
+      HOUSE_SUB,
+      HOUSE_STABS,
+      PUMP_PAD,
+    ],
+  },
   {
     id: 'boombap',
     name: 'Boom Bap',

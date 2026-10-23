@@ -165,13 +165,14 @@ function harmonyFn(src: string): Compiled | null {
 }
 
 /** what the harmony formula can read — it belongs to the song, so no track's sliders */
-export const HARMONY_VARS = ['bar', 'k', 'L'] as const;
+export const HARMONY_VARS = ['bar', 'k', 'L', 'beat'] as const;
 
 /** The chord (scale degree) sounding at an absolute beat of the song. */
 export function harmonyAt(song: Song, beat: number): number {
   const fn = harmonyFn(song.harmony ?? '0');
   if (!fn) return 0;
-  const v = fn({ bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), k: 0, L: scaleLength(song) });
+  // chords can change on any beat: pick(floor(beat / 2), …) is two chords a bar
+  const v = fn({ bar: Math.floor(beat / BEATS_PER_BAR + 1e-9), k: 0, L: scaleLength(song), beat: Math.floor(beat + 1e-9) });
   return Number.isFinite(v) ? Math.round(v) : 0;
 }
 

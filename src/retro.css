@@ -776,7 +776,7 @@ body {
 
 /* the progressions list opens wide enough to read each progression and its formula */
 .topbar .w-prog .dropdown-pop {
-  width: 420px;
+  width: 560px;
   max-width: calc(100vw - 24px);
   left: auto;
   right: 0;
