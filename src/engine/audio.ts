@@ -1,14 +1,23 @@
 import { midiToFreq } from './music';
 import { audibleTracks, isDrum, patternBeats, renderTrack, songBeats, songWindows, type Note, type Project, type Track, type TrackRender } from './project';
 import { timbreHarmonics } from './timbre';
+import { cutoffHz, drumOf, synthOf, type OscWave, type SynthParams } from './synth';
 
 const LOOKAHEAD_SEC = 0.12;
 const TICK_MS = 25;
 
+/**
+ * A channel's strip: voices play into `gain`; a chorus (two modulated delays, left and right)
+ * and a tempo-synced delay with feedback join them; then pan, the dry mix and the reverb send.
+ */
 interface Bus {
   gain: GainNode;
   pan: StereoPannerNode;
   send: GainNode;
+  chorusWet: GainNode;
+  delay: DelayNode;
+  delayWet: GainNode;
+  feedback: GainNode;
 }
 
 /** A single sustained voice whose pitch and level follow a glide track's curve. */
@@ -18,11 +27,18 @@ interface GlideVoice {
   /** each oscillator's frequency param and its ratio to the played pitch */
   freqs: { param: AudioParam; ratio: number }[];
   nodes: AudioScheduledSourceNode[];
+  /** the filter follows the note (key tracking) as the glide moves */
+  filter?: { param: AudioParam; base: number; keyTrack: number };
+  /** level for a velocity of 1 */
+  level: number;
   lastMidi: number;
   lastVel: number;
 }
 
-const glideKey = (t: Track) => `${t.waveform}|${t.waveform === 'custom' ? t.timbre : ''}`;
+const glideKey = (t: Track) => `${t.waveform}|${t.waveform === 'custom' ? t.timbre : ''}|${JSON.stringify(t.synth ?? {})}`;
+
+/** how loud each oscillator is at full level, so voices come out evenly */
+const WAVE_LEVEL: Record<OscWave, number> = { sine: 1, triangle: 0.95, sawtooth: 0.5, square: 0.45, custom: 0.8, fm: 0.8 };
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -101,15 +117,50 @@ export class AudioEngine {
       const pan = ctx.createStereoPanner();
       const send = ctx.createGain();
       gain.connect(pan);
+      // chorus: two short delays swaying at different rates, one hard left, one hard right
+      const chorusWet = ctx.createGain();
+      chorusWet.gain.value = 0;
+      const merge = ctx.createChannelMerger(2);
+      [
+        [0.012, 0.31, 0],
+        [0.017, 0.47, 1],
+      ].forEach(([time, rate, side]) => {
+        const d = ctx.createDelay(0.05);
+        d.delayTime.value = time;
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = rate;
+        const depth = ctx.createGain();
+        depth.gain.value = 0.0025;
+        lfo.connect(depth).connect(d.delayTime);
+        lfo.start();
+        gain.connect(d).connect(merge, 0, side);
+      });
+      merge.connect(chorusWet).connect(pan);
+      // delay: tempo-synced, darkening as it repeats
+      const delay = ctx.createDelay(4);
+      const feedback = ctx.createGain();
+      const tone = ctx.createBiquadFilter();
+      tone.type = 'lowpass';
+      tone.frequency.value = 3800;
+      const delayWet = ctx.createGain();
+      delayWet.gain.value = 0;
+      gain.connect(delay);
+      delay.connect(tone).connect(feedback).connect(delay);
+      tone.connect(delayWet).connect(pan);
       pan.connect(this.dry);
       pan.connect(send).connect(this.wet);
-      b = { gain, pan, send };
+      b = { gain, pan, send, chorusWet, delay, delayWet, feedback };
       this.buses.set(track.id, b);
     }
     const now = ctx.currentTime;
     b.gain.gain.setTargetAtTime(track.volume, now, 0.02);
     b.pan.pan.setTargetAtTime(track.pan, now, 0.02);
     b.send.gain.setTargetAtTime(track.send, now, 0.02);
+    const fx = isDrum(track.waveform) ? { chorus: 0, delay: 0, delayTime: 0.75 } : synthOf(track.waveform, track.synth);
+    b.chorusWet.gain.setTargetAtTime(fx.chorus * 0.7, now, 0.05);
+    b.delayWet.gain.setTargetAtTime(fx.delay * 0.5, now, 0.05);
+    b.feedback.gain.setTargetAtTime(0.25 + fx.delay * 0.3, now, 0.05);
+    b.delay.delayTime.setTargetAtTime(Math.min(3.9, (fx.delayTime * 60) / this.bpm), now, 0.05);
     return b;
   }
 
@@ -251,11 +302,12 @@ export class AudioEngine {
           if (v.lastMidi < 0) param.setValueAtTime(f * ratio, time);
           else param.setTargetAtTime(f * ratio, time, tau);
         }
+        if (v.filter) v.filter.param.setTargetAtTime(Math.min(18000, Math.max(20, v.filter.base * Math.pow(f / 261.6, v.filter.keyTrack))), time, tau);
         v.lastMidi = midi;
       }
       if (Math.abs(vel - v.lastVel) > 0.002) {
         const ampTau = vel > v.lastVel ? Math.max(0.004, track.attack / 3) : Math.max(0.006, track.release / 4);
-        v.amp.gain.setTargetAtTime(vel * 0.3, time, ampTau);
+        v.amp.gain.setTargetAtTime(vel * v.level, time, ampTau);
         v.lastVel = vel;
       }
     }
@@ -263,62 +315,152 @@ export class AudioEngine {
 
   private makeGlide(track: Track, bus: Bus): GlideVoice {
     const ctx = this.ctx!;
+    const p = synthOf(track.waveform, track.synth);
+    const now = ctx.currentTime;
     const amp = ctx.createGain();
     amp.gain.value = 0;
     amp.connect(bus.gain);
-    const v: GlideVoice = { key: glideKey(track), amp, freqs: [], nodes: [], lastMidi: -1, lastVel: 0 };
-    const osc = (type: OscillatorType | 'custom', ratio = 1, detune = 0, out: AudioNode = amp, level = 1) => {
-      const o = ctx.createOscillator();
-      const wave = type === 'custom' ? this.periodicWave(track.timbre) : null;
-      if (wave) o.setPeriodicWave(wave);
-      else o.type = type === 'custom' ? 'sine' : type;
-      o.detune.value = detune;
-      const g = ctx.createGain();
-      g.gain.value = level;
-      o.connect(g).connect(out);
-      v.freqs.push({ param: o.frequency, ratio });
-      v.nodes.push(o);
-      return o;
+    // one long voice: the same oscillators, drive and filter as a note — only the envelope is the slide's
+    const { input, filter } = this.chain(p, amp, 261.6, now, Infinity);
+    const bank = this.oscBank(p, track.timbre, 261.6, input, amp, now);
+    if (p.vibrato > 0) bank.nodes.push(this.vibrato(p, bank.oscs.map((o) => o.o), now));
+    const v: GlideVoice = {
+      key: glideKey(track),
+      amp,
+      freqs: bank.oscs.map(({ o, ratio }) => ({ param: o.frequency, ratio })),
+      nodes: bank.nodes,
+      filter: filter ? { param: filter.frequency, base: cutoffHz(p.cutoff), keyTrack: p.keyTrack } : undefined,
+      level: 0.3 * p.gain,
+      lastMidi: -1,
+      lastVel: 0,
     };
-    const lowpass = (f: number, q = 0.7) => {
-      const l = ctx.createBiquadFilter();
-      l.type = 'lowpass';
-      l.frequency.value = f;
-      l.Q.value = q;
-      l.connect(amp);
-      return l;
-    };
-    switch (track.waveform) {
-      case 'reese': {
-        const lp = lowpass(900, 1.5);
-        osc('sawtooth', 1, -14, lp, 0.5);
-        osc('sawtooth', 1, 14, lp, 0.5);
-        osc('sine', 0.5, 0, amp, 0.6);
-        break;
-      }
-      case 'pad': {
-        const lp = lowpass(1800, 0.5);
-        for (const d of [-9, 0, 8]) osc('sawtooth', 1, d, lp, 0.35);
-        break;
-      }
-      case 'flute': {
-        osc('sine');
-        osc('triangle', 2, 0, amp, 0.12);
-        break;
-      }
-      case 'square':
-      case 'sawtooth':
-        osc(track.waveform, 1, 0, lowpass(5000), 0.5);
-        break;
-      case 'custom':
-        osc('custom', 1, 0, amp, 0.8);
-        break;
-      default:
-        osc(track.waveform as OscillatorType);
-    }
-    const now = ctx.currentTime;
     for (const n of v.nodes) n.start(now);
     return v;
+  }
+
+  // ---------- the synth voice ----------
+
+  private curves = new Map<number, Float32Array<ArrayBuffer>>();
+  /** a soft-clipping curve: tanh(k·x) / tanh(k) — more k, more grit */
+  private driveCurve(k: number): Float32Array<ArrayBuffer> {
+    const key = Math.round(k * 100);
+    let c = this.curves.get(key);
+    if (!c) {
+      c = new Float32Array(1024);
+      for (let i = 0; i < c.length; i++) {
+        const x = (i / (c.length - 1)) * 2 - 1;
+        c[i] = Math.tanh(k * x) / Math.tanh(k);
+      }
+      this.curves.set(key, c);
+    }
+    return c;
+  }
+
+  /**
+   * The path after the oscillators: drive, then the filter (with its envelope, which opens
+   * at `when` and falls back), into `out`. Returns where the oscillators should connect.
+   */
+  private chain(p: SynthParams, out: AudioNode, freq: number, when: number, dur: number): { input: AudioNode; filter: BiquadFilterNode | null } {
+    const ctx = this.ctx!;
+    let head: AudioNode = out;
+    let filter: BiquadFilterNode | null = null;
+    if (p.filter !== 'off') {
+      filter = ctx.createBiquadFilter();
+      filter.type = p.filter;
+      const f0 = Math.min(18000, Math.max(20, cutoffHz(p.cutoff) * Math.pow(freq / 261.6, p.keyTrack)));
+      filter.Q.value = p.filter === 'bandpass' ? 0.8 + p.resonance * 10 : 0.7 + p.resonance * p.resonance * 16;
+      filter.frequency.setValueAtTime(f0, when);
+      if (p.envAmount > 0 && Number.isFinite(dur)) {
+        const top = Math.min(18000, f0 * Math.pow(2, p.envAmount * 6));
+        filter.frequency.linearRampToValueAtTime(top, when + 0.004);
+        filter.frequency.setTargetAtTime(f0, when + 0.004, Math.max(0.01, p.envDecay) / 3);
+      }
+      filter.connect(head);
+      head = filter;
+    }
+    if (p.drive > 0) {
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = this.driveCurve(1 + p.drive * 8);
+      shaper.oversample = '2x';
+      const trim = ctx.createGain();
+      trim.gain.value = 1 / (1 + p.drive * 0.6);
+      shaper.connect(trim).connect(head);
+      head = shaper;
+    }
+    return { input: head, filter };
+  }
+
+  /**
+   * The oscillators: `unison` copies spread over ±detune cents and across the stereo field
+   * (or an FM pair), a sine an octave down into `subOut`, and noise.
+   */
+  private oscBank(p: SynthParams, timbre: string, freq: number, out: AudioNode, subOut: AudioNode, when: number) {
+    const ctx = this.ctx!;
+    const oscs: { o: OscillatorNode; ratio: number }[] = [];
+    const nodes: AudioScheduledSourceNode[] = [];
+    const n = Math.max(1, Math.min(7, Math.round(p.unison)));
+    const each = WAVE_LEVEL[p.wave] / Math.sqrt(n);
+    const wave = p.wave === 'custom' ? this.periodicWave(timbre) : null;
+    for (let i = 0; i < n; i++) {
+      const spread = n === 1 ? 0 : -1 + (2 * i) / (n - 1);
+      const o = ctx.createOscillator();
+      if (p.wave === 'fm' || p.wave === 'sine') o.type = 'sine';
+      else if (p.wave === 'custom') wave ? o.setPeriodicWave(wave) : (o.type = 'sine');
+      else o.type = p.wave;
+      o.frequency.value = freq;
+      o.detune.value = spread * p.detune;
+      const g = ctx.createGain();
+      g.gain.value = each;
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = spread * p.width;
+      o.connect(g).connect(panner).connect(out);
+      oscs.push({ o, ratio: 1 });
+      nodes.push(o);
+      if (p.wave === 'fm') {
+        // FM: a modulator at fmRatio × the note bends the carrier; its depth falls over fmDecay
+        const m = ctx.createOscillator();
+        m.frequency.value = freq * p.fmRatio;
+        m.detune.value = o.detune.value;
+        const idx = ctx.createGain();
+        idx.gain.setValueAtTime(freq * p.fmIndex, when);
+        idx.gain.setTargetAtTime(freq * p.fmIndex * 0.06, when, Math.max(0.05, p.fmDecay) / 3);
+        m.connect(idx).connect(o.frequency);
+        oscs.push({ o: m, ratio: p.fmRatio });
+        nodes.push(m);
+      }
+    }
+    if (p.sub > 0) {
+      const o = ctx.createOscillator();
+      o.frequency.value = freq / 2;
+      const g = ctx.createGain();
+      g.gain.value = p.sub * 0.7;
+      o.connect(g).connect(subOut);
+      oscs.push({ o, ratio: 0.5 });
+      nodes.push(o);
+    }
+    if (p.noise > 0) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const g = ctx.createGain();
+      g.gain.value = p.noise * 0.35;
+      src.connect(g).connect(out);
+      nodes.push(src);
+    }
+    return { oscs, nodes };
+  }
+
+  /** vibrato that blooms in over half a second, on every pitched oscillator */
+  private vibrato(p: SynthParams, targets: OscillatorNode[], when: number) {
+    const ctx = this.ctx!;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 5.4;
+    const depth = ctx.createGain();
+    depth.gain.setValueAtTime(0, when);
+    depth.gain.linearRampToValueAtTime(p.vibrato * 35, when + 0.5);
+    lfo.connect(depth);
+    for (const o of targets) depth.connect(o.detune);
+    return lfo; // started (and stopped) with the voice's other sources
   }
 
   private killGlide(id: string, fade: number) {
@@ -352,8 +494,9 @@ export class AudioEngine {
       if (v.lastMidi < 0) param.setValueAtTime(f * ratio, now);
       else param.setTargetAtTime(f * ratio, now, 0.015);
     }
+    if (v.filter) v.filter.param.setTargetAtTime(Math.min(18000, Math.max(20, v.filter.base * Math.pow(f / 261.6, v.filter.keyTrack))), now, 0.015);
     v.lastMidi = midi;
-    v.amp.gain.setTargetAtTime(Math.max(0.15, velocity) * 0.3, now, 0.02);
+    v.amp.gain.setTargetAtTime(Math.max(0.15, velocity) * v.level, now, 0.02);
   }
 
   scrubEnd() {
@@ -383,17 +526,28 @@ export class AudioEngine {
 
   // ---------- drums ----------
 
-  /** `tune` is a frequency ratio (2 = an octave up). */
+  /** `tune` is a frequency ratio (2 = an octave up). Tone, decay and drive come from the channel's drum settings. */
   private drum(track: Track, out: AudioNode, when: number, dur: number, tune: number, vel: number) {
     const ctx = this.ctx!;
+    const dp = drumOf(track.synth);
+    const bright = Math.pow(2, dp.tone * 1.2);
+    const long = Math.max(0.25, dp.decay);
     const nodes: AudioScheduledSourceNode[] = [];
     const amp = ctx.createGain();
-    amp.connect(out);
+    // drive: the kick and snare get a little by nature; the channel's Drive adds more
+    const grit = Math.min(1, dp.drive + (track.waveform === 'kick' ? 0.18 : track.waveform === 'snare' ? 0.1 : 0));
+    if (grit > 0) {
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = this.driveCurve(1 + grit * 6);
+      const trim = ctx.createGain();
+      trim.gain.value = 1 / (1 + grit * 0.5);
+      amp.connect(shaper).connect(trim).connect(out);
+    } else amp.connect(out);
     const peak = vel * 0.9;
     const env = (g: AudioParam, level: number, decay: number, start = when) => {
       g.setValueAtTime(0, start);
       g.linearRampToValueAtTime(level, start + 0.001);
-      g.exponentialRampToValueAtTime(0.0001, start + decay);
+      g.exponentialRampToValueAtTime(0.0001, start + decay * long);
     };
     const noise = (filter: BiquadFilterType, f: number, q: number, level: number, decay: number, start = when) => {
       const n = ctx.createBufferSource();
@@ -401,13 +555,13 @@ export class AudioEngine {
       n.playbackRate.value = 0.9 + Math.random() * 0.2;
       const bq = ctx.createBiquadFilter();
       bq.type = filter;
-      bq.frequency.value = f * tune;
+      bq.frequency.value = Math.min(18000, f * tune * bright);
       bq.Q.value = q;
       const g = ctx.createGain();
       env(g.gain, level, decay, start);
       n.connect(bq).connect(g).connect(amp);
       n.start(start, Math.random());
-      n.stop(start + decay + 0.02);
+      n.stop(start + decay * long + 0.02);
       nodes.push(n);
     };
     const tone = (type: OscillatorType, f0: number, f1: number, sweep: number, level: number, decay: number) => {
@@ -419,18 +573,18 @@ export class AudioEngine {
       env(g.gain, level, decay);
       o.connect(g).connect(amp);
       o.start(when);
-      o.stop(when + decay + 0.02);
+      o.stop(when + decay * long + 0.02);
       nodes.push(o);
     };
-    /** six detuned squares at inharmonic ratios — the 808 cymbal recipe */
+    /** six detuned squares at inharmonic ratios — the 808 cymbal recipe — plus a breath of noise on top */
     const metal = (decay: number, level: number) => {
       const bp = ctx.createBiquadFilter();
       bp.type = 'bandpass';
-      bp.frequency.value = 10000;
+      bp.frequency.value = Math.min(16000, 10000 * bright);
       bp.Q.value = 0.8;
       const hp = ctx.createBiquadFilter();
       hp.type = 'highpass';
-      hp.frequency.value = 7000;
+      hp.frequency.value = Math.min(14000, 7000 * bright);
       const g = ctx.createGain();
       env(g.gain, level, decay);
       bp.connect(hp).connect(g).connect(amp);
@@ -440,20 +594,24 @@ export class AudioEngine {
         o.frequency.value = 40 * r * tune;
         o.connect(bp);
         o.start(when);
-        o.stop(when + decay + 0.02);
+        o.stop(when + decay * long + 0.02);
         nodes.push(o);
       }
+      noise('highpass', 9000, 0.7, level * 0.35, decay * 0.8);
     };
 
     switch (track.waveform) {
       case 'kick':
-        tone('sine', 160, 42, 0.11, peak, 0.5);
-        tone('triangle', 900, 120, 0.012, peak * 0.35, 0.02); // click
+        // body: a fast sweep into a round sub; punch: a short mid thump; click: a filtered tick
+        tone('sine', 180, 46, 0.08, peak, 0.55);
+        tone('sine', 95, 50, 0.04, peak * 0.45, 0.12);
+        noise('highpass', 3500, 0.8, peak * 0.25, 0.008);
         break;
       case 'snare':
-        tone('triangle', 240, 170, 0.05, peak * 0.55, 0.12);
-        noise('bandpass', 2200, 0.6, peak * 0.9, 0.2);
-        noise('highpass', 5000, 0.7, peak * 0.4, 0.12);
+        tone('triangle', 260, 180, 0.04, peak * 0.5, 0.11);
+        tone('sine', 330, 220, 0.03, peak * 0.3, 0.08);
+        noise('bandpass', 2400, 0.7, peak * 0.85, 0.22);
+        noise('highpass', 6000, 0.7, peak * 0.4, 0.16);
         break;
       case 'hat':
         metal(0.045 + dur * 0.05, peak * 0.55);
@@ -462,15 +620,18 @@ export class AudioEngine {
         metal(Math.max(0.25, Math.min(0.9, dur)), peak * 0.5);
         break;
       case 'clap':
-        for (const d of [0, 0.011, 0.022]) noise('bandpass', 1300, 1.2, peak * 0.8, 0.03, when + d);
-        noise('bandpass', 1200, 0.9, peak * 0.7, 0.22, when + 0.03);
+        for (const d of [0, 0.01, 0.021]) noise('bandpass', 1300, 1.3, peak * 0.8, 0.028, when + d);
+        noise('bandpass', 1150, 0.9, peak * 0.7, 0.26, when + 0.031);
+        noise('highpass', 4000, 0.6, peak * 0.2, 0.12, when + 0.031);
         break;
       case 'rim':
-        tone('square', 1700, 1600, 0.01, peak * 0.3, 0.035);
-        noise('bandpass', 3500, 2, peak * 0.4, 0.025);
+        tone('square', 1750, 1650, 0.01, peak * 0.28, 0.03);
+        tone('triangle', 520, 480, 0.01, peak * 0.3, 0.05);
+        noise('bandpass', 3600, 2, peak * 0.4, 0.025);
         break;
       case 'tom':
-        tone('sine', 190, 95, 0.25, peak, 0.45);
+        tone('sine', 200, 98, 0.22, peak, 0.45);
+        tone('triangle', 400, 200, 0.05, peak * 0.2, 0.08);
         break;
       case 'crash':
         metal(1.8, peak * 0.45);
@@ -495,151 +656,25 @@ export class AudioEngine {
       press.gain.setValueAtTime(expr.pressure[0], when);
       for (let i = 1; i < expr.at.length; i++) press.gain.linearRampToValueAtTime(expr.pressure[i], when + expr.at[i]);
     } else amp.connect(bus.gain);
-    /** oscillators that sound at the note's pitch — these follow the bend (an LFO doesn't) */
-    const pitched: OscillatorNode[] = [];
-    const peak = 0.32 * vel;
+    const p = synthOf(track.waveform, track.synth);
+    const peak = 0.3 * vel * p.gain;
     const a = Math.max(0.003, track.attack);
     const r = Math.max(0.02, track.release);
-    const nodes: AudioScheduledSourceNode[] = [];
-    let end = when + dur + r;
+    // the amp: attack to the peak, fall to sustain over `decay`, release when the note ends
+    const end = when + Math.max(dur, a);
+    amp.gain.setValueAtTime(0, when);
+    amp.gain.linearRampToValueAtTime(peak, when + a);
+    if (p.sustain < 1) amp.gain.setTargetAtTime(peak * p.sustain, when + a, Math.max(0.01, p.decay) / 3);
+    amp.gain.setTargetAtTime(0, end, r / 4);
+    // a sound that falls silent by itself (no sustain) can stop once it has
+    const stop = p.sustain > 0 ? end + r * 1.6 : Math.min(end + r * 1.6, when + a + Math.max(0.01, p.decay) * 2.5);
 
-    const osc = (type: OscillatorType, f: number, detune = 0, followsPitch = true) => {
-      const o = ctx.createOscillator();
-      o.type = type;
-      o.frequency.value = f;
-      o.detune.value = detune;
-      nodes.push(o);
-      if (followsPitch) pitched.push(o);
-      return o;
-    };
-    const lowpass = (f: number, q = 0.7) => {
-      const l = ctx.createBiquadFilter();
-      l.type = 'lowpass';
-      l.frequency.value = f;
-      l.Q.value = q;
-      return l;
-    };
-    const sustainEnv = (level: number) => {
-      amp.gain.setValueAtTime(0, when);
-      amp.gain.linearRampToValueAtTime(level, when + a);
-      amp.gain.setValueAtTime(level, Math.max(when + a, when + dur));
-      amp.gain.setTargetAtTime(0, Math.max(when + a, when + dur), r / 4);
-    };
-
-    switch (track.waveform) {
-      case 'bell': {
-        // FM: inharmonic modulator gives the struck-metal shimmer
-        const car = osc('sine', freq);
-        const mod = osc('sine', freq * 3.5);
-        const idx = ctx.createGain();
-        idx.gain.setValueAtTime(freq * 2.2, when);
-        idx.gain.exponentialRampToValueAtTime(freq * 0.05, when + 1.4);
-        mod.connect(idx).connect(car.frequency);
-        car.connect(amp);
-        const tail = Math.max(1.6, dur + r);
-        amp.gain.setValueAtTime(0, when);
-        amp.gain.linearRampToValueAtTime(peak, when + 0.004);
-        amp.gain.exponentialRampToValueAtTime(0.0001, when + tail);
-        end = when + tail;
-        break;
-      }
-      case 'pluck': {
-        const o = osc('sawtooth', freq);
-        const o2 = osc('square', freq, 5);
-        const lp = lowpass(freq * 10, 2);
-        lp.frequency.setValueAtTime(Math.min(16000, freq * 10), when);
-        lp.frequency.exponentialRampToValueAtTime(Math.max(80, freq * 1.1), when + 0.35);
-        const mix = ctx.createGain();
-        mix.gain.value = 0.5;
-        o.connect(lp);
-        o2.connect(mix).connect(lp);
-        lp.connect(amp);
-        const tail = Math.min(2.2, dur + r + 0.4);
-        amp.gain.setValueAtTime(0, when);
-        amp.gain.linearRampToValueAtTime(peak * 0.9, when + 0.003);
-        amp.gain.exponentialRampToValueAtTime(0.0001, when + tail);
-        end = when + tail;
-        break;
-      }
-      case 'pad': {
-        const lp = lowpass(Math.min(2400, freq * 4), 0.5);
-        for (const d of [-9, 0, 8]) osc('sawtooth', freq, d).connect(lp);
-        osc('sine', freq / 2).connect(lp);
-        lp.connect(amp);
-        const level = peak * 0.42;
-        amp.gain.setValueAtTime(0, when);
-        amp.gain.linearRampToValueAtTime(level, when + Math.max(a, 0.25));
-        amp.gain.setValueAtTime(level, Math.max(when + 0.25, when + dur));
-        amp.gain.setTargetAtTime(0, Math.max(when + 0.25, when + dur), Math.max(r, 0.4) / 3);
-        end = when + Math.max(0.25, dur) + Math.max(r, 0.4) * 2;
-        break;
-      }
-      case 'reese': {
-        // two detuned saws beating against each other, plus a sub
-        const lp = lowpass(Math.min(1400, freq * 6), 1.5);
-        lp.frequency.setValueAtTime(Math.min(1400, freq * 6), when);
-        lp.frequency.linearRampToValueAtTime(Math.min(700, freq * 3), when + Math.max(0.1, dur));
-        osc('sawtooth', freq, -14).connect(lp);
-        osc('sawtooth', freq, 14).connect(lp);
-        const sub = ctx.createGain();
-        sub.gain.value = 1.2;
-        osc('sine', freq / 2).connect(sub).connect(amp);
-        lp.connect(amp);
-        sustainEnv(peak * 0.5);
-        break;
-      }
-      case 'custom': {
-        const o = osc('sine', freq);
-        const wave = this.periodicWave(track.timbre);
-        if (wave) o.setPeriodicWave(wave);
-        o.connect(amp);
-        sustainEnv(peak * 0.8);
-        break;
-      }
-      case 'flute': {
-        const o = osc('sine', freq);
-        const o2 = osc('triangle', freq * 2);
-        const h = ctx.createGain();
-        h.gain.value = 0.12;
-        o2.connect(h).connect(amp);
-        // vibrato that blooms in
-        const lfo = osc('sine', 5.2, 0, false);
-        const depth = ctx.createGain();
-        depth.gain.setValueAtTime(0, when);
-        depth.gain.linearRampToValueAtTime(freq * 0.006, when + 0.4);
-        lfo.connect(depth).connect(o.frequency);
-        o.connect(amp);
-        // breath
-        const n = ctx.createBufferSource();
-        n.buffer = this.noise;
-        n.loop = true;
-        nodes.push(n);
-        const bp = ctx.createBiquadFilter();
-        bp.type = 'bandpass';
-        bp.frequency.value = freq * 2;
-        bp.Q.value = 1.5;
-        const ng = ctx.createGain();
-        ng.gain.value = 0.25;
-        n.connect(bp).connect(ng).connect(amp);
-        const fa = Math.max(a, 0.06);
-        amp.gain.setValueAtTime(0, when);
-        amp.gain.linearRampToValueAtTime(peak * 0.8, when + fa);
-        amp.gain.setValueAtTime(peak * 0.8, Math.max(when + fa, when + dur));
-        amp.gain.setTargetAtTime(0, Math.max(when + fa, when + dur), r / 4);
-        break;
-      }
-      case 'square':
-      case 'sawtooth': {
-        const lp = lowpass(Math.min(9000, freq * 8));
-        osc(track.waveform, freq).connect(lp).connect(amp);
-        sustainEnv(peak * 0.45);
-        break;
-      }
-      default: {
-        osc(track.waveform as OscillatorType, freq).connect(amp);
-        sustainEnv(peak);
-      }
-    }
+    const { input } = this.chain(p, amp, freq, when, dur);
+    const bank = this.oscBank(p, track.timbre, freq, input, amp, when);
+    const nodes: AudioScheduledSourceNode[] = [...bank.nodes];
+    /** oscillators that sound at the note's pitch — these follow the bend (an LFO doesn't) */
+    const pitched: OscillatorNode[] = bank.oscs.map((x) => x.o);
+    if (p.vibrato > 0) nodes.push(this.vibrato(p, pitched, when));
 
     // bend: every pitched oscillator's detune follows the note's bend curve (in cents)
     if (expr?.bend) {
@@ -651,7 +686,7 @@ export class AudioEngine {
     }
     for (const n of nodes) {
       n.start(when);
-      n.stop(end + 0.05);
+      n.stop(Math.max(stop, when + 0.01) + 0.05);
     }
     nodes[0].onended = () => (amp.disconnect(), press?.disconnect());
   }

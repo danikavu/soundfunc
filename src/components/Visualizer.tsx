@@ -378,23 +378,31 @@ export function Visualizer() {
           g.font = '11px Ubuntu, sans-serif';
           g.textAlign = 'left';
           const first = Math.max(0, Math.floor(vw.start / BEATS_PER_BAR));
+          const ppb = (bx(BEATS_PER_BAR) - bx(0)) / BEATS_PER_BAR;
+          let lastX = -Infinity;
           for (let bar = first; bar * BEATS_PER_BAR < Math.min(total, vw.start + vw.span); bar++) {
-            const c = chordName(harmonyAt(song, offset + bar * BEATS_PER_BAR), song.root, song.scale);
-            const label = `${c.roman}  ${c.name}`;
             const x0 = bx(bar * BEATS_PER_BAR);
-            const x = Math.max(padL, x0);
             if (bar % 2 === 1) {
+              const x = Math.max(padL, x0);
               g.fillStyle = P.rake;
               g.fillRect(x, padT - 14, Math.min(W - padR, bx((bar + 1) * BEATS_PER_BAR)) - x, H - padB - padT + 14);
             }
-            // the first visible bar always says which chord is sounding
-            if (label !== prev || bar === first) {
-              g.fillStyle = P.ink2;
-              g.globalAlpha = 0.85;
-              g.fillText(label, x + 4, padT - 18);
-              g.globalAlpha = 1;
+            // chords may change on any beat: write each where it starts (the first visible one always)
+            for (let b = 0; b < BEATS_PER_BAR; b++) {
+              const beat = bar * BEATS_PER_BAR + b;
+              if (beat >= total) break;
+              const c = chordName(harmonyAt(song, offset + beat), song.root, song.scale);
+              const label = `${c.roman}  ${c.name}`;
+              const x = Math.max(padL, bx(beat));
+              if ((label !== prev || (bar === first && b === 0)) && x - lastX > Math.min(56, ppb * 2 - 4)) {
+                g.fillStyle = P.ink2;
+                g.globalAlpha = 0.85;
+                g.fillText(b ? c.name : label, x + 4, padT - 18);
+                g.globalAlpha = 1;
+                lastX = x;
+              }
+              prev = label;
             }
-            prev = label;
           }
         }
         timeAxis(bx, H - padB + 4, padL, W - padR);

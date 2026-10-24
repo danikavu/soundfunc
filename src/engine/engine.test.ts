@@ -3,20 +3,22 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { compile, compileAst, parse } from './expr';
+import { compile, compileAst, parse, tryCompile } from './expr';
 import { compose, toSource, toTex, trackCode } from './symbolic';
 import { compileGraph, euclid, evalCurve, NODE_DEFS, parseCurve } from './graph';
 import { docFor } from './nodeDocs';
 import { exportMidi, collectNotes, simplifyCurve, CURVE_TOLERANCE } from './midi';
 import { patternBeats, songWindows, stretchOf } from './project';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
-import { CHANNEL_PALETTE, KITS, PRESETS, defaultProject, pickColor, trackFromPreset, trackFromTemplate } from './presets';
-import { harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
-import { chordName, chordTones, limitPitch } from './music';
+import { CHANNEL_PALETTE, KITS, PRESETS, defaultProject, pickColor, trackFromPreset, trackFromTemplate, voicedInversion, voicedPitch } from './presets';
+import { HARMONY_VARS, harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
+import { chordName, chordTones, limitPitch, PROGRESSIONS, spellDegree } from './music';
 import { mulberry32, mutateFormula, mutateOneNode, mutateTrack, musicalScore } from './mutate';
 import { useStore } from '../state/store';
 import { parsePattern } from './graph';
 import { timbreHarmonics } from './timbre';
+import { PATCHES, applySauce, cutoffHz, drumOf, surprise, synthOf } from './synth';
+import { WAVEFORMS, type Waveform } from './project';
 import { importMath } from './importMath';
 import { auditionGraph, blockFromSelection, collapseNodes, curveToFormula, explodeFormula, insertBlock } from './graphEdit';
 import { BLOCKS } from './blocks';
@@ -1333,5 +1335,148 @@ describe('curves on pitch & MPE', () => {
     const ons = (t: typeof mpe) => t.filter((e) => (e.status & 0xf0) === 0x90 && e.data[1] > 0).length;
     expect(ons(mpe)).toBeLessThanOrEqual(ons(std));
     expect(ons(mpe)).toBe(1);
+  });
+});
+
+describe('chords, bass and style kits', () => {
+  it('voice-led chords stay in close position inside one octave, whatever the chord', () => {
+    for (const scale of ['major', 'minor', 'dorian', 'harmonicMinor']) {
+      for (const S of [3, 4]) {
+        const p = compile(voicedPitch(S), ['h', 'L']).fn, inv = compile(voicedInversion(S), ['h', 'L']).fn;
+        for (let h = -9; h <= 16; h++) {
+          const tones = chordTones(p({ h, L: 7 }), S, 2, inv({ h, L: 7 }), 0, scale, 4);
+          const lo = degreeToMidi(-2, 0, SCALES[scale].steps, 4);
+          expect(Math.min(...tones), `${scale} S=${S} h=${h}`).toBeGreaterThanOrEqual(lo);
+          expect(Math.max(...tones) - lo, `${scale} S=${S} h=${h}`).toBeLessThan(12);
+          // still the chord of h: the same pitch classes
+          const want = new Set(chordTones(h, S, 2, 0, 0, scale, 4).map((m) => m % 12));
+          expect(new Set(tones.map((m) => m % 12)), `${scale} S=${S} h=${h}`).toEqual(want);
+        }
+      }
+    }
+  });
+  it('chords are spelled the way the key spells them', () => {
+    const row = (root: number, sc: string) => [0, 1, 2, 3, 4, 5, 6].map((d) => spellDegree(d, root, sc)).join(' ');
+    expect(row(10, 'major')).toBe('B♭ C D E♭ F G A');
+    expect(row(3, 'major')).toBe('E♭ F G A♭ B♭ C D');
+    expect(row(6, 'major')).toBe('F♯ G♯ A♯ B C♯ D♯ E♯');
+    expect(row(2, 'minor')).toBe('D E F G A B♭ C');
+    expect(row(9, 'harmonicMinor')).toBe('A B C D E F G♯');
+    expect(row(4, 'dorian')).toBe('E F♯ G A B C♯ D');
+    expect(chordName(3, 10, 'major').name).toBe('E♭');
+  });
+  it('every progression reads, and the scale it asks for exists', () => {
+    for (const pr of PROGRESSIONS) {
+      expect(tryCompile(pr.formula, HARMONY_VARS).error, pr.label).toBeNull();
+      if (pr.scale) expect(SCALES[pr.scale], pr.label).toBeTruthy();
+    }
+  });
+  it('no progression or kit lands on a diminished or augmented chord it doesn’t name', () => {
+    const cases = [
+      ...PROGRESSIONS.filter((p) => p.scale).map((p) => ({ label: p.label, harmony: p.formula, scale: p.scale!, root: 0 })),
+      ...KITS.filter((k) => k.song?.harmony && k.song.scale).map((k) => ({ label: `${k.name}: ${k.description}`, harmony: k.song!.harmony!, scale: k.song!.scale!, root: k.song!.root ?? 0 })),
+    ];
+    for (const c of cases) {
+      const song = { ...defaultProject().song, harmony: c.harmony, scale: c.scale, root: c.root };
+      for (let beat = 0; beat < 64; beat++) {
+        const roman = chordName(harmonyAt(song, beat), c.root, c.scale).roman;
+        if (roman.includes('°')) expect(c.label.includes('°'), `${c.label} — ${roman} at beat ${beat}`).toBe(true);
+        if (roman.includes('+')) expect(c.label.includes('+'), `${c.label} — ${roman} at beat ${beat}`).toBe(true);
+      }
+    }
+  });
+  it('a harmony can change on the beat: two chords a bar', () => {
+    const song = { ...defaultProject().song, harmony: 'pick(floor(beat / 2), 0, 5, 1, 4)' };
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map((b) => harmonyAt(song, b))).toEqual([0, 0, 5, 5, 1, 1, 4, 4]);
+  });
+  it('style kits plant at one fixed length, and their basses land on the chord roots', () => {
+    for (const id of ['jazz', 'bossa', 'salsa', 'funk', 'disco', 'deephouse']) {
+      const kit = KITS.find((k) => k.id === id)!;
+      const lens = new Set(kit.tracks.map((t) => (t.steps ?? 16) * (t.stepBeats ?? 0.25) * (t.stretch ?? 1)));
+      expect(lens.size, `${id}: every channel the same length`).toBe(1);
+      const song = { ...defaultProject().song, ...kit.song };
+      const bass = kit.tracks.find((t) => /bass/i.test(t.name))!;
+      const tr = trackFromTemplate(bass, bass.name, 0);
+      const scale = SCALES[song.scale!].steps;
+      const r = renderTrack(tr, song, 0, false);
+      expect(r.notes.length, id).toBeGreaterThan(2);
+      // every chord the bass plays under gets its root (any octave) — anticipating basses may start elsewhere
+      const spans = new Map<string, { h: number; pcs: Set<number> }>();
+      for (const n of r.notes) {
+        const h = harmonyAt(song, n.beat);
+        const key = `${h}@${Math.floor(n.beat / 2)}`; // a chord sounding in this half-bar
+        if (!spans.has(key)) spans.set(key, { h, pcs: new Set() });
+        spans.get(key)!.pcs.add(n.midi % 12);
+      }
+      const byChord = new Map<number, Set<number>>();
+      for (const { h, pcs } of spans.values()) byChord.set(h, new Set([...(byChord.get(h) ?? []), ...pcs]));
+      for (const [h, pcs] of byChord) {
+        const rootPc = (song.root! + scale[((h % scale.length) + scale.length) % scale.length]) % 12;
+        expect(pcs.has(rootPc), `${id} ${bass.name}: chord ${h} gets its root`).toBe(true);
+      }
+      // …and the walking / bossa / funk / disco basses land right on the downbeat (tumbao anticipates, house sits on the offbeat)
+      if (id !== 'salsa' && id !== 'deephouse') {
+        const first = r.notes.find((n) => n.beat === 0)!;
+        const h0 = harmonyAt(song, 0);
+        expect(first.midi % 12, `${id} first note`).toBe((song.root! + scale[((h0 % scale.length) + scale.length) % scale.length]) % 12);
+      }
+    }
+  });
+});
+
+describe('the synth: patches, sauce and surprises', () => {
+  it('every melodic voice has a full patch, and a channel’s changes sit on top of it', () => {
+    for (const w of Object.keys(WAVEFORMS)) {
+      const p = synthOf(w as Waveform);
+      expect(p.unison, w).toBeGreaterThanOrEqual(1);
+      expect(p.gain, w).toBeGreaterThan(0);
+    }
+    const p = synthOf('pad', { cutoff: 0.2, unison: 2 });
+    expect(p.cutoff).toBe(0.2);
+    expect(p.unison).toBe(2);
+    expect(p.wave).toBe(PATCHES.pad.wave);
+  });
+  it('sauce only ever adds: never thinner, narrower or darker', () => {
+    for (const w of Object.keys(PATCHES) as (keyof typeof PATCHES)[]) {
+      const dry = PATCHES[w];
+      for (const s of [0.25, 0.5, 1]) {
+        const wet = applySauce({ ...dry, sauce: s });
+        for (const k of ['unison', 'detune', 'width', 'chorus', 'drive', 'delay', 'cutoff'] as const) expect(wet[k], `${w} ${k} @${s}`).toBeGreaterThanOrEqual(dry[k]);
+        for (const k of ['width', 'chorus', 'drive', 'delay', 'cutoff'] as const) expect(wet[k], `${w} ${k} @${s}`).toBeLessThanOrEqual(1);
+      }
+      expect(applySauce({ ...dry, sauce: 0 })).toEqual(dry);
+    }
+  });
+  it('surprise stays the same kind of sound, inside sensible ranges', () => {
+    const rng = mulberry32(5);
+    for (const w of Object.keys(PATCHES) as (keyof typeof PATCHES)[]) {
+      for (let i = 0; i < 20; i++) {
+        const v = { ...PATCHES[w], ...surprise(PATCHES[w], rng) };
+        expect(v.wave, w).toBe(PATCHES[w].wave);
+        expect(v.unison).toBeGreaterThanOrEqual(1);
+        expect(v.unison).toBeLessThanOrEqual(7);
+        expect(v.resonance).toBeLessThanOrEqual(0.85);
+        expect(v.cutoff).toBeGreaterThanOrEqual(0.1);
+      }
+    }
+  });
+  it('the cutoff knob is even: 30 Hz at the bottom, ~17 kHz at the top, rising all the way', () => {
+    expect(cutoffHz(0)).toBeCloseTo(30, 6);
+    expect(cutoffHz(1)).toBeGreaterThan(16000);
+    expect(cutoffHz(1)).toBeLessThan(18000);
+    for (let c = 0; c < 1; c += 0.1) expect(cutoffHz(c + 0.1)).toBeGreaterThan(cutoffHz(c));
+  });
+  it('drum sauce lengthens, warms and brightens a little', () => {
+    const d = drumOf({ sauce: 1 });
+    expect(d.decay).toBeGreaterThan(1);
+    expect(d.drive).toBeGreaterThan(0);
+    expect(drumOf()).toEqual({ tone: 0, decay: 1, drive: 0, sauce: 0 });
+  });
+  it('a saved voice keeps the whole patch, and recognises it', () => {
+    const t = { ...trackFromPreset(PRESETS.find((x) => x.id === 'pond')!, 0), synth: { cutoff: 0.3, sauce: 0.6 } };
+    const v = voiceOf(t, 'Dark pond');
+    expect(v.synth).toEqual({ cutoff: 0.3, sauce: 0.6 });
+    expect(wearsVoice(t, v)).toBe(true);
+    expect(wearsVoice({ ...t, synth: { cutoff: 0.3 } }, v)).toBe(false);
   });
 });

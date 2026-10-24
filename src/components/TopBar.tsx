@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { exportMidi, exportNotesCsv, type MidiMode } from '../engine/midi';
-import { NOTE_NAMES, PROGRESSIONS, SCALE_GROUPS, SCALES, type ScaleGroup } from '../engine/music';
+import { NOTE_NAMES, PROGRESSION_GROUPS, PROGRESSIONS, SCALE_GROUPS, SCALES, type ScaleGroup } from '../engine/music';
 import { tryCompile } from '../engine/expr';
 import { useStore } from '../state/store';
 import { togglePlay } from '../state/transport';
@@ -270,7 +270,7 @@ export function TopBar() {
               onFocus={checkpoint}
               onValue={(harmony) => setSong({ harmony }, false)}
               style={tryCompile(song.harmony, HARMONY_VARS).error ? { borderBottomColor: 'var(--accent)' } : undefined}
-              title="The chord (scale degree) as a function of bar. Channels read it as h."
+              title="The chord (scale degree) as a function of bar — or of beat, for chords that change inside a bar: pick(floor(beat / 2), …). Channels read it as h."
             />
             <button
               className={`lock ${song.harmonyLocked ? 'on' : ''}`}
@@ -295,18 +295,19 @@ export function TopBar() {
                     </b>
                   );
                 })()}
-                groups={[
-                  {
-                    title: 'Progressions',
-                    items: PROGRESSIONS.map((p) => ({
-                      key: p.formula,
-                      label: p.label,
-                      hint: p.formula,
-                      selected: p.formula === song.harmony,
-                      onSelect: () => setSong({ harmony: p.formula }),
-                    })),
-                  },
-                ]}
+                groups={(['story', 'groove', 'classic'] as const).map((g) => ({
+                  title: PROGRESSION_GROUPS[g],
+                  items: PROGRESSIONS.filter((p) => (p.group ?? 'classic') === g).map((p) => ({
+                    key: p.formula,
+                    label: p.label,
+                    hint: p.story ? `${p.story}${p.scale && p.scale !== song.scale ? ` · sets ${(SCALES[p.scale] ?? SCALES.major).label}` : ''}` : p.formula,
+                    selected: p.formula === song.harmony,
+                    onSelect: () => {
+                      setSong(p.scale ? { harmony: p.formula, scale: p.scale } : { harmony: p.formula });
+                      if (p.scale && p.scale !== song.scale) toast(`${p.label.split(/\s{2,}/)[0]} — scale set to ${(SCALES[p.scale] ?? SCALES.major).label}`);
+                    },
+                  })),
+                }))}
               />
             </div>
           </div>

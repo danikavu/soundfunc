@@ -831,6 +831,7 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
   const fns = new Set<string>();
   const anyHarmony = cs.some((c) => c.math.vars.has('h') || c.math.bindings.some((b) => varsOf(b.ast).has('h')));
   const harmony = harmonyAst(song);
+  const byBeat = varsOf(harmony).has('beat');
   if (anyHarmony) functionsOf(harmony, fns);
   const L = scaleLength(song);
   const body: string[] = [];
@@ -858,8 +859,8 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
   if (anyHarmony) {
     body.push(
       lang === 'js'
-        ? `\n/** the song's chord, as a scale degree, for each bar */\nexport function harmony(bar) {\n  return ${toCode(harmony, 'js')};\n}`
-        : `\n\ndef harmony(bar):\n    """The song's chord, as a scale degree, for each bar."""\n    return ${toCode(harmony, 'py')}`,
+        ? `\n/** the song's chord, as a scale degree, for each bar${byBeat ? ' (and beat)' : ''} */\nexport function harmony(bar${byBeat ? ', beat' : ''}) {\n  return ${toCode(harmony, 'js')};\n}`
+        : `\n\ndef harmony(bar${byBeat ? ', beat' : ''}):\n    """The song's chord, as a scale degree, for each bar${byBeat ? ' (and beat)' : ''}."""\n    return ${toCode(harmony, 'py')}`,
     );
   }
   const used = new Set<string>();
@@ -884,7 +885,11 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
       functionsOf(barAst(track), fns);
       clock.push(`${pre}bar = ${toCode(barAst(track), lang)}${end}`);
     }
-    if (vars.has('h')) clock.push(`${pre}h = harmony(bar)${end}`);
+    if (vars.has('h')) {
+      // a harmony that changes on beats needs the beat too
+      if (byBeat && !vars.has('beat')) clock.push(`${pre}beat = ${toCode(beatAst(track), lang)}${end}`);
+      clock.push(`${pre}h = harmony(bar${byBeat ? `, ${lang === 'js' ? 'Math.floor(beat + 1e-9)' : 'math.floor(beat + 1e-9)'}` : ''})${end}`);
+    }
     if (vars.has('L')) clock.push(`${pre}L = ${L}${end}  ${lang === 'js' ? '//' : '#'} scale degrees per octave`);
     // this track's sliders — change these to change the music
     const sliders = (track.sliders ?? []).filter((sl) => vars.has(sl.name)).map((sl) => `${pre}${sl.name} = ${fmtNum(sl.value)}${end}  ${lang === 'js' ? '//' : '#'} slider ${fmtNum(sl.min)} … ${fmtNum(sl.max)}`);

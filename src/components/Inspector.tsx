@@ -5,6 +5,7 @@ import { PITCH_MODES, midiToName, type PitchMode } from '../engine/music';
 import { CHANNEL_PALETTE, TRACK_COLORS } from '../engine/presets';
 import { DRUMS, STRETCH_MAX, STRETCH_MIN, WAVEFORMS, isDrum, keyLabel, patternBeats, stretchOf, voiceLabel, type PlayMode, type Waveform } from '../engine/project';
 import { useLibrary, voiceOf, wearsVoice } from '../state/library';
+import { DRUM_BASE, PATCHES, VOICE_HINTS as SYNTH_HINTS, cutoffHz, surprise, type DrumParams, type FilterKind, type MelodicVoice, type OscWave, type SynthParams } from '../engine/synth';
 import { toast } from './TopBar';
 import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
@@ -63,24 +64,15 @@ function WaveGlyph({ formula, color }: { formula: string; color: string }) {
 }
 
 const VOICE_HINTS: Record<string, string> = {
-  sine: 'pure tone, no overtones',
-  triangle: 'soft, flute-like',
-  square: 'hollow, woody, 8-bit',
-  sawtooth: 'bright and buzzy',
-  bell: 'FM metal, long ring',
-  pluck: 'koto — sharp attack, filter falls',
-  pad: 'three detuned saws, slow swell',
-  flute: 'shakuhachi — breath and vibrato',
-  reese: 'detuned saws beating, with a sub',
-  custom: 'your own f(p) — one cycle of the wave',
-  kick: 'sine sweep and click',
-  snare: 'tone and filtered noise',
-  hat: 'six metallic squares, short',
+  ...SYNTH_HINTS,
+  kick: 'swept sub, thump and click',
+  snare: 'two tones and bright noise',
+  hat: 'six metallic squares and air, short',
   openhat: 'metallic, long',
-  clap: 'three quick noise bursts',
-  rim: 'short click',
-  tom: 'tuned sine sweep',
-  crash: 'long metallic wash',
+  clap: 'three quick bursts and a room',
+  rim: 'short wooden click',
+  tom: 'pitched sweep',
+  crash: 'metal and noise, long',
 };
 const GLYPH_FORMULA: Partial<Record<Waveform, string>> = { sine: 'sin(tau*p)', triangle: 'tri(p)', square: 'sqr(p)', sawtooth: 'saw(p)' };
 
@@ -112,7 +104,7 @@ function VoicePicker() {
             hint: `${voiceLabel(v.waveform)}${v.waveform === 'custom' ? ` · ${v.timbre}` : ''} · ${Math.round(v.attack * 1000)} ms in · ${v.release.toFixed(2)} s out`,
             glyph: glyph(v.waveform, v.timbre),
             selected: mine?.id === v.id,
-            onSelect: () => up({ waveform: v.waveform, timbre: v.timbre, attack: v.attack, release: v.release }),
+            onSelect: () => up({ waveform: v.waveform, timbre: v.timbre, attack: v.attack, release: v.release, synth: v.synth ? { ...v.synth } : undefined }),
             onDelete: () => confirm(`Delete the voice “${v.name}”? Channels using it keep their sound.`) && deleteVoice(v.id),
           })),
         },
@@ -124,7 +116,8 @@ function VoicePicker() {
             hint: VOICE_HINTS[w],
             glyph: glyph(w, w === 'custom' ? track.timbre : undefined),
             selected: !mine && track.waveform === w,
-            onSelect: () => up({ waveform: w }),
+            // a new voice starts from its own patch — the channel's changes were for the old one
+            onSelect: () => up({ waveform: w, synth: undefined }),
           })),
         },
         {
@@ -135,11 +128,189 @@ function VoicePicker() {
             hint: VOICE_HINTS[w],
             glyph: glyph(w),
             selected: !mine && track.waveform === w,
-            onSelect: () => up({ waveform: w }),
+            onSelect: () => up({ waveform: w, synth: undefined }),
           })),
         },
       ]}
     />
+  );
+}
+
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+const secs = (v: number) => (v < 1 ? `${Math.round(v * 1000)}ms` : `${v.toFixed(2)}s`);
+const hz = (v: number) => {
+  const f = cutoffHz(v);
+  return f >= 1000 ? `${(f / 1000).toFixed(1)}k` : `${Math.round(f)}`;
+};
+
+/**
+ * Shape the sound: one Sauce knob for instant width, shimmer and grit, and the detail behind it
+ * — oscillator, filter, amp and effects — in four short tabs. Every change sits on top of the
+ * voice's own patch; Reset takes them all away.
+ */
+function SoundPanel() {
+  const track = useSelectedTrack()!;
+  const updateTrack = useStore((s) => s.updateTrack);
+  const checkpoint = useStore((s) => s.checkpoint);
+  const [tab, setTab] = useState<'osc' | 'filter' | 'amp' | 'fx'>('osc');
+  const changes = track.synth ?? {};
+  const changed = Object.keys(changes).length > 0;
+  const set = (patch: Partial<SynthParams & DrumParams>, record = false) => updateTrack(track.id, { synth: { ...changes, ...patch } }, record);
+  const reset = () => updateTrack(track.id, { synth: undefined });
+  const knob = (label: string, key: keyof (SynthParams & DrumParams), min: number, max: number, value: number, format: (v: number) => string = pct, step = 0.01) => (
+    <div onPointerDown={checkpoint}>
+      <Slider label={label} value={value} min={min} max={max} step={step} format={format} onChange={(v) => set({ [key]: v })} />
+    </div>
+  );
+
+  if (isDrum(track.waveform)) {
+    const d = { ...DRUM_BASE, ...changes };
+    return (
+      <div className="sound-panel">
+        <div className="sauce-row">
+          {knob('Sauce', 'sauce', 0, 1, d.sauce)}
+          {changed && (
+            <button className="btn small ghost" onClick={reset} title="Back to the drum as it was">
+              Reset
+            </button>
+          )}
+        </div>
+        {knob('Tone', 'tone', -1, 1, d.tone, (v) => (Math.abs(v) < 0.02 ? 'even' : v < 0 ? `darker ${Math.round(-v * 100)}` : `brighter ${Math.round(v * 100)}`))}
+        {knob('Decay', 'decay', 0.25, 3, d.decay, (v) => `×${v.toFixed(2)}`)}
+        {knob('Drive', 'drive', 0, 1, d.drive)}
+      </div>
+    );
+  }
+
+  const p = { ...(PATCHES[track.waveform as MelodicVoice] ?? PATCHES.sine), ...changes };
+  return (
+    <div className="sound-panel">
+      <div className="sauce-row">
+        {knob('Sauce', 'sauce', 0, 1, p.sauce)}
+        <div className="sauce-actions">
+        <button
+          className="btn small ghost"
+          title="A tasteful variation of this sound — same kind of voice, moved around (⌘Z to undo)"
+          onClick={() => {
+            checkpoint();
+            set(surprise(p));
+          }}
+        >
+          <Icon name="dice" size={12} /> Surprise me
+        </button>
+        {changed && (
+          <button className="btn small ghost" onClick={reset} title="Back to the voice’s own patch">
+            Reset
+          </button>
+        )}
+        </div>
+        <Info>
+          Sauce thickens and widens the sound in one move: more unison voices and detune, stereo width, chorus, a touch of drive and delay, a brighter
+          filter. Shape below sets the detail. Every change sits on top of the voice’s own patch — Reset takes them away, Save voice keeps them.
+        </Info>
+      </div>
+      <Seg<'osc' | 'filter' | 'amp' | 'fx'>
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'osc', label: 'Oscillator' },
+          { value: 'filter', label: 'Filter' },
+          { value: 'amp', label: 'Amp' },
+          { value: 'fx', label: 'Effects' },
+        ]}
+      />
+      <div className="sound-tab">
+        {tab === 'osc' && (
+          <>
+            {p.wave !== 'custom' && (
+              <div className="row sound-wave">
+                <Seg<OscWave>
+                  value={p.wave}
+                  onChange={(wave) => (checkpoint(), set({ wave }))}
+                  options={[
+                    { value: 'sine', label: 'Sine' },
+                    { value: 'triangle', label: 'Tri' },
+                    { value: 'sawtooth', label: 'Saw' },
+                    { value: 'square', label: 'Square' },
+                    { value: 'fm', label: 'FM' },
+                  ]}
+                />
+              </div>
+            )}
+            {p.wave === 'fm' ? (
+              <>
+                {knob('FM ratio', 'fmRatio', 0.5, 8, p.fmRatio, (v) => `×${v.toFixed(2)}`, 0.25)}
+                {knob('FM depth', 'fmIndex', 0, 6, p.fmIndex, (v) => v.toFixed(1), 0.05)}
+                {knob('FM fall', 'fmDecay', 0.05, 4, p.fmDecay, secs)}
+              </>
+            ) : null}
+            {knob('Unison', 'unison', 1, 7, p.unison, (v) => `×${Math.round(v)}`, 1)}
+            {knob('Detune', 'detune', 0, 40, p.detune, (v) => `${Math.round(v)}¢`, 0.5)}
+            {knob('Width', 'width', 0, 1, p.width)}
+            {knob('Sub', 'sub', 0, 1, p.sub)}
+            {knob('Noise', 'noise', 0, 1, p.noise)}
+          </>
+        )}
+        {tab === 'filter' && (
+          <>
+            <div className="row sound-wave">
+              <Seg<FilterKind>
+                value={p.filter}
+                onChange={(filter) => (checkpoint(), set({ filter }))}
+                options={[
+                  { value: 'off', label: 'Off' },
+                  { value: 'lowpass', label: 'Low-pass' },
+                  { value: 'bandpass', label: 'Band' },
+                  { value: 'highpass', label: 'High-pass' },
+                ]}
+              />
+            </div>
+            {p.filter !== 'off' && (
+              <>
+                {knob('Cutoff', 'cutoff', 0, 1, p.cutoff, hz)}
+                {knob('Resonance', 'resonance', 0, 1, p.resonance)}
+                {knob('Env amount', 'envAmount', 0, 1, p.envAmount)}
+                {knob('Env fall', 'envDecay', 0.02, 2, p.envDecay, secs)}
+                {knob('Key track', 'keyTrack', 0, 1, p.keyTrack)}
+              </>
+            )}
+          </>
+        )}
+        {tab === 'amp' && (
+          <>
+            <div onPointerDown={checkpoint}>
+              <Slider label="Attack" value={track.attack} min={0.003} max={1.5} format={secs} onChange={(attack) => updateTrack(track.id, { attack }, false)} />
+            </div>
+            {knob('Decay', 'decay', 0.02, 3, p.decay, secs)}
+            {knob('Sustain', 'sustain', 0, 1, p.sustain)}
+            <div onPointerDown={checkpoint}>
+              <Slider label="Release" value={track.release} min={0.02} max={3} format={secs} onChange={(release) => updateTrack(track.id, { release }, false)} />
+            </div>
+          </>
+        )}
+        {tab === 'fx' && (
+          <>
+            {knob('Drive', 'drive', 0, 1, p.drive)}
+            {knob('Chorus', 'chorus', 0, 1, p.chorus)}
+            {knob('Delay', 'delay', 0, 1, p.delay)}
+            <div className="row sound-wave seg-tight">
+              <span className="muted" style={{ fontSize: 11.5, width: 64 }}>Delay time</span>
+              <Seg<number>
+                value={p.delayTime}
+                onChange={(delayTime) => (checkpoint(), set({ delayTime }))}
+                options={[
+                  { value: 0.5, label: '1/8' },
+                  { value: 0.75, label: '3/16' },
+                  { value: 1, label: '1/4' },
+                  { value: 1.5, label: '3/8' },
+                ]}
+              />
+            </div>
+            {knob('Vibrato', 'vibrato', 0, 1, p.vibrato)}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -398,7 +569,8 @@ function SoundTab() {
       <div className="eyebrow">Voice</div>
       <VoicePicker />
       {track.waveform === 'custom' && <TimbreEditor />}
-      {track.waveform === 'custom' && <SaveVoice />}
+      <SoundPanel />
+      {(track.waveform === 'custom' || Object.keys(track.synth ?? {}).length > 0) && <SaveVoice />}
 
       {!drum && (
         <>
@@ -436,12 +608,6 @@ function SoundTab() {
       <Slider label="Volume" value={track.volume} min={0} max={1} onChange={(volume) => up({ volume })} />
       <Slider label="Pan" value={track.pan} min={-1} max={1} format={(v) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `L${Math.round(-v * 100)}` : `R${Math.round(v * 100)}`)} onChange={(pan) => up({ pan })} />
       <Slider label="Reverb" value={track.send} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(send) => up({ send })} />
-      {!drum && (
-        <>
-          <Slider label="Attack" value={track.attack} min={0.003} max={1.5} format={(v) => `${Math.round(v * 1000)}ms`} onChange={(attack) => up({ attack })} />
-          <Slider label="Release" value={track.release} min={0.02} max={3} format={(v) => `${v.toFixed(2)}s`} onChange={(release) => up({ release })} />
-        </>
-      )}
 
       <div className="eyebrow">Feel</div>
       {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} />}
