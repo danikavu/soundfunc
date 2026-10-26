@@ -1,6 +1,6 @@
 import { audibleTracks, isDrum, keyLabel, patternBeats, renderTrack, songBeats, songWindows, type Note, type Project, type Track, type Waveform } from './project';
 
-const PPQ = 480;
+export const PPQ = 480;
 /** the pitch-bend ranges we offer: the instrument receiving the file must be set to the same */
 export const BEND_RANGES = [2, 5, 7, 12, 24, 48] as const;
 export const MPE_BEND_RANGES = [24, 48, 96] as const;
@@ -36,7 +36,7 @@ function vlq(n: number): number[] {
 const ascii = (s: string) => [...s].map((c) => c.charCodeAt(0) & 0x7f);
 const u32 = (n: number) => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
 
-interface Ev {
+export interface Ev {
   tick: number;
   /** note-offs, then controllers/bends, then note-ons at the same tick */
   order: number;
@@ -75,11 +75,11 @@ export interface ExportTrack {
 }
 
 /** Every note (and glide point) of every audible track across the export length, in absolute beats. */
-export function collectNotes(project: Project): ExportTrack[] {
+export function collectNotes(project: Project, from = 0, to = exportBeats(project), clipAtEnd = true): ExportTrack[] {
   const tracks = audibleTracks(project.tracks);
-  const total = exportBeats(project);
+  const total = to;
   // the same song time playback uses: with "repeat exactly" each pass starts again
-  const windows = songWindows(project.song, songBeats(tracks, project.song), 0, total);
+  const windows = songWindows(project.song, songBeats(tracks, project.song), from, to);
   return tracks.map((track) => {
     const len = patternBeats(track);
     const notes: Note[] = [];
@@ -99,7 +99,8 @@ export function collectNotes(project: Project): ExportTrack[] {
         for (const n of r.notes) {
           const beat = k * len + n.beat;
           if (beat >= w.to - 1e-9) continue;
-          notes.push({ ...n, beat: w.base + beat, duration: Math.min(n.duration, total - w.base - beat) });
+          // a file ends where it ends; a stretch of live playback lets notes ring on into the next
+          notes.push({ ...n, beat: w.base + beat, duration: clipAtEnd ? Math.min(n.duration, total - w.base - beat) : n.duration });
         }
       }
     }
@@ -111,7 +112,7 @@ export function exportBeats(project: Project): number {
   return songBeats(audibleTracks(project.tracks), project.song) * Math.max(1, project.song.exportLoops);
 }
 
-const tick = (beat: number) => Math.round(beat * PPQ);
+export const tick = (beat: number) => Math.round(beat * PPQ);
 
 /** how far a simplified curve may stray from the real one: pitch in semitones, expression in CC steps */
 export const CURVE_TOLERANCE = { semis: 0.03, expr: 1.5 };
@@ -379,9 +380,68 @@ function glideAsNotes(points: GlidePoint[], total: number): Note[] {
   return out;
 }
 
+/** one channel's MIDI events over a stretch of song time: absolute ticks, sorted the MIDI way */
+export interface ChannelEvents {
+  track: Track;
+  /** the MIDI channel (0–15) its notes use (MPE spreads over a zone instead) */
+  ch: number;
+  events: Ev[];
+}
+
+/**
+ * Every audible channel's MIDI events between `from` and `to` (beats of song time) — what a
+ * MIDI file holds, and what the Max for Live device plays, in the given mode. Ticks are
+ * absolute (480 per beat from the song's start). `clipAtEnd`: notes stop at `to` (a file),
+ * or ring on into whatever comes next (live playback).
+ */
+export function windowEvents(project: Project, mode: MidiMode, from: number, to: number, stats: CurveStats = { raw: 0, kept: 0 }, clipAtEnd = true): ChannelEvents[] {
+  const { song } = project;
+  const all = collectNotes(project, from, to, clipAtEnd);
+  const total = to;
+  let melodic = 0;
+  return all.map(({ track, notes, glide }) => {
+    const drum = isDrum(track.waveform);
+    let ch = 9; // GM percussion
+    if (!drum) {
+      ch = melodic++ % 15;
+      if (ch >= 9) ch++;
+    }
+    const evs: Ev[] = [];
+    const t0 = tick(from);
+    const simplify = song.exportCurves !== 'full';
+    // notes only: no automation at all — a glide becomes the notes it passes through
+    if (mode === 'notes') {
+      if (!drum) evs.push({ tick: t0, order: 0, bytes: [0xc0 | ch, GM_PROGRAM[track.waveform] ?? 0] });
+      for (const n of [...notes, ...glideAsNotes(glide, total)]) {
+        const on = tick(n.beat);
+        const off = Math.max(on + 1, tick(n.beat + n.duration));
+        const vel = Math.max(1, Math.min(127, Math.round(n.velocity * 127)));
+        evs.push({ tick: on, order: 1, bytes: [0x90 | ch, n.midi, vel] }, { tick: off, order: 0, bytes: [0x80 | ch, n.midi, 0] });
+      }
+      return { track, ch, events: evs };
+    }
+    // MPE: every note on its own channel of a 15-channel zone, with its own bend, pressure and slide
+    if (!drum && mode === 'mpe') {
+      evs.push(...mpeEvents(GM_PROGRAM[track.waveform] ?? 0, notes, glide, total, simplify, stats, rangeOf(song.mpeBendRange, 48)).map((e) => (e.tick === 0 ? { ...e, tick: t0 } : e)));
+      return { track, ch, events: evs };
+    }
+    if (!drum) evs.push({ tick: t0, order: 0, bytes: [0xc0 | ch, GM_PROGRAM[track.waveform] ?? 0] });
+    if (glide.length) evs.push(...glideEvents(glide, ch, total, simplify, stats, rangeOf(song.bendRange, 24)).map((e) => (e.tick === 0 ? { ...e, tick: t0 } : e)));
+    // without MPE, per-note expression goes out on the channel (exact for one note at a time)
+    if (!drum && notes.some((n) => n.expr)) evs.push(...channelExpression(notes, ch, simplify, stats, rangeOf(song.bendRange, 24)).map((e) => (e.tick === 0 ? { ...e, tick: t0 } : e)));
+    for (const n of notes) {
+      const on = tick(n.beat);
+      const off = Math.max(on + 1, tick(n.beat + n.duration));
+      const vel = Math.max(1, Math.min(127, Math.round(n.velocity * 127)));
+      evs.push({ tick: on, order: 1, bytes: [0x90 | ch, n.midi, vel] });
+      evs.push({ tick: off, order: 0, bytes: [0x80 | ch, n.midi, 0] });
+    }
+    return { track, ch, events: evs };
+  });
+}
+
 export function exportMidi(project: Project, stats: CurveStats = { raw: 0, kept: 0 }, mode: MidiMode = project.song.exportMidi ?? 'standard'): Uint8Array {
   const { song } = project;
-  const all = collectNotes(project);
   const total = exportBeats(project);
 
   const minor = MINOR_SCALES.has(song.scale);
@@ -393,47 +453,7 @@ export function exportMidi(project: Project, stats: CurveStats = { raw: 0, kept:
     meta(0, 0x58, [4, 2, 24, 8]),
     meta(0, 0x59, [sf & 0xff, minor ? 1 : 0]),
   ]);
-
-  let melodic = 0;
-  const trackChunks = all.map(({ track, notes, glide }) => {
-    const drum = isDrum(track.waveform);
-    let ch = 9; // GM percussion
-    if (!drum) {
-      ch = melodic++ % 15;
-      if (ch >= 9) ch++;
-    }
-    const evs: Ev[] = [meta(0, 0x03, ascii(track.name))];
-    const simplify = song.exportCurves !== 'full';
-    // notes only: no automation at all — a glide becomes the notes it passes through
-    if (mode === 'notes') {
-      if (!drum) evs.push({ tick: 0, order: 0, bytes: [0xc0 | ch, GM_PROGRAM[track.waveform] ?? 0] });
-      for (const n of [...notes, ...glideAsNotes(glide, total)]) {
-        const on = tick(n.beat);
-        const off = Math.max(on + 1, tick(n.beat + n.duration));
-        const vel = Math.max(1, Math.min(127, Math.round(n.velocity * 127)));
-        evs.push({ tick: on, order: 1, bytes: [0x90 | ch, n.midi, vel] }, { tick: off, order: 0, bytes: [0x80 | ch, n.midi, 0] });
-      }
-      return chunk(evs);
-    }
-    // MPE: every note on its own channel of a 15-channel zone, with its own bend, pressure and slide
-    if (!drum && mode === 'mpe') {
-      evs.push(...mpeEvents(GM_PROGRAM[track.waveform] ?? 0, notes, glide, total, simplify, stats, rangeOf(song.mpeBendRange, 48)));
-      return chunk(evs);
-    }
-    if (!drum) evs.push({ tick: 0, order: 0, bytes: [0xc0 | ch, GM_PROGRAM[track.waveform] ?? 0] });
-    if (glide.length) evs.push(...glideEvents(glide, ch, total, simplify, stats, rangeOf(song.bendRange, 24)));
-    // without MPE, per-note expression goes out on the channel (exact for one note at a time)
-    if (!drum && notes.some((n) => n.expr)) evs.push(...channelExpression(notes, ch, simplify, stats, rangeOf(song.bendRange, 24)));
-    for (const n of notes) {
-      const on = tick(n.beat);
-      const off = Math.max(on + 1, tick(n.beat + n.duration));
-      const vel = Math.max(1, Math.min(127, Math.round(n.velocity * 127)));
-      evs.push({ tick: on, order: 1, bytes: [0x90 | ch, n.midi, vel] });
-      evs.push({ tick: off, order: 0, bytes: [0x80 | ch, n.midi, 0] });
-    }
-    return chunk(evs);
-  });
-
+  const trackChunks = windowEvents(project, mode, 0, total, stats).map(({ track, events }) => chunk([meta(0, 0x03, ascii(track.name)), ...events]));
   const header = [...ascii('MThd'), ...u32(6), 0, 1, 0, trackChunks.length + 1, (PPQ >> 8) & 0xff, PPQ & 0xff];
   return new Uint8Array([...header, ...conductor, ...trackChunks.flat()]);
 }

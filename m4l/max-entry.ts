@@ -1,0 +1,104 @@
+/**
+ * The device's script for Max's [v8] object: connects the device logic (host.ts) to Max.
+ * Bundled into m4l/device/soundfunc.js by `npm run build:m4l`.
+ *
+ * Outlets:
+ *   0 → [pipe] left: an event (MIDI packed into one number), or "clear"
+ *   1 → [pipe] right: that event's delay in ms (sent first)
+ *   2 → [midiout]: MIDI right now (note-offs when stopping)
+ *   3 → the editor window ([jweb])
+ *   4 → [pattr]: the project, kept with the Live Set
+ *   5 → the status line on the device
+ */
+import { createHost, type Io } from './host';
+
+declare function outlet(n: number, ...args: unknown[]): void;
+declare function post(...args: unknown[]): void;
+declare class Dict {
+  constructor(name: string);
+  get(key: string): unknown;
+  set(key: string, value: unknown): void;
+}
+declare class Task {
+  constructor(fn: () => void);
+  schedule(ms?: number): void;
+  cancel(): void;
+}
+
+const g = globalThis as unknown as Record<string, unknown>;
+g.inlets = 1;
+g.outlets = 6;
+g.autowatch = 0;
+
+// what a browser has and Max's JavaScript engine may not
+if (typeof g.structuredClone !== 'function') g.structuredClone = (v: unknown) => JSON.parse(JSON.stringify(v));
+if (typeof g.setTimeout !== 'function') {
+  g.setTimeout = (fn: () => void, ms: number) => {
+    const t = new Task(fn);
+    t.schedule(ms);
+    return t;
+  };
+  g.clearTimeout = (t?: Task) => t?.cancel?.();
+}
+
+/** the dict the editor and the device pass the project through — one per device */
+const sharedName = `sf_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+
+const io: Io = {
+  later(delayMs, code) {
+    outlet(1, delayMs);
+    outlet(0, code);
+  },
+  now(bytes) {
+    outlet(2, ...bytes);
+  },
+  cancel() {
+    outlet(0, 'clear');
+  },
+  ui(...args) {
+    outlet(3, ...args);
+  },
+  store(json) {
+    outlet(4, 'set', json);
+  },
+  status(text) {
+    outlet(5, 'set', text);
+  },
+  readShared() {
+    const v = new Dict(sharedName).get('json');
+    return typeof v === 'string' ? v : null;
+  },
+  writeShared(json) {
+    new Dict(sharedName).set('json', json);
+  },
+  sharedName,
+};
+
+const host = createHost(io);
+
+/** Max path → file URL: "Macintosh HD:/Users/x/SoundFunc" → file:///Users/x/SoundFunc; "C:/x" → file:///C:/x */
+function fileUrl(maxPath: string, file: string): string {
+  let p = maxPath.replace(/\\/g, '/');
+  if (/\.(amxd|maxpat)$/i.test(p)) p = p.slice(0, p.lastIndexOf('/'));
+  const drive = /^[A-Za-z]:\//.test(p);
+  if (!drive) p = p.replace(/^[^/]*:/, ''); // a Mac volume name
+  return encodeURI(`file://${drive ? '/' : ''}${p}/${file}`);
+}
+
+// ---------- messages from the patch ----------
+
+g.clock = (tempo: number, state: number, ticks: number) => host.clock(tempo, state, ticks);
+g.restore = (...parts: unknown[]) => host.restore(parts.join(' '));
+g.ui = (cmd: unknown) => host.ui(String(cmd));
+g.active = (on: number) => host.active(on);
+g.channel = (n: number) => host.channel(n);
+g.midi = (m: number) => host.midi(m);
+g.kit = (n: number) => host.kit(n);
+g.panic = () => host.panic();
+/** where the device lives, so the editor window can find its page (ui/index.html beside the device) */
+g.devicepath = (...parts: unknown[]) => io.ui('url', fileUrl(parts.join(' '), 'ui/index.html'));
+g.loadbang = () => {
+  io.status(host.describe());
+  post('SoundFunc ready\n');
+};
+g.bang = () => io.status(host.describe());

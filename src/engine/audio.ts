@@ -165,6 +165,7 @@ export class AudioEngine {
   }
 
   setProject(project: Project) {
+    if (this.external) return void (this.project = project);
     if (this.project && this.ctx && project.song.bpm !== this.bpm) {
       // re-anchor so tempo changes don't jump the playhead
       this.originBeat = this.beatAt(this.ctx.currentTime);
@@ -190,12 +191,24 @@ export class AudioEngine {
   }
 
   /** Current beat position (since play started), or null when stopped. */
+  /**
+   * Inside the Max for Live device the editor makes no sound: Live plays the device's MIDI,
+   * and the playhead follows Live's transport (sent in here) instead of this engine's clock.
+   */
+  external = false;
+  private externalBeat: number | null = null;
+  setExternalPosition(beat: number | null) {
+    this.externalBeat = beat === null || beat < 0 ? null : beat;
+  }
+
   position(): number | null {
+    if (this.external) return this.externalBeat;
     if (!this.playing || !this.ctx) return null;
     return Math.max(0, this.beatAt(this.ctx.currentTime - (this.ctx.outputLatency || 0)));
   }
 
   async play() {
+    if (this.external) return;
     const ctx = this.ensure();
     if (ctx.state !== 'running') await ctx.resume();
     if (this.project) this.setProject(this.project);
@@ -479,6 +492,7 @@ export class AudioEngine {
   private scrubVoice: GlideVoice | null = null;
 
   scrub(track: Track, midi: number, velocity: number) {
+    if (this.external) return;
     const ctx = this.ensure();
     if (ctx.state !== 'running') void ctx.resume();
     if (this.project) this.setProject(this.project);
@@ -511,6 +525,7 @@ export class AudioEngine {
   }
 
   preview(track: Track, midi: number, velocity = 0.8) {
+    if (this.external) return;
     const ctx = this.ensure();
     if (ctx.state !== 'running') void ctx.resume();
     if (this.project) this.setProject(this.project);

@@ -2,12 +2,13 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { GEdge, GNode, Graph, NodeData } from '../engine/graph';
 import type { EditResult } from '../engine/graphEdit';
-import { applyGrid, fixedLengthFor, gridOf, type Grid } from '../engine/steps';
+import { applyGrid, gridOf, type Grid } from '../engine/steps';
 import type { SavedFunction } from './library';
 import { defaultProject, KITS, pickColor, PRESETS, trackFromPreset, trackFromTemplate, uid } from '../engine/presets';
 import { mutateHarmony, mutateOneNode, mutateTrack } from '../engine/mutate';
+import { fitToSong, kitSong } from '../engine/kits';
 import { blockFromSelection, insertBlock, type Block } from '../engine/graphEdit';
-import { formulaNames, harmonyCycleBars, isDrum, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
+import { formulaNames, isDrum, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
 import { CONSTANTS, FUNCTIONS, renameVariable } from '../engine/expr';
 import { ctxVars } from '../engine/graph';
 
@@ -151,15 +152,7 @@ export const useStore = create<State>()(
           const cur = get().project.song;
           // replacing the garden: tracks that share a length make a fixed song, long enough for
           // the progression too; tracks of different lengths (polyrhythms) make a free song
-          let song: Song = { ...cur, ...kit.song };
-          if (!layer) {
-            const lengths = tracks.map((t) => t.steps * t.stepBeats);
-            const same = lengths.every((l) => Math.abs(l - lengths[0]) < 1e-9);
-            const cycle = harmonyCycleBars(song);
-            song = same
-              ? { ...song, lengthMode: 'fixed', lengthBeats: fixedLengthFor(Math.max(lengths[0], cycle < 16 ? cycle * 4 : 0)) }
-              : { ...song, lengthMode: 'free', lengthBeats: fixedLengthFor(Math.max(...lengths)) };
-          } else song = { ...song, lengthMode: cur.lengthMode, lengthBeats: cur.lengthBeats };
+          const song: Song = layer ? { ...cur, ...kit.song, lengthMode: cur.lengthMode, lengthBeats: cur.lengthBeats } : kitSong(kit, tracks, cur);
           const fitted = tracks.map((t) => fitToSong(t, song));
           commit((p) => ({
             ...p,
@@ -391,10 +384,6 @@ export const useStore = create<State>()(
 );
 
 /** with a fixed song length, a track is re-gridded to fill it exactly; a free song leaves it as it is */
-function fitToSong(t: Track, song: Song): Track {
-  const L = songGridLength(song);
-  return L === null ? t : { ...t, ...applyGrid(gridOf(t), {}, L) };
-}
 
 const RESERVED = new Set<string>([...ctxVars, 'a', 'b', 'c', 'p', ...Object.keys(CONSTANTS), ...Object.keys(FUNCTIONS)]);
 export const validSliderName = (n: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(n) && !RESERVED.has(n);
