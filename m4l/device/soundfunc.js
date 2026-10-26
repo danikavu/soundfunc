@@ -6556,6 +6556,40 @@
 			editorClosed() {
 				editorReady = false;
 			},
+			/**
+			* Write to clip: the whole song (its length × Loops) as notes, for Live's add_new_notes —
+			* the channels this device plays (all, or the one chosen). Live's clip API takes notes
+			* only, so glides become the notes they pass through and bends are left out.
+			*/
+			clipNotes() {
+				const length = exportBeats(project);
+				let channels = windowEvents(project, "notes", 0, length);
+				if (only > 0) channels = channels.filter((c) => audibleTracks(project.tracks).indexOf(c.track) === only - 1);
+				const notes = [];
+				for (const c of channels) {
+					const open = /* @__PURE__ */ new Map();
+					for (const e of [...c.events].sort((a, b) => a.tick - b.tick || a.order - b.order)) {
+						const kind = e.bytes[0] & 240, key = `${e.bytes[0] & 15}:${e.bytes[1]}`;
+						if (kind === 144 && e.bytes[2] > 0) open.set(key, [...open.get(key) ?? [], e]);
+						else if (kind === 128 || kind === 144 && e.bytes[2] === 0) {
+							const on = open.get(key)?.shift();
+							if (on) notes.push({
+								pitch: on.bytes[1],
+								start_time: on.tick / 480,
+								duration: Math.max(1 / 480, (e.tick - on.tick) / 480),
+								velocity: on.bytes[2]
+							});
+						}
+					}
+				}
+				notes.sort((a, b) => a.start_time - b.start_time || a.pitch - b.pitch);
+				const which = only > 0 ? audibleTracks(project.tracks)[only - 1]?.name : null;
+				return {
+					name: which ? `${project.name || "SoundFunc"} · ${which}` : project.name || "SoundFunc",
+					length,
+					notes
+				};
+			},
 			panic: stopAll,
 			get project() {
 				return project;
@@ -6577,10 +6611,11 @@
 	*   3 → the editor window ([jweb])
 	*   4 → [pattr]: the project, kept with the Live Set
 	*   5 → the status line on the device
+	*   6 → the Play toggle (switched off, without a loop back, after Write to clip)
 	*/
 	const g = globalThis;
 	g.inlets = 1;
-	g.outlets = 6;
+	g.outlets = 7;
 	g.autowatch = 0;
 	if (typeof g.structuredClone !== "function") g.structuredClone = (v) => JSON.parse(JSON.stringify(v));
 	if (typeof g.setTimeout !== "function") {
@@ -6647,6 +6682,59 @@
 	g.midi = (m) => host.midi(m);
 	g.fn = (n) => host.fn(n);
 	g.panic = () => host.panic();
+	/**
+	* Write to clip: the song's notes into a clip on this device's track, so they're Live's own notes
+	* to edit. The clip open in Live's clip view, if it's on this track (session or arrangement) — its
+	* notes are replaced — or else a new clip in the track's first empty session slot. Live's clip API
+	* takes notes only: glides arrive as the notes they pass through, bends stay with the device.
+	*/
+	const live = (path) => new LiveAPI(path);
+	const isSome = (api) => String(api.id) !== "0";
+	/** the track a clip sits on: a session clip's parent is its slot, an arrangement clip's is the track */
+	function trackOfClip(clip) {
+		const parent = live(`${clip.unquotedpath} canonical_parent`);
+		return parent.type === "ClipSlot" ? live(`${parent.unquotedpath} canonical_parent`) : parent;
+	}
+	g.writeclip = () => {
+		try {
+			const { name, length, notes } = host.clipNotes();
+			if (!notes.length) return io.status("Nothing to write — the song has no notes.");
+			const track = live("this_device canonical_parent");
+			if (!isSome(track) || track.type !== "Track") return io.status("Write to clip works on a MIDI track.");
+			let clip = null;
+			let fresh = false;
+			const shown = live("live_set view detail_clip");
+			if (isSome(shown) && Number(shown.get("is_midi_clip")[0]) === 1 && String(trackOfClip(shown).id) === String(track.id)) clip = shown;
+			else {
+				const slots = track.getcount("clip_slots");
+				for (let i = 0; i < slots && !clip; i++) {
+					const slot = live(`${track.unquotedpath} clip_slots ${i}`);
+					if (Number(slot.get("has_clip")[0]) === 0) {
+						slot.call("create_clip", length);
+						clip = live(`${slot.unquotedpath} clip`);
+						fresh = true;
+					}
+				}
+			}
+			if (!clip || !isSome(clip)) return io.status("No empty clip slot on this track — open a clip on it, or free a slot.");
+			if (!fresh) {
+				const old = Number(clip.get("length")[0]) || 0;
+				clip.call("remove_notes_extended", 0, 128, 0, Math.max(old, length) + 1);
+				if (length > Number(clip.get("loop_end")[0])) clip.set("end_marker", length), clip.set("loop_end", length);
+				else clip.set("loop_end", length), clip.set("end_marker", length);
+				clip.set("loop_start", 0);
+				clip.set("start_marker", 0);
+			}
+			clip.call("add_new_notes", { notes });
+			clip.set("name", name);
+			outlet(6, "set", 0);
+			host.active(0);
+			io.status(`Wrote ${notes.length} notes (${length} beats) to “${name}”. Play is off — the clip plays them.`);
+		} catch (e) {
+			post(`SoundFunc Write to clip: ${e}\n`);
+			io.status("Couldn’t write the clip — see the Max Console.");
+		}
+	};
 	/** Import…: Max's file dialog picked a file — read it whole and let the device decide what it is */
 	g.importfile = (...parts) => {
 		const path = parts.join(" ");

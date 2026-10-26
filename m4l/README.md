@@ -31,7 +31,7 @@ Max for Live devices are saved from Max's own editor, so this one step is by han
 3. Open `m4l/device/SoundFunc.maxpat` in Max too (File → Open…). Select all (⌘A), copy (⌘C), close it.
 4. Back in the device's editor: select all (⌘A), delete, paste (⌘V).
 5. **Save As… `m4l/device/SoundFunc.amxd`** — it has to live in the same folder as `soundfunc.js` and `ui/`.
-6. Close Max. The device now shows **Play**, **Channel**, **MIDI**, **Function**, **Open editor…** and **Import…**
+6. Close Max. The device now shows **Play**, **Channel**, **MIDI**, **Write to clip**, **Function**, **Open editor…** and **Import…**
 
 After a rebuild (`npm run build:m4l`), the `.amxd` picks up the new `soundfunc.js` and `ui/`
 next time it loads. Repeat steps 2–5 only if the patch itself changed.
@@ -58,6 +58,11 @@ empty, check that file exists (`npm run build:m4l`) and sits beside the device.
   - a **math file** (`.txt`, `.tex`, `.md` — LaTeX, Desmos, plain math) — the editor opens *Paste function* with it, to choose what x and y mean and plant it, as in the app;
   - a **project** (`.soundfunc.json`) — it loads.
   The editor opens to show it. In the editor itself, ƒ *Paste function* and *My functions → Import* work as in the app too, wherever [jweb] allows the clipboard and file picking.
+- **Write to clip** — draws the song into a clip on this track as ordinary Live notes, so you can edit, quantize, consolidate and drag them into the Arrangement like any other MIDI:
+  - if a MIDI clip on this track is open in Live's clip view (Session or Arrangement), its notes are **replaced** and it takes the song's length (song length × Loops);
+  - otherwise a new clip goes into the track's first empty Session slot.
+  It writes what the device would play: all channels, or just the one picked in **Channel**. Afterwards the device's **Play** turns off, so the clip doesn't sound twice. Switch it back on to hear the device live again. Ctrl/⌘Z in Live undoes the write.
+  Live's clip API only accepts notes, so **pitch bends and MPE can't go into the clip**. Glides arrive as the notes they pass through, and bends are left out. For the smooth bends, record the device's output into another MIDI track, or export a MIDI file from the editor (Notes + automation / MPE) and drag it in.
 - **Open editor…** — the app: node board, Score, Function view, function presets, harmony, sliders, curves. (No drum kits in here — the device is for the functions.) Edits are heard right away; the Score's playhead follows Live.
 - What you play into the track passes through, so you can play along.
 
@@ -84,7 +89,8 @@ with a stand-in `window.max`). These depend on Max itself — please check on fi
 - the project is saved with the Live Set (`[pattr]` as a hidden *blob* parameter) and restored on reopen;
 - **Open editor…** opens the window and the editor finds `ui/index.html` beside the device;
 - **Import…** reads the chosen file (Max's `File` object) — and whether ⌘V reaches the editor's text boxes or Max takes it;
-- timing is tight under load (with Overdrive on).
+- timing is tight under load (with Overdrive on);
+- **Write to clip** — the Live API calls (`create_clip`, `remove_notes_extended`, `add_new_notes` with a JavaScript object) are tested only against a stand-in for Live.
 
 MPE output (each note on its own channel) is not in the device yet — the engine can write it; the
 device needs MPE switched on in Live for its output first.

@@ -10,7 +10,7 @@
  * Kept free of Max globals: the device wiring (max-entry.ts) passes in a small Io, so the
  * same logic runs in tests against a pretend transport.
  */
-import { windowEvents, PPQ, type Ev, type MidiMode } from '../src/engine/midi';
+import { exportBeats, windowEvents, PPQ, type Ev, type MidiMode } from '../src/engine/midi';
 import { audibleTracks, normalizeProject, songBeats, type Project } from '../src/engine/project';
 import { defaultProject, MATH_PRESETS, trackFromPreset, trackFromTemplate } from '../src/engine/presets';
 import { fitToSong } from '../src/engine/kits';
@@ -325,6 +325,31 @@ export function createHost(io: Io) {
     editorClosed() {
       editorReady = false;
     },
+    /**
+     * Write to clip: the whole song (its length × Loops) as notes, for Live's add_new_notes —
+     * the channels this device plays (all, or the one chosen). Live's clip API takes notes
+     * only, so glides become the notes they pass through and bends are left out.
+     */
+    clipNotes(): { name: string; length: number; notes: ClipNote[] } {
+      const length = exportBeats(project);
+      let channels = windowEvents(project, 'notes', 0, length);
+      if (only > 0) channels = channels.filter((c) => audibleTracks(project.tracks).indexOf(c.track) === only - 1);
+      const notes: ClipNote[] = [];
+      for (const c of channels) {
+        const open = new Map<string, Ev[]>();
+        for (const e of [...c.events].sort((a, b) => a.tick - b.tick || a.order - b.order)) {
+          const kind = e.bytes[0] & 0xf0, key = `${e.bytes[0] & 15}:${e.bytes[1]}`;
+          if (kind === 0x90 && e.bytes[2] > 0) open.set(key, [...(open.get(key) ?? []), e]);
+          else if (kind === 0x80 || (kind === 0x90 && e.bytes[2] === 0)) {
+            const on = open.get(key)?.shift();
+            if (on) notes.push({ pitch: on.bytes[1], start_time: on.tick / PPQ, duration: Math.max(1 / PPQ, (e.tick - on.tick) / PPQ), velocity: on.bytes[2] });
+          }
+        }
+      }
+      notes.sort((a, b) => a.start_time - b.start_time || a.pitch - b.pitch);
+      const which = only > 0 ? audibleTracks(project.tracks)[only - 1]?.name : null;
+      return { name: which ? `${project.name || 'SoundFunc'} · ${which}` : project.name || 'SoundFunc', length, notes };
+    },
     panic: stopAll,
     get project() {
       return project;
@@ -334,3 +359,11 @@ export function createHost(io: Io) {
 }
 
 export type Host = ReturnType<typeof createHost>;
+
+/** a note as Live's clip API takes it (times in beats from the clip's start) */
+export interface ClipNote {
+  pitch: number;
+  start_time: number;
+  duration: number;
+  velocity: number;
+}

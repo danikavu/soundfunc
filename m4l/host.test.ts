@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHost, pack, unpack, type Io } from './host';
-import { windowEvents, PPQ } from '../src/engine/midi';
+import { exportBeats, windowEvents, PPQ } from '../src/engine/midi';
 import { audibleTracks, songBeats, type Project } from '../src/engine/project';
 import { defaultProject, KITS, MATH_PRESETS, PRESETS, trackFromPreset, trackFromTemplate } from '../src/engine/presets';
 import { fitToSong, kitSong } from '../src/engine/kits';
@@ -156,6 +156,34 @@ describe('Max for Live device', () => {
     const ons = r.played.filter((e) => (e.bytes[0] & 0xf0) === 0x90);
     expect(ons.length).toBeGreaterThan(4);
     expect(new Set(ons.map((e) => e.bytes[0] & 15))).toEqual(new Set([0]));
+  });
+
+  it('Write to clip: the whole song as Live clip notes — every note, in beats, on the chosen channel', () => {
+    const p = kit('funk');
+    p.tracks.push(fitToSong(trackFromPreset(PRESETS.find((x) => x.id === 'riser')!, 7), p.song));
+    const r = rig();
+    r.host.setProject(p, false);
+    const clip = r.host.clipNotes();
+    const length = exportBeats(r.host.project);
+    expect(clip.length).toBe(length);
+    const ons = windowEvents(r.host.project, 'notes', 0, length).flatMap((c) => c.events).filter((e) => (e.bytes[0] & 0xf0) === 0x90 && e.bytes[2] > 0);
+    expect(clip.notes.length).toBe(ons.length);
+    for (const n of clip.notes) {
+      expect(n.start_time).toBeGreaterThanOrEqual(0);
+      expect(n.start_time + n.duration).toBeLessThanOrEqual(length + 1e-9);
+      expect(n.duration).toBeGreaterThan(0);
+      expect(n.pitch).toBeGreaterThanOrEqual(0);
+      expect(n.pitch).toBeLessThan(128);
+      expect(n.velocity).toBeGreaterThan(0);
+    }
+    // in order, so Live gets them tidy
+    expect(clip.notes.map((n) => n.start_time)).toEqual([...clip.notes.map((n) => n.start_time)].sort((a, b) => a - b));
+    // one channel: only its notes, and the clip says which
+    r.host.channel(1);
+    const one = r.host.clipNotes();
+    expect(one.notes.length).toBeGreaterThan(0);
+    expect(one.notes.length).toBeLessThan(clip.notes.length);
+    expect(one.name).toContain(audibleTracks(r.host.project.tracks)[0].name);
   });
 
   it('the Function menu offers the math functions — no style parts, no empty channel — and loads one as the device’s channel', () => {

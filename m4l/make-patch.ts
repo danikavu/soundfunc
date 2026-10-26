@@ -4,7 +4,7 @@
  *
  *   Live's transport ── [metro 10] → [transport] → [pack] → clock ─┐
  *                                                                  ▼
- *   device controls (Play, Channel, MIDI, Function, Import…) ► [v8 soundfunc.js]
+ *   device controls (Play, Channel, MIDI, Function, Import…, Write to clip) ► [v8 soundfunc.js]
  *   [pattr] (the project, saved with the Live Set) ──restore──►    │
  *   editor window ([jweb], the SoundFunc app) ◄──────────────────► │
  *                                                                  ├─► [pipe] (on time) → decode → [midiout]
@@ -58,7 +58,7 @@ function label(text: string, at: [number, number], present: [number, number, num
 const wire = (from: string, outlet: number, to: string, inlet: number) => lines.push({ patchline: { source: [from, outlet], destination: [to, inlet] } });
 
 // ---------- the brain ----------
-const v8 = obj('v8 soundfunc.js', [1, 6], [420, 300]);
+const v8 = obj('v8 soundfunc.js', [1, 7], [420, 300]);
 
 // Live's transport, read every 10 ms at high priority: tempo, playing, raw ticks
 const metro = obj('metro 10 @active 1', [2, 1], [40, 40]);
@@ -138,6 +138,7 @@ const fns = ['Keep', ...MATH_PRESETS.map((p) => p.name)];
 const fn = live('live.menu', 'Function', [880, 180], [100, 56, 120, 18], { parameter_type: 2, parameter_enum: fns, parameter_mmax: fns.length - 1, parameter_initial: [0] });
 const edit = live('live.text', 'Edit', [880, 220], [100, 80, 120, 18], { parameter_type: 2, parameter_enum: ['val1', 'val2'], parameter_mmax: 1 }, { text: 'Open editor…', mode: 0 });
 const importBtn = live('live.text', 'Import', [880, 240], [100, 104, 120, 18], { parameter_type: 2, parameter_enum: ['val1', 'val2'], parameter_mmax: 1 }, { text: 'Import…', mode: 0 });
+const writeBtn = live('live.text', 'Write', [880, 250], [8, 104, 84, 18], { parameter_type: 2, parameter_enum: ['val1', 'val2'], parameter_mmax: 1, parameter_initial_enable: 0 }, { text: 'Write to clip', mode: 0 });
 const status = obj('comment', [1, 0], [880, 260], { maxclass: 'comment', text: 'SoundFunc', presentation: 1, presentation_rect: [8, 128, 220, 36], fontsize: 10, linecount: 2 });
 // Import…: Max's own file dialog (a page in [jweb] may not get one), then the script reads the file
 const importBang = obj('t b', [1, 1], [1100, 300]);
@@ -158,6 +159,13 @@ for (const [ctrl, word] of [
   wire(pre, 0, v8, 0);
 }
 wire(v8, 5, status, 0);
+// Write to clip: the song's notes into a clip on this track; then the device's Play goes off
+const writePress = obj('sel 1', [2, 2], [1100, 420]); // the press only — never on load
+const writeMsg = msg('writeclip', [1100, 460]);
+wire(writeBtn, 0, writePress, 0);
+wire(writePress, 0, writeMsg, 0);
+wire(writeMsg, 0, v8, 0);
+wire(v8, 6, play, 0);
 
 // the editor: the SoundFunc app in its own window
 const openBang = obj('t b', [1, 1], [880, 300]);
