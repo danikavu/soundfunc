@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createHost, pack, unpack, type Io } from './host';
 import { windowEvents, PPQ } from '../src/engine/midi';
 import { audibleTracks, songBeats, type Project } from '../src/engine/project';
-import { defaultProject, KITS, PRESETS, trackFromPreset, trackFromTemplate } from '../src/engine/presets';
+import { defaultProject, KITS, MATH_PRESETS, PRESETS, trackFromPreset, trackFromTemplate } from '../src/engine/presets';
 import { fitToSong, kitSong } from '../src/engine/kits';
 
 /** a pretend Max: records what the device sends and when it would come out of [pipe] */
@@ -12,7 +12,7 @@ function rig() {
   let pending: { at: number; bytes: number[] }[] = [];
   const immediate: number[][] = [];
   let cancels = 0;
-  let shared: string | null = null;
+  const shared = new Map<string, string>();
   const ui: (string | number)[][] = [];
   const io: Io = {
     later: (delay, code) => pending.push({ at: nowMs + delay, bytes: unpack(code) }),
@@ -24,8 +24,8 @@ function rig() {
     ui: (...a) => ui.push(a),
     store: () => {},
     status: () => {},
-    readShared: () => shared,
-    writeShared: (j) => (shared = j),
+    readShared: (key = 'json') => shared.get(key) ?? null,
+    writeShared: (text, key = 'json') => void shared.set(key, text),
     sharedName: 'sf_test',
   };
   const host = createHost(io);
@@ -43,7 +43,7 @@ function rig() {
     for (const p of pending) played.push({ ms: p.at, bytes: p.bytes });
     pending = [];
   };
-  return { host, run, flush, played, immediate, ui, cancels: () => cancels, setShared: (j: string) => (shared = j), time: () => nowMs };
+  return { host, run, flush, played, immediate, ui, shared, cancels: () => cancels, setShared: (j: string) => void shared.set('json', j), time: () => nowMs };
 }
 
 const kit = (id: string): Project => {
@@ -123,6 +123,46 @@ describe('Max for Live device', () => {
     const ons = r.played.filter((e) => (e.bytes[0] & 0xf0) === 0x90);
     expect(ons.length).toBeGreaterThan(4);
     expect(new Set(ons.map((e) => e.bytes[0] & 15))).toEqual(new Set([0]));
+  });
+
+  it('the Function menu offers the math functions — no style parts, no empty channel — and loads one as the device’s channel', () => {
+    expect(MATH_PRESETS.length).toBeGreaterThan(10);
+    expect(MATH_PRESETS.some((p) => p.kind === 'part' || p.id === 'blank')).toBe(false);
+    expect(MATH_PRESETS.map((p) => p.id)).toEqual(expect.arrayContaining(['fib', 'collatz', 'lissajous', 'golden', 'riser']));
+    const r = rig();
+    const i = MATH_PRESETS.findIndex((p) => p.id === 'collatz');
+    r.host.fn(i + 1);
+    expect(r.host.project.tracks.map((t) => t.name)).toEqual(['Collatz Path']);
+    expect(r.ui.at(-1)).toEqual(['sf_load', 'sf_test']); // the editor shows it
+    r.run(r.host.project.song.bpm, 0, 4);
+    r.flush();
+    expect(r.played.some((e) => (e.bytes[0] & 0xf0) === 0x90)).toBe(true);
+  });
+
+  it('Import…: a functions file plays its first function and goes to My functions — once the editor is ready', () => {
+    const r = rig();
+    const file = JSON.stringify({ kind: 'soundfunc-functions', version: 1, functions: [{ id: 'f1', name: 'My Spiral', description: '', savedAt: 0, track: trackFromPreset(PRESETS.find((p) => p.id === 'fib')!, 0) }] });
+    r.host.importText(file, 'Macintosh HD:/Users/me/my.soundfunc-function.json');
+    expect(r.host.project.tracks.map((t) => t.name)).toEqual(['My Spiral']);
+    expect(r.ui.at(-1)).toEqual(['openeditor']); // the editor opens to show it…
+    expect(r.ui.some((m) => m[0] === 'sf_import')).toBe(false); // …and gets it when it's ready
+    r.host.ui('ready');
+    expect(r.ui.at(-1)).toEqual(['sf_import', 'sf_test']);
+    expect(r.shared.get('import_kind')).toBe('functions');
+    expect(r.shared.get('import_text')).toBe(file);
+  });
+
+  it('Import…: math text opens Paste function with it; a project file loads straight away', () => {
+    const r = rig();
+    r.host.ui('ready');
+    r.host.importText('y = \\sin(\\pi x) + \\frac{x}{4}', 'Macintosh HD:/Users/me/curve.tex');
+    expect(r.shared.get('import_kind')).toBe('math');
+    expect(r.ui.slice(-2)).toEqual([['sf_import', 'sf_test'], ['openeditor']]);
+    const project = { ...defaultProject(), name: 'From disk', song: { ...defaultProject().song, bpm: 77 } };
+    r.host.importText(JSON.stringify(project), 'Macintosh HD:/Users/me/from-disk.soundfunc.json');
+    expect(r.host.project.name).toBe('From disk');
+    expect(r.host.project.song.bpm).toBe(77);
+    expect(r.ui.at(-1)).toEqual(['sf_load', 'sf_test']);
   });
 
   it('talks to the editor: hands over the project, takes back changes', () => {

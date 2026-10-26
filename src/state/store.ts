@@ -61,6 +61,10 @@ interface State {
   /** the "paste a function" sheet */
   showImport: boolean;
   setShowImport: (open: boolean) => void;
+  /** text waiting to go into the Paste function sheet (an imported file) */
+  importText: string | null;
+  /** open the Paste function sheet with this text already in */
+  openImport: (text: string) => void;
   /** plant a multi-track kit (and its tempo/key); replaces the current tracks unless layering */
   addKit: (kitId: string, layer?: boolean) => void;
   /** add some of a kit's tracks (e.g. just its drums) to the current garden */
@@ -216,6 +220,8 @@ export const useStore = create<State>()(
         },
         showImport: false,
         setShowImport: (showImport) => set({ showImport }),
+        importText: null,
+        openImport: (importText) => set({ showImport: true, importText }),
         addKitTracks: (kitId, trackIndexes, adoptSong = false) => {
           const kit = KITS.find((k) => k.id === kitId);
           if (!kit || !trackIndexes.length) return;

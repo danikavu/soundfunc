@@ -19,6 +19,14 @@ declare class Dict {
   get(key: string): unknown;
   set(key: string, value: unknown): void;
 }
+declare class File {
+  constructor(path: string, access?: string);
+  isopen: boolean;
+  eof: number;
+  position: number;
+  readstring(count: number): string;
+  close(): void;
+}
 declare class Task {
   constructor(fn: () => void);
   schedule(ms?: number): void;
@@ -64,12 +72,12 @@ const io: Io = {
   status(text) {
     outlet(5, 'set', text);
   },
-  readShared() {
-    const v = new Dict(sharedName).get('json');
+  readShared(key = 'json') {
+    const v = new Dict(sharedName).get(key);
     return typeof v === 'string' ? v : null;
   },
-  writeShared(json) {
-    new Dict(sharedName).set('json', json);
+  writeShared(text, key = 'json') {
+    new Dict(sharedName).set(key, text);
   },
   sharedName,
 };
@@ -93,8 +101,22 @@ g.ui = (cmd: unknown) => host.ui(String(cmd));
 g.active = (on: number) => host.active(on);
 g.channel = (n: number) => host.channel(n);
 g.midi = (m: number) => host.midi(m);
-g.kit = (n: number) => host.kit(n);
+g.fn = (n: number) => host.fn(n);
 g.panic = () => host.panic();
+/** Import…: Max's file dialog picked a file — read it whole and let the device decide what it is */
+g.importfile = (...parts: unknown[]) => {
+  const path = parts.join(' ');
+  const f = new File(path, 'read');
+  if (!f.isopen) return io.status(`Couldn't open ${path}`);
+  let text = '';
+  while (f.position < f.eof) {
+    const chunk = f.readstring(32768);
+    if (!chunk) break;
+    text += chunk;
+  }
+  f.close();
+  host.importText(text, path);
+};
 /** where the device lives, so the editor window can find its page (ui/index.html beside the device) */
 g.devicepath = (...parts: unknown[]) => io.ui('url', fileUrl(parts.join(' '), 'ui/index.html'));
 g.loadbang = () => {

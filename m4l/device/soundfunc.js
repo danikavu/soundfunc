@@ -2968,25 +2968,6 @@
 			hasOutput
 		};
 	}
-	/** Bars until the progression repeats (1 for a drone), found by comparing the first 32 bars. */
-	function harmonyCycleBars(song) {
-		const at = (bar) => harmonyAt(song, bar * 4);
-		for (const p of [
-			1,
-			2,
-			3,
-			4,
-			6,
-			8,
-			12,
-			16
-		]) {
-			let ok = true;
-			for (let b = 0; b < 32 && ok; b++) ok = at(b) === at(b + p);
-			if (ok) return p;
-		}
-		return 16;
-	}
 	/**
 	* One full cycle of the song: its length — or, when the song is free, its longest
 	* track. (The progression doesn't stretch it: it repeats, or keeps going, inside.)
@@ -3878,7 +3859,8 @@
 			pitchMode: "degree",
 			...t,
 			waveform: t.waveform ?? "sine"
-		}
+		},
+		kind: "part"
 	});
 	const PRESETS = [
 		{
@@ -5516,6 +5498,8 @@
 			}
 		}
 	];
+	/** the math functions: every preset except the style parts and the empty channel — what the Live device offers */
+	const MATH_PRESETS = PRESETS.filter((p) => p.kind !== "part" && p.id !== "blank");
 	/** a drum track whose velocity (and optional ratchet / tuning) are formulas of n, k, x… */
 	function drum(name, waveform, steps, vel, opts = {}) {
 		const { ratchet, tune, ...rest } = opts;
@@ -6183,29 +6167,6 @@
 			...applyGrid(gridOf(t), {}, L)
 		};
 	}
-	/**
-	* The song a kit plants into (replacing the track): channels that share a length make a fixed
-	* song long enough for the progression too; channels of different lengths (polyrhythms) make
-	* a free song.
-	*/
-	function kitSong(kit, tracks, current) {
-		const song = {
-			...current,
-			...kit.song
-		};
-		const lengths = tracks.map((t) => t.steps * t.stepBeats);
-		const same = lengths.every((l) => Math.abs(l - lengths[0]) < 1e-9);
-		const cycle = harmonyCycleBars(song);
-		return same ? {
-			...song,
-			lengthMode: "fixed",
-			lengthBeats: fixedLengthFor(Math.max(lengths[0], cycle < 16 ? cycle * 4 : 0))
-		} : {
-			...song,
-			lengthMode: "free",
-			lengthBeats: fixedLengthFor(Math.max(...lengths))
-		};
-	}
 
 //#endregion
 //#region m4l/host.ts
@@ -6247,6 +6208,14 @@
 		const bent = /* @__PURE__ */ new Set();
 		const passes = /* @__PURE__ */ new Map();
 		let storeTimer = 0;
+		/** imports waiting for the editor to open */
+		let pendingImport = null;
+		let editorReady = false;
+		function handOver(kind, text) {
+			io.writeShared(kind, "import_kind");
+			io.writeShared(text, "import_text");
+			io.ui("sf_import", io.sharedName);
+		}
 		const songLength = () => Math.max(1 / 16, songBeats(audibleTracks(project.tracks), project.song));
 		/** one pass of the song as events to play: what the MIDI file of this pass holds */
 		function pass(p) {
@@ -6404,8 +6373,10 @@
 			/** messages from the editor window */
 			ui(cmd) {
 				if (cmd === "ready") {
+					editorReady = true;
 					io.writeShared(JSON.stringify(project));
 					io.ui("sf_load", io.sharedName);
+					if (pendingImport) handOver(pendingImport.kind, pendingImport.text), pendingImport = null;
 				} else if (cmd === "changed") {
 					const json = io.readShared();
 					if (json) try {
@@ -6429,20 +6400,64 @@
 				passes.clear();
 				if (playing) stopAll(), handedTo = lastBeat;
 			},
-			/** load a style kit straight from the device: 0 = keep, n = the nth kit */
-			kit(n) {
-				const kit = KITS[n - 1];
-				if (!kit) return;
-				const tracks = kit.tracks.map((t, i) => trackFromTemplate(t, t.name, i));
-				const song = kitSong(kit, tracks, project.song);
+			/** load a math function straight from the device: 0 = keep, n = the nth (it becomes the device's channel) */
+			fn(n) {
+				const preset = MATH_PRESETS[n - 1];
+				if (!preset) return;
+				const track = fitToSong(trackFromPreset(preset, 0), project.song);
 				setProject({
 					...project,
-					name: kit.name,
-					song,
-					tracks: tracks.map((t) => fitToSong(t, song))
+					name: preset.name,
+					tracks: [track]
 				});
 				io.writeShared(JSON.stringify(project));
 				io.ui("sf_load", io.sharedName);
+			},
+			/**
+			* A file from the device's Import… button: a SoundFunc functions file (into My functions, the
+			* first one playing), a whole project, or math (LaTeX, Desmos, plain) for the Paste function sheet.
+			*/
+			importText(text, filename = "") {
+				let data = null;
+				try {
+					data = JSON.parse(text);
+				} catch {}
+				const d = data;
+				let kind = "math";
+				if (d && d.kind === "soundfunc-functions" && Array.isArray(d.functions)) {
+					kind = "functions";
+					const first = d.functions.find((f) => f?.track?.graph);
+					if (first?.track) {
+						const name = first.name ?? "Imported";
+						const t = fitToSong({
+							...trackFromTemplate(first.track, name, 0),
+							name
+						}, project.song);
+						setProject({
+							...project,
+							name: first.name ?? project.name,
+							tracks: [t]
+						});
+						io.writeShared(JSON.stringify(project));
+						if (editorReady) io.ui("sf_load", io.sharedName);
+					}
+				} else if (d && Array.isArray(d.tracks) && d.song) {
+					setProject(d);
+					io.writeShared(JSON.stringify(project));
+					if (editorReady) io.ui("sf_load", io.sharedName);
+					io.status(`Loaded ${filename.split(/[\\/:]/).pop() || "the project"} · ${describe()}`);
+					return;
+				}
+				if (editorReady) handOver(kind, text);
+				else pendingImport = {
+					kind,
+					text
+				};
+				io.ui("openeditor");
+			},
+			/** the editor window closed: imports wait for the next time it opens */
+			editorClosed() {
+				editorReady = false;
 			},
 			panic: stopAll,
 			get project() {
@@ -6501,12 +6516,12 @@
 		status(text) {
 			outlet(5, "set", text);
 		},
-		readShared() {
-			const v = new Dict(sharedName).get("json");
+		readShared(key = "json") {
+			const v = new Dict(sharedName).get(key);
 			return typeof v === "string" ? v : null;
 		},
-		writeShared(json) {
-			new Dict(sharedName).set("json", json);
+		writeShared(text, key = "json") {
+			new Dict(sharedName).set(key, text);
 		},
 		sharedName
 	};
@@ -6525,8 +6540,22 @@
 	g.active = (on) => host.active(on);
 	g.channel = (n) => host.channel(n);
 	g.midi = (m) => host.midi(m);
-	g.kit = (n) => host.kit(n);
+	g.fn = (n) => host.fn(n);
 	g.panic = () => host.panic();
+	/** Import…: Max's file dialog picked a file — read it whole and let the device decide what it is */
+	g.importfile = (...parts) => {
+		const path = parts.join(" ");
+		const f = new File(path, "read");
+		if (!f.isopen) return io.status(`Couldn't open ${path}`);
+		let text = "";
+		while (f.position < f.eof) {
+			const chunk = f.readstring(32768);
+			if (!chunk) break;
+			text += chunk;
+		}
+		f.close();
+		host.importText(text, path);
+	};
 	/** where the device lives, so the editor window can find its page (ui/index.html beside the device) */
 	g.devicepath = (...parts) => io.ui("url", fileUrl(parts.join(" "), "ui/index.html"));
 	g.loadbang = () => {

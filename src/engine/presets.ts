@@ -116,6 +116,8 @@ export interface Preset {
   description: string;
   formula: string;
   track: Template & { waveform: Waveform; pitchMode: PitchMode };
+  /** a style part (a walking bass, a clav…) rather than a math function */
+  kind?: 'part';
 }
 
 export interface Kit {
@@ -212,6 +214,7 @@ const part = (id: string, t: Template & { name: string }, description: string, f
   description,
   formula,
   track: { pitchMode: 'degree', ...t, waveform: t.waveform ?? 'sine' },
+  kind: 'part',
 });
 
 export const PRESETS: Preset[] = [
@@ -1055,6 +1058,9 @@ export const PRESETS: Preset[] = [
     },
   },
 ];
+
+/** the math functions: every preset except the style parts and the empty channel — what the Live device offers */
+export const MATH_PRESETS: Preset[] = PRESETS.filter((p) => p.kind !== 'part' && p.id !== 'blank');
 
 
 // ---------- rhythm kits: several tracks planted together, all pure functions ----------

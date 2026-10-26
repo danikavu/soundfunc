@@ -12,7 +12,7 @@ npm run build:m4l   # the Max for Live device → m4l/device
 
 ## Max for Live
 
-SoundFunc also runs inside Ableton Live as a **MIDI Effect**: your functions, kits and harmony in time with Live's transport, into any instrument, with this app as its editor. See [m4l/README.md](m4l/README.md) to build the device (one copy-paste in Max) and use it.
+SoundFunc also runs inside Ableton Live as a **MIDI Effect**: your math functions and harmony in time with Live's transport, into any instrument, with this app as its editor. See [m4l/README.md](m4l/README.md) to build the device (one copy-paste in Max) and use it.
 
 ## Structure
 

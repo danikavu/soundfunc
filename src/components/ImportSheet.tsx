@@ -26,6 +26,13 @@ export function ImportSheet() {
   const open = useStore((s) => s.showImport);
   const setOpen = useStore((s) => s.setShowImport);
   const [src, setSrc] = useState('');
+  // a file imported elsewhere (the Live device's Import…) arrives with its text
+  const importText = useStore((s) => s.importText);
+  useEffect(() => {
+    if (importText === null) return;
+    setSrc(importText);
+    useStore.setState({ importText: null });
+  }, [importText]);
   const [name, setName] = useState('Imported f(x)');
   const [xMeans, setXMeans] = useState<XMeans>('beats');
   const [yMeans, setYMeans] = useState<YMeans>('octaves');

@@ -1,6 +1,6 @@
 # SoundFunc for Max for Live
 
-A MIDI Effect that plays SoundFunc inside Ableton Live: your functions, kits and harmony, in time
+A MIDI Effect that plays SoundFunc inside Ableton Live: your math functions and harmony, in time
 with Live's transport, into whatever instrument sits after it. The editor is the SoundFunc app
 itself, opened from the device (sound off — Live makes the sound). The project is saved with your
 Live Set.
@@ -31,7 +31,7 @@ Max for Live devices are saved from Max's own editor, so this one step is by han
 3. Open `m4l/device/SoundFunc.maxpat` in Max too (File → Open…). Select all (⌘A), copy (⌘C), close it.
 4. Back in the device's editor: select all (⌘A), delete, paste (⌘V).
 5. **Save As… `m4l/device/SoundFunc.amxd`** — it has to live in the same folder as `soundfunc.js` and `ui/`.
-6. Close Max. The device now shows **Play**, **Channel**, **MIDI**, **Kit** and **Open editor…**
+6. Close Max. The device now shows **Play**, **Channel**, **MIDI**, **Function**, **Open editor…** and **Import…**
 
 After a rebuild (`npm run build:m4l`), the `.amxd` picks up the new `soundfunc.js` and `ui/`
 next time it loads. Repeat steps 2–5 only if the patch itself changed.
@@ -39,10 +39,15 @@ next time it loads. Repeat steps 2–5 only if the patch itself changed.
 ## Use it
 
 - **Play** — Live's transport plays it. Stop, loop and jump in Live and it follows; notes never hang.
-- **Kit** — load a style kit (Smoky Club, Ipanema Dusk, Montuno, Get Down, Mirror Ball, Deep Hours, Boom Bap…) straight from the device.
+- **Function** — load a math function straight from the device: Fibonacci Spiral, Chaos Bloom, Golden Rain, Digits of π, Collatz Path, Lissajous, Evolving Tide, Graphed Arpeggios, Riser, Drawn Melody, Scooped Lead… It becomes the device's channel; the editor shows it.
 - **Channel** — *All*: every SoundFunc channel on its own MIDI channel (drums on channel 10), for a multitimbral instrument or a Drum Rack. *Channel n*: just that channel, on MIDI channel 1 — put one device per Live track for separate instruments (e.g. drums → Drum Rack, bass → Operator, keys → Electric).
 - **MIDI** — *Notes only*, or *Notes + bends* (glides and per-note bends as pitch bend, volume as expression). Set your instrument's pitch-bend range to match SoundFunc's (Channel tab → Export → Pitch-bend range, default ±24).
-- **Open editor…** — the whole app: node board, Score, Function view, presets, kits, harmony. Edits are heard right away; the Score's playhead follows Live.
+- **Import…** — Max's own file dialog, so importing works even where a web page can't open files or read the clipboard. Pick:
+  - a **functions file** (from Save Channel → Export) — its functions go into *My functions* and the first one starts playing;
+  - a **math file** (`.txt`, `.tex`, `.md` — LaTeX, Desmos, plain math) — the editor opens *Paste function* with it, to choose what x and y mean and plant it, as in the app;
+  - a **project** (`.soundfunc.json`) — it loads.
+  The editor opens to show it. In the editor itself, ƒ *Paste function* and *My functions → Import* work as in the app too, wherever [jweb] allows the clipboard and file picking.
+- **Open editor…** — the app: node board, Score, Function view, function presets, harmony, sliders, curves. (No drum kits in here — the device is for the functions.) Edits are heard right away; the Score's playhead follows Live.
 - What you play into the track passes through, so you can play along.
 
 ## How it keeps time
@@ -55,7 +60,7 @@ on time. For the tightest timing turn on **Overdrive** (Max → Options).
 
 ## Developing
 
-- `m4l/host.ts` — the device logic, free of Max globals; `m4l/host.test.ts` runs it against a pretend transport and checks it plays exactly what the MIDI file holds, never leaves a note hanging (even when edited mid-note), and cleans up on stop and jumps.
+- `m4l/host.ts` — the device logic, free of Max globals; `m4l/host.test.ts` runs it against a pretend transport and checks it plays exactly what the MIDI file holds, never leaves a note hanging (even when edited mid-note), cleans up on stop and jumps, and handles every kind of import.
 - `m4l/max-entry.ts` — connects it to Max (`outlet`, `Dict`, `Task`).
 - `m4l/make-patch.ts` — writes the patch. Change the wiring there, not in Max.
 - `src/device.ts` — the editor's side: no sound, Live's playhead, the project shared through a Max dict.
@@ -67,6 +72,7 @@ with a stand-in `window.max`). These depend on Max itself — please check on fi
 
 - the project is saved with the Live Set (`[pattr]` as a hidden *blob* parameter) and restored on reopen;
 - **Open editor…** opens the window and the editor finds `ui/index.html` beside the device;
+- **Import…** reads the chosen file (Max's `File` object) — and whether ⌘V reaches the editor's text boxes or Max takes it;
 - timing is tight under load (with Overdrive on).
 
 MPE output (each note on its own channel) is not in the device yet — the engine can write it; the

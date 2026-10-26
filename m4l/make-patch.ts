@@ -1,17 +1,17 @@
 /**
  * Writes the device's Max patch (m4l/device/SoundFunc.maxpat) — generated, so the wiring
- * lives in code and the kit menu always matches the kits.
+ * lives in code and the Function menu always matches the presets.
  *
  *   Live's transport ── [metro 10] → [transport] → [pack] → clock ─┐
  *                                                                  ▼
- *   device controls (Play, Channel, MIDI, Kit) ──────────────► [v8 soundfunc.js]
+ *   device controls (Play, Channel, MIDI, Function, Import…) ► [v8 soundfunc.js]
  *   [pattr] (the project, saved with the Live Set) ──restore──►    │
  *   editor window ([jweb], the SoundFunc app) ◄──────────────────► │
  *                                                                  ├─► [pipe] (on time) → decode → [midiout]
  *                                                                  └─► [midiout] (right now: stopping)
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { KITS } from '../src/engine/presets';
+import { MATH_PRESETS } from '../src/engine/presets';
 
 type Box = Record<string, unknown> & { id: string };
 const boxes: { box: Box }[] = [];
@@ -131,15 +131,24 @@ const channel = live('live.menu', 'Channel', [880, 100], [8, 56, 84, 18], {
   parameter_initial: [0],
 });
 const midiMode = live('live.menu', 'MIDI', [880, 140], [8, 80, 84, 18], { parameter_type: 2, parameter_enum: ['Notes only', 'Notes + bends'], parameter_mmax: 1, parameter_initial: [1] });
-const kits = ['Keep', ...KITS.map((k) => k.name)];
-const kit = live('live.menu', 'Kit', [880, 180], [100, 56, 120, 18], { parameter_type: 2, parameter_enum: kits, parameter_mmax: kits.length - 1, parameter_initial: [0] });
+const fns = ['Keep', ...MATH_PRESETS.map((p) => p.name)];
+const fn = live('live.menu', 'Function', [880, 180], [100, 56, 120, 18], { parameter_type: 2, parameter_enum: fns, parameter_mmax: fns.length - 1, parameter_initial: [0] });
 const edit = live('live.text', 'Edit', [880, 220], [100, 80, 120, 18], { parameter_type: 2, parameter_enum: ['val1', 'val2'], parameter_mmax: 1 }, { text: 'Open editor…', mode: 0 });
-const status = obj('comment', [1, 0], [880, 260], { maxclass: 'comment', text: 'SoundFunc', presentation: 1, presentation_rect: [8, 108, 220, 40], fontsize: 10, linecount: 2 });
+const importBtn = live('live.text', 'Import', [880, 240], [100, 104, 120, 18], { parameter_type: 2, parameter_enum: ['val1', 'val2'], parameter_mmax: 1 }, { text: 'Import…', mode: 0 });
+const status = obj('comment', [1, 0], [880, 260], { maxclass: 'comment', text: 'SoundFunc', presentation: 1, presentation_rect: [8, 128, 220, 36], fontsize: 10, linecount: 2 });
+// Import…: Max's own file dialog (a page in [jweb] may not get one), then the script reads the file
+const importBang = obj('t b', [1, 1], [1100, 300]);
+const dialog = obj('opendialog', [2, 2], [1100, 340]);
+const importPre = obj('prepend importfile', [2, 1], [1100, 380]);
+wire(importBtn, 0, importBang, 0);
+wire(importBang, 0, dialog, 0);
+wire(dialog, 0, importPre, 0);
+wire(importPre, 0, v8, 0);
 for (const [ctrl, word] of [
   [play, 'active'],
   [channel, 'channel'],
   [midiMode, 'midi'],
-  [kit, 'kit'],
+  [fn, 'fn'],
 ] as const) {
   const pre = obj(`prepend ${word}`, [2, 1], [1000, 60 + 40 * n]);
   wire(ctrl, 0, pre, 0);
@@ -184,7 +193,11 @@ const editor: Box = {
 };
 boxes.push({ box: editor });
 wire(pcontrol, 0, editor.id, 0);
-wire(v8, 3, editor.id, 1);
+// the script can open the editor itself (an import to show): "openeditor" never reaches the page
+const toEditor = obj('route openeditor', [2, 2], [700, 420]);
+wire(v8, 3, toEditor, 0);
+wire(toEditor, 0, openBang, 0);
+wire(toEditor, 1, editor.id, 1);
 const uiPre = obj('prepend ui', [2, 1], [880, 460]);
 wire(editor.id, 0, uiPre, 0);
 wire(uiPre, 0, v8, 0);
@@ -207,4 +220,4 @@ const patch = {
 // run from the project folder (npm run build:m4l)
 mkdirSync('m4l/device', { recursive: true });
 writeFileSync('m4l/device/SoundFunc.maxpat', JSON.stringify(patch, null, 2));
-console.log(`wrote m4l/device/SoundFunc.maxpat — ${boxes.length} objects, ${lines.length} wires, kits: ${KITS.length}`);
+console.log(`wrote m4l/device/SoundFunc.maxpat — ${boxes.length} objects, ${lines.length} wires, functions: ${MATH_PRESETS.length}`);

@@ -12,8 +12,8 @@
  */
 import { windowEvents, PPQ, type Ev, type MidiMode } from '../src/engine/midi';
 import { audibleTracks, normalizeProject, songBeats, type Project } from '../src/engine/project';
-import { defaultProject, KITS, trackFromTemplate } from '../src/engine/presets';
-import { fitToSong, kitSong } from '../src/engine/kits';
+import { defaultProject, MATH_PRESETS, trackFromPreset, trackFromTemplate } from '../src/engine/presets';
+import { fitToSong } from '../src/engine/kits';
 
 /** what the device can do to the outside world */
 export interface Io {
@@ -29,9 +29,9 @@ export interface Io {
   store(json: string): void;
   /** the line of text on the device */
   status(text: string): void;
-  /** read / write the text the editor and the device pass each other */
-  readShared(): string | null;
-  writeShared(json: string): void;
+  /** read / write the text the editor and the device pass each other (`key`: "json" for the project) */
+  readShared(key?: string): string | null;
+  writeShared(text: string, key?: string): void;
   /** the shared dict's name, for the editor */
   sharedName: string;
 }
@@ -77,6 +77,14 @@ export function createHost(io: Io) {
   const bent = new Set<number>();
   const passes = new Map<number, Play[]>();
   let storeTimer = 0;
+  /** imports waiting for the editor to open */
+  let pendingImport: { kind: 'functions' | 'math'; text: string } | null = null;
+  let editorReady = false;
+  function handOver(kind: 'functions' | 'math', text: string) {
+    io.writeShared(kind, 'import_kind');
+    io.writeShared(text, 'import_text');
+    io.ui('sf_import', io.sharedName);
+  }
 
   const songLength = () => Math.max(1 / 16, songBeats(audibleTracks(project.tracks), project.song));
 
@@ -220,8 +228,10 @@ export function createHost(io: Io) {
     /** messages from the editor window */
     ui(cmd: string) {
       if (cmd === 'ready') {
+        editorReady = true;
         io.writeShared(JSON.stringify(project));
         io.ui('sf_load', io.sharedName);
+        if (pendingImport) handOver(pendingImport.kind, pendingImport.text), (pendingImport = null);
       } else if (cmd === 'changed') {
         const json = io.readShared();
         if (json) {
@@ -249,15 +259,53 @@ export function createHost(io: Io) {
       passes.clear();
       if (playing) stopAll(), (handedTo = lastBeat);
     },
-    /** load a style kit straight from the device: 0 = keep, n = the nth kit */
-    kit(n: number) {
-      const kit = KITS[n - 1];
-      if (!kit) return;
-      const tracks = kit.tracks.map((t, i) => trackFromTemplate(t, t.name, i));
-      const song = kitSong(kit, tracks, project.song);
-      setProject({ ...project, name: kit.name, song, tracks: tracks.map((t) => fitToSong(t, song)) });
+    /** load a math function straight from the device: 0 = keep, n = the nth (it becomes the device's channel) */
+    fn(n: number) {
+      const preset = MATH_PRESETS[n - 1];
+      if (!preset) return;
+      const track = fitToSong(trackFromPreset(preset, 0), project.song);
+      setProject({ ...project, name: preset.name, tracks: [track] });
       io.writeShared(JSON.stringify(project));
       io.ui('sf_load', io.sharedName);
+    },
+    /**
+     * A file from the device's Import… button: a SoundFunc functions file (into My functions, the
+     * first one playing), a whole project, or math (LaTeX, Desmos, plain) for the Paste function sheet.
+     */
+    importText(text: string, filename = '') {
+      let data: unknown = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        /* not JSON: math */
+      }
+      const d = data as { kind?: string; functions?: { name?: string; track?: Project['tracks'][number] }[]; tracks?: unknown; song?: unknown } | null;
+      let kind: 'functions' | 'math' = 'math';
+      if (d && d.kind === 'soundfunc-functions' && Array.isArray(d.functions)) {
+        kind = 'functions';
+        const first = d.functions.find((f) => f?.track?.graph);
+        if (first?.track) {
+          const name = first.name ?? 'Imported';
+          const t = fitToSong({ ...trackFromTemplate(first.track, name, 0), name }, project.song);
+          setProject({ ...project, name: first.name ?? project.name, tracks: [t] });
+          io.writeShared(JSON.stringify(project));
+          if (editorReady) io.ui('sf_load', io.sharedName);
+        }
+      } else if (d && Array.isArray(d.tracks) && d.song) {
+        setProject(d as Project);
+        io.writeShared(JSON.stringify(project));
+        if (editorReady) io.ui('sf_load', io.sharedName);
+        io.status(`Loaded ${filename.split(/[\\/:]/).pop() || 'the project'} · ${describe()}`);
+        return;
+      }
+      // the editor shows it: open it if it isn't, and hand the import over once it's ready
+      if (editorReady) handOver(kind, text);
+      else pendingImport = { kind, text };
+      io.ui('openeditor');
+    },
+    /** the editor window closed: imports wait for the next time it opens */
+    editorClosed() {
+      editorReady = false;
     },
     panic: stopAll,
     get project() {

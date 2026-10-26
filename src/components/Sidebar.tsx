@@ -1,5 +1,6 @@
 import { PRESETS } from '../engine/presets';
 import { KitPicker } from './KitPicker';
+import { inDevice } from '../device';
 import { audibleTracks, stretchOf, voiceLabel } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, download, fileSafe } from './ui';
@@ -235,7 +236,8 @@ export function Sidebar() {
       ))}
       {project.tracks.length === 0 && <p className="muted serif">An empty track. Plant something below.</p>}
 
-      <KitPicker />
+      {/* inside the Live device it's all about the functions: no drum kits */}
+      {!inDevice && <KitPicker />}
 
       <div className="eyebrow">Plant a function</div>
       <MyFunctions />

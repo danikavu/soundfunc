@@ -5,7 +5,8 @@
  */
 import { engine } from './engine/audio';
 import { normalizeProject, type Project } from './engine/project';
-import { cleanProject } from './state/library';
+import { cleanProject, readFunctionFile, useLibrary } from './state/library';
+import { toast } from './components/TopBar';
 import { useStore } from './state/store';
 
 interface MaxApi {
@@ -41,6 +42,21 @@ export function connectDevice() {
     });
   });
   max.bindInlet('sf_pos', (beat) => engine.setExternalPosition(Number(beat)));
+  // a file the device imported (its Import… button): functions go to My functions, math to Paste function
+  max.bindInlet('sf_import', (name) => {
+    max.getDict(String(name), (d) => {
+      const kind = d?.import_kind, text = d?.import_text;
+      if (typeof text !== 'string') return;
+      if (kind === 'functions') {
+        try {
+          const n = useLibrary.getState().importFunctions(readFunctionFile(text));
+          toast(n ? `Imported ${n} function${n > 1 ? 's' : ''} into My functions` : 'No functions in that file');
+        } catch (e) {
+          toast(e instanceof Error ? e.message : 'Could not read that file');
+        }
+      } else if (kind === 'math') useStore.getState().openImport(text);
+    });
+  });
 
   // every edit goes to the device — after a short pause, so dragging a slider doesn't flood it
   let timer = 0;
