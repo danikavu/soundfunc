@@ -288,8 +288,12 @@ export function Visualizer() {
   useEffect(() => {
     let raf = 0;
     const wave = new Float32Array(2048);
-    const draw = () => {
+    let lastFrame = 0;
+    const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
+      // inside Live the editor shares a slower embedded browser: at most 30 frames a second
+      if (engine.external && !dirty.current && now - lastFrame < 33) return;
+      lastFrame = now;
       const pos = engine.position();
       // repeating exactly, every pass is the first one
       const nowPass = pos === null || !(songTotal > 0) || project.song.repeat === 'exact' ? 0 : Math.floor(pos / songTotal + 1e-9);

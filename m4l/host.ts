@@ -93,7 +93,8 @@ export function createHost(io: Io) {
     let evs = passes.get(p);
     if (evs) return evs;
     const T = songLength();
-    let channels = windowEvents(project, mode, p * T, (p + 1) * T, { raw: 0, kept: 0 }, false);
+    // live, every bend value holds until the next: send them densely ("hold"), not as a file's corner points
+    let channels = windowEvents(project, mode, p * T, (p + 1) * T, { raw: 0, kept: 0 }, false, 'hold');
     if (only > 0) channels = channels.filter((c) => audibleTracks(project.tracks).indexOf(c.track) === only - 1);
     const all: Ev[] = [];
     for (const c of channels) {
@@ -190,21 +191,37 @@ export function createHost(io: Io) {
     offsWaiting = offsWaiting.filter((o) => o.beat > beat - 1e-9);
     if (Math.round(beat * 8) !== Math.round(lastSent * 8)) {
       lastSent = beat;
-      io.ui('sf_pos', Math.round(beat * 1000) / 1000);
+      io.ui('sf_pos', Math.round(beat * 1000) / 1000, Math.round(tempo * 100) / 100);
+    }
+    // 2. the editor shows Live's tempo (the device plays at Live's tempo whatever the project says)
+    if (Math.abs(tempo - project.song.bpm) > 0.005) {
+      project = { ...project, song: { ...project.song, bpm: Math.round(tempo * 100) / 100 } };
+      io.ui('sf_tempo', project.song.bpm);
     }
   }
   let lastSent = -1;
 
-  /** the project changed: start the coming passes afresh (sent notes still get their offs) */
+  /**
+   * Plan again from where playback is: whatever was waiting in [pipe] is cancelled (so the old
+   * plan doesn't play on top of the new one), and the note-offs it held are booked again.
+   */
+  function rewind() {
+    io.cancel();
+    for (const o of offsWaiting) if (o.beat >= lastBeat - 1e-9) owed.push({ tick: Math.round(o.beat * PPQ), bytes: o.bytes });
+    offsWaiting = [];
+    handedTo = lastBeat;
+  }
+
+  /** the project changed: heard from the next moment on (sent notes still get their offs) */
   function setProject(p: Project, persist = true) {
     project = normalizeProject(p);
     passes.clear();
-    // re-render from where playback has got to, so the change is heard right away
-    if (playing) handedTo = Math.max(lastBeat, handedTo - LOOKAHEAD_MS / 1000);
+    if (playing) rewind();
     io.status(describe());
     if (persist) {
       clearTimeout(storeTimer);
-      storeTimer = setTimeout(() => io.store(JSON.stringify(project)), 1500) as unknown as number;
+      // 4. into the Live Set at most every few seconds while editing: each save writes the whole project into Live
+      storeTimer = setTimeout(() => io.store(JSON.stringify(project)), 5000) as unknown as number;
     }
   }
 

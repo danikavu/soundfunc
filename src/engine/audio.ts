@@ -197,12 +197,22 @@ export class AudioEngine {
    */
   external = false;
   private externalBeat: number | null = null;
-  setExternalPosition(beat: number | null) {
+  private externalAt = 0;
+  private externalBpm = 120;
+  /** Live's position (beats) and tempo; between reports the playhead runs on at that tempo */
+  setExternalPosition(beat: number | null, bpm?: number) {
     this.externalBeat = beat === null || beat < 0 ? null : beat;
+    this.externalAt = performance.now();
+    if (bpm && bpm > 0) this.externalBpm = bpm;
   }
 
   position(): number | null {
-    if (this.external) return this.externalBeat;
+    if (this.external) {
+      if (this.externalBeat === null) return null;
+      // run on from the last report, but never more than a beat (a stalled report shouldn't run away)
+      const ahead = ((performance.now() - this.externalAt) / 60000) * this.externalBpm;
+      return this.externalBeat + Math.min(ahead, 1);
+    }
     if (!this.playing || !this.ctx) return null;
     return Math.max(0, this.beatAt(this.ctx.currentTime - (this.ctx.outputLatency || 0)));
   }

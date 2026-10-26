@@ -41,7 +41,16 @@ export function connectDevice() {
       }
     });
   });
-  max.bindInlet('sf_pos', (beat) => engine.setExternalPosition(Number(beat)));
+  max.bindInlet('sf_pos', (beat, bpm) => engine.setExternalPosition(Number(beat), Number(bpm)));
+  // Live's tempo, shown in the editor (not sent back: the device follows Live anyway)
+  max.bindInlet('sf_tempo', (bpm) => {
+    arriving = true;
+    try {
+      useStore.getState().setSong({ bpm: Number(bpm) }, false);
+    } finally {
+      arriving = false;
+    }
+  });
   // a file the device imported (its Import… button): functions go to My functions, math to Paste function
   max.bindInlet('sf_import', (name) => {
     max.getDict(String(name), (d) => {
@@ -66,7 +75,7 @@ export function connectDevice() {
     timer = window.setTimeout(() => {
       max.setDict(dict, { json: JSON.stringify(cleanProject(useStore.getState().project)) });
       max.outlet('changed');
-    }, 200);
+    }, 80);
   });
   max.outlet('ready');
 }

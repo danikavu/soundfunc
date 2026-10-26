@@ -73,7 +73,7 @@ describe('Max for Live device', () => {
       .map((e) => ({ tick: Math.round((e.ms / msPerBeat) * PPQ), bytes: e.bytes }))
       .filter((e) => e.tick < Math.round(2 * T * PPQ) && (e.bytes[0] & 0xf0) !== 0x80);
     const want = [0, 1]
-      .flatMap((pass) => windowEvents(r.host.project, 'standard', pass * T, (pass + 1) * T, undefined, false).flatMap((c) => c.events))
+      .flatMap((pass) => windowEvents(r.host.project, 'standard', pass * T, (pass + 1) * T, undefined, false, 'hold').flatMap((c) => c.events))
       .filter((e) => e.tick < Math.round(2 * T * PPQ) && (e.bytes[0] & 0xf0) !== 0xc0 && (e.bytes[0] & 0xf0) !== 0x80 && !((e.bytes[0] & 0xf0) === 0x90 && e.bytes[2] === 0));
     const key = (e: { tick: number; bytes: number[] }) => `${e.tick}|${e.bytes.join(',')}`;
     const near = (set: Set<string>, e: { tick: number; bytes: number[] }) => [-1, 0, 1].some((d) => set.has(key({ tick: e.tick + d, bytes: e.bytes })));
@@ -82,6 +82,39 @@ describe('Max for Live device', () => {
     expect(missing.slice(0, 5)).toEqual([]);
     expect(got.length).toBeGreaterThanOrEqual(want.length * 0.99);
     expect(got.filter((e) => (e.bytes[0] & 0xf0) === 0x90).length).toBe(want.filter((e) => (e.bytes[0] & 0xf0) === 0x90).length);
+  });
+
+  it('a slide comes out smooth, not as a staircase: bends sent densely, each step tiny', () => {
+    const r = rig();
+    const riser = trackFromPreset(PRESETS.find((x) => x.id === 'riser')!, 0); // a free-pitch glide: two octaves in 16 beats
+    r.host.setProject({ ...defaultProject(), song: { ...defaultProject().song, lengthMode: 'free' }, tracks: [riser] }, false);
+    r.run(120, 0, 8);
+    r.flush();
+    const bends = r.played.filter((e) => (e.bytes[0] & 0xf0) === 0xe0).map((e) => ({ ms: e.ms, v: e.bytes[1] | (e.bytes[2] << 7) }));
+    expect(bends.length).toBeGreaterThan(100); // dozens per beat, not a handful of corners
+    const steps = bends.slice(1).map((b, i) => Math.abs(b.v - bends[i].v) / 8192 * 24); // in semitones (±24 range)
+    const bigSteps = steps.filter((x) => x > 0.06 && x < 20); // (a jump back at a retrigger is a new note, not a step)
+    expect(bigSteps.length).toBeLessThan(steps.length * 0.02);
+  });
+
+  it('the editor follows Live: smooth playhead reports carry the tempo, and the project shows Live’s tempo', () => {
+    const r = rig();
+    r.host.setProject(kit('disco'), false); // 120 bpm
+    r.run(97, 0, 1);
+    const pos = r.ui.filter((m) => m[0] === 'sf_pos');
+    expect(pos.length).toBeGreaterThan(3);
+    expect(pos.at(-1)![2]).toBe(97);
+    expect(r.ui).toContainEqual(['sf_tempo', 97]);
+    expect(r.host.project.song.bpm).toBe(97);
+  });
+
+  it('an edit is heard straight away, and never doubled with the old plan', () => {
+    const r = rig();
+    r.host.setProject(kit('disco'), false);
+    r.run(120, 0, 2);
+    const cancelsBefore = r.cancels();
+    r.host.setProject({ ...r.host.project, song: { ...r.host.project.song, root: 3 } }, false);
+    expect(r.cancels()).toBe(cancelsBefore + 1); // the old plan's waiting events are gone
   });
 
   it('never leaves a note hanging — even when the project changes while it plays', () => {

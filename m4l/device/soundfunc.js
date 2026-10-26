@@ -3116,7 +3116,49 @@
 		for (let i = 0; i < n; i++) if (keep[i]) out.push(i);
 		return out;
 	}
-	function glideEvents(points, ch, total, simplify, stats, range) {
+	/** live, a value holds until the next: keep a point whenever the curve has moved `tol` from the last one kept */
+	function holdCurve(ys, tol) {
+		if (!ys.length) return [];
+		const keep = [0];
+		let last = ys[0];
+		for (let i = 1; i < ys.length; i++) if (Math.abs(ys[i] - last) >= tol) {
+			keep.push(i);
+			last = ys[i];
+		}
+		if (keep[keep.length - 1] !== ys.length - 1) keep.push(ys.length - 1);
+		return keep;
+	}
+	/**
+	* Live, a steep stretch of a curve can move more between two samples than an ear forgives
+	* (a "zipper"): fill in between, so no single step is bigger than `tol` — but never closer
+	* together than 2 ticks, so a fast swoop can't flood the instrument.
+	*/
+	function densify(ticks, values, tol) {
+		const t = [], v = [];
+		for (let i = 0; i < ticks.length; i++) {
+			if (i > 0) {
+				const dt = ticks[i] - ticks[i - 1], dv = values[i] - values[i - 1];
+				const n = Math.min(Math.floor(dt / 2), Math.ceil(Math.abs(dv) / tol) - 1);
+				for (let j = 1; j <= n; j++) {
+					t.push(ticks[i - 1] + Math.round(dt * j / (n + 1)));
+					v.push(values[i - 1] + dv * j / (n + 1));
+				}
+			}
+			t.push(ticks[i]);
+			v.push(values[i]);
+		}
+		return {
+			ticks: t,
+			values: v
+		};
+	}
+	/** the points of a curve to send, in the given style (tolerances: `lines` the most it may stray, `hold` the smallest step) */
+	function keepPoints(xs, ys, tol, style) {
+		if (style === "lines") return simplifyCurve(xs, ys, tol);
+		if (style === "hold") return holdCurve(ys, tol * .6);
+		return xs.map((_, i) => i);
+	}
+	function glideEvents(points, ch, total, style, stats, range) {
 		const cc = (t, c, v) => ({
 			tick: t,
 			order: .5,
@@ -3186,8 +3228,39 @@
 			base = ph.base;
 			const n = ph.t.length;
 			stats.raw += 2 * n;
-			const bi = simplify ? simplifyCurve(ph.t, ph.semis, CURVE_TOLERANCE.semis) : ph.t.map((_, i) => i);
-			const ei = simplify ? simplifyCurve(ph.t, ph.expr, CURVE_TOLERANCE.expr) : ph.t.map((_, i) => i);
+			if (style === "hold") {
+				const d = densify(ph.t, ph.semis, CURVE_TOLERANCE.semis * .6);
+				const e = densify(ph.t, ph.expr, CURVE_TOLERANCE.expr);
+				bend(ph.t[0], ph.semis[0]);
+				evs.push({
+					tick: ph.t[0],
+					order: 1,
+					bytes: [
+						144 | ch,
+						base,
+						100
+					]
+				});
+				let kept = 0;
+				for (const i of holdCurve(d.values, CURVE_TOLERANCE.semis * .6)) {
+					const before = lastBend;
+					bend(d.ticks[i], d.values[i]);
+					if (lastBend !== before) kept++;
+				}
+				for (const i of holdCurve(e.values, 1)) {
+					const expr = Math.round(e.values[i]);
+					if (expr !== lastExpr) {
+						lastExpr = expr;
+						evs.push(cc(e.ticks[i], 11, expr));
+						kept++;
+					}
+				}
+				stats.kept += kept;
+				off(ph.end ?? tick(total));
+				continue;
+			}
+			const bi = keepPoints(ph.t, ph.semis, CURVE_TOLERANCE.semis, style);
+			const ei = keepPoints(ph.t, ph.expr, CURVE_TOLERANCE.expr, style);
 			bend(ph.t[0], ph.semis[0]);
 			evs.push({
 				tick: ph.t[0],
@@ -3206,7 +3279,7 @@
 			}
 			for (const i of ei) {
 				const expr = Math.round(ph.expr[i]);
-				if (simplify ? expr !== lastExpr : Math.abs(expr - lastExpr) >= 2) {
+				if (style !== "full" ? expr !== lastExpr : Math.abs(expr - lastExpr) >= 2) {
 					lastExpr = expr;
 					evs.push(cc(ph.t[i], 11, expr));
 					kept++;
@@ -3234,10 +3307,11 @@
 	* Write one curve as MIDI events at the given ticks: simplified to the points that redraw it
 	* (or every sample), quantised by `encode`, and never repeating a value.
 	*/
-	function curveEvents(ticks, values, tol, simplify, encode, make, stats, last = NaN) {
+	function curveEvents(ticks, values, tol, style, encode, make, stats, last = NaN) {
 		const out = [];
 		stats.raw += ticks.length;
-		const keep = simplify ? simplifyCurve(ticks, values, tol) : ticks.map((_, i) => i);
+		if (style === "hold") ({ticks, values} = densify(ticks, values, tol * .6));
+		const keep = keepPoints(ticks, values, tol, style);
 		for (const i of keep) {
 			const code = encode(values[i]);
 			if (code === last) continue;
@@ -3293,7 +3367,7 @@
 	* takes the member channel that has been free longest, so overlapping notes and chords
 	* bend, press and slide independently. Glides become one long note per phrase.
 	*/
-	function mpeEvents(program, notes, glide, total, simplify, stats, range) {
+	function mpeEvents(program, notes, glide, total, style, stats, range) {
 		const evs = [...rpn(0, 6, 15)];
 		for (let ch = 1; ch <= 15; ch++) evs.push(...rpn(ch, 0, range), {
 			tick: 0,
@@ -3320,9 +3394,9 @@
 			for (let c = 2; c <= 15; c++) if (freeAt[c] < freeAt[ch]) ch = c;
 			freeAt[ch] = n.off;
 			const ticks = n.at.map((a) => n.on + Math.min(a, n.off - n.on));
-			evs.push(...curveEvents(ticks, n.bend, EXPR_TOLERANCE.semis, simplify, bendCode(range), (t, v) => bendEv(ch, t === n.on ? .7 : .5)(t, v), stats));
-			evs.push(...curveEvents(ticks, n.pressure, EXPR_TOLERANCE.unit, simplify, unit127, (t, v) => pressEv(ch, t === n.on ? .7 : .5)(t, v), stats));
-			evs.push(...curveEvents(ticks, n.slide, EXPR_TOLERANCE.unit, simplify, unit127, (t, v) => slideEv(ch, t === n.on ? .7 : .5)(t, v), stats));
+			evs.push(...curveEvents(ticks, n.bend, EXPR_TOLERANCE.semis, style, bendCode(range), (t, v) => bendEv(ch, t === n.on ? .7 : .5)(t, v), stats));
+			evs.push(...curveEvents(ticks, n.pressure, EXPR_TOLERANCE.unit, style, unit127, (t, v) => pressEv(ch, t === n.on ? .7 : .5)(t, v), stats));
+			evs.push(...curveEvents(ticks, n.slide, EXPR_TOLERANCE.unit, style, unit127, (t, v) => slideEv(ch, t === n.on ? .7 : .5)(t, v), stats));
 			evs.push({
 				tick: n.on,
 				order: 1,
@@ -3373,7 +3447,7 @@
 		return out;
 	}
 	/** without MPE: each note's bend / pressure / slide on the channel, the bend centred again as it ends */
-	function channelExpression(notes, ch, simplify, stats, range) {
+	function channelExpression(notes, ch, style, stats, range) {
 		const evs = [];
 		const anyBend = notes.some((n) => n.expr?.bend.some((b) => b !== 0));
 		if (anyBend) evs.push(...rpn(ch, 0, range));
@@ -3385,11 +3459,11 @@
 			const on = tick(n.beat);
 			const ticks = e.at.map((a) => tick(n.beat + a));
 			if (anyBend) {
-				evs.push(...curveEvents(ticks, e.bend, EXPR_TOLERANCE.semis, simplify, bendCode(range), (t, v) => bendEv(ch, t === on ? .7 : .5)(t, v), stats));
+				evs.push(...curveEvents(ticks, e.bend, EXPR_TOLERANCE.semis, style, bendCode(range), (t, v) => bendEv(ch, t === on ? .7 : .5)(t, v), stats));
 				evs.push(bendEv(ch, .65)(Math.max(on + 1, tick(n.beat + n.duration)), 8192));
 			}
-			if (e.pressure.some((p) => p !== 1)) evs.push(...curveEvents(ticks, e.pressure, EXPR_TOLERANCE.unit, simplify, unit127, (t, v) => pressEv(ch, .6)(t, v), stats));
-			if (e.slide.some((s) => s !== .5)) evs.push(...curveEvents(ticks, e.slide, EXPR_TOLERANCE.unit, simplify, unit127, (t, v) => slideEv(ch, .6)(t, v), stats));
+			if (e.pressure.some((p) => p !== 1)) evs.push(...curveEvents(ticks, e.pressure, EXPR_TOLERANCE.unit, style, unit127, (t, v) => pressEv(ch, .6)(t, v), stats));
+			if (e.slide.some((s) => s !== .5)) evs.push(...curveEvents(ticks, e.slide, EXPR_TOLERANCE.unit, style, unit127, (t, v) => slideEv(ch, .6)(t, v), stats));
 		}
 		return evs;
 	}
@@ -3437,7 +3511,7 @@
 	function windowEvents(project, mode, from, to, stats = {
 		raw: 0,
 		kept: 0
-	}, clipAtEnd = true) {
+	}, clipAtEnd = true, style = project.song.exportCurves === "full" ? "full" : "lines") {
 		const { song } = project;
 		const all = collectNotes(project, from, to, clipAtEnd);
 		const total = to;
@@ -3451,7 +3525,6 @@
 			}
 			const evs = [];
 			const t0 = tick(from);
-			const simplify = song.exportCurves !== "full";
 			if (mode === "notes") {
 				if (!drum) evs.push({
 					tick: t0,
@@ -3487,7 +3560,7 @@
 				};
 			}
 			if (!drum && mode === "mpe") {
-				evs.push(...mpeEvents(GM_PROGRAM[track.waveform] ?? 0, notes, glide, total, simplify, stats, rangeOf(song.mpeBendRange, 48)).map((e) => e.tick === 0 ? {
+				evs.push(...mpeEvents(GM_PROGRAM[track.waveform] ?? 0, notes, glide, total, style, stats, rangeOf(song.mpeBendRange, 48)).map((e) => e.tick === 0 ? {
 					...e,
 					tick: t0
 				} : e));
@@ -3502,11 +3575,11 @@
 				order: 0,
 				bytes: [192 | ch, GM_PROGRAM[track.waveform] ?? 0]
 			});
-			if (glide.length) evs.push(...glideEvents(glide, ch, total, simplify, stats, rangeOf(song.bendRange, 24)).map((e) => e.tick === 0 ? {
+			if (glide.length) evs.push(...glideEvents(glide, ch, total, style, stats, rangeOf(song.bendRange, 24)).map((e) => e.tick === 0 ? {
 				...e,
 				tick: t0
 			} : e));
-			if (!drum && notes.some((n) => n.expr)) evs.push(...channelExpression(notes, ch, simplify, stats, rangeOf(song.bendRange, 24)).map((e) => e.tick === 0 ? {
+			if (!drum && notes.some((n) => n.expr)) evs.push(...channelExpression(notes, ch, style, stats, rangeOf(song.bendRange, 24)).map((e) => e.tick === 0 ? {
 				...e,
 				tick: t0
 			} : e));
@@ -6225,7 +6298,7 @@
 			let channels = windowEvents(project, mode, p * T, (p + 1) * T, {
 				raw: 0,
 				kept: 0
-			}, false);
+			}, false, "hold");
 			if (only > 0) channels = channels.filter((c) => audibleTracks(project.tracks).indexOf(c.track) === only - 1);
 			const all = [];
 			for (const c of channels) for (const e of c.events) {
@@ -6339,19 +6412,42 @@
 			offsWaiting = offsWaiting.filter((o) => o.beat > beat - 1e-9);
 			if (Math.round(beat * 8) !== Math.round(lastSent * 8)) {
 				lastSent = beat;
-				io.ui("sf_pos", Math.round(beat * 1e3) / 1e3);
+				io.ui("sf_pos", Math.round(beat * 1e3) / 1e3, Math.round(tempo * 100) / 100);
+			}
+			if (Math.abs(tempo - project.song.bpm) > .005) {
+				project = {
+					...project,
+					song: {
+						...project.song,
+						bpm: Math.round(tempo * 100) / 100
+					}
+				};
+				io.ui("sf_tempo", project.song.bpm);
 			}
 		}
 		let lastSent = -1;
-		/** the project changed: start the coming passes afresh (sent notes still get their offs) */
+		/**
+		* Plan again from where playback is: whatever was waiting in [pipe] is cancelled (so the old
+		* plan doesn't play on top of the new one), and the note-offs it held are booked again.
+		*/
+		function rewind() {
+			io.cancel();
+			for (const o of offsWaiting) if (o.beat >= lastBeat - 1e-9) owed.push({
+				tick: Math.round(o.beat * 480),
+				bytes: o.bytes
+			});
+			offsWaiting = [];
+			handedTo = lastBeat;
+		}
+		/** the project changed: heard from the next moment on (sent notes still get their offs) */
 		function setProject(p, persist = true) {
 			project = normalizeProject(p);
 			passes.clear();
-			if (playing) handedTo = Math.max(lastBeat, handedTo - 120 / 1e3);
+			if (playing) rewind();
 			io.status(describe());
 			if (persist) {
 				clearTimeout(storeTimer);
-				storeTimer = setTimeout(() => io.store(JSON.stringify(project)), 1500);
+				storeTimer = setTimeout(() => io.store(JSON.stringify(project)), 5e3);
 			}
 		}
 		function describe() {

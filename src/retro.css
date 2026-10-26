@@ -1043,3 +1043,21 @@ body {
   right: 8px;
   bottom: 9px;
 }
+
+/* ---------- inside the Live device: the same look, much less to draw ---------- */
+[data-device='m4l'] .viz,
+[data-device='m4l'] .nodes-canvas {
+  --viz-glow: 0;
+}
+[data-device='m4l'] *,
+[data-device='m4l'] *::before,
+[data-device='m4l'] *::after {
+  transition: none !important;
+  animation: none !important;
+  text-shadow: none !important;
+}
+[data-device='m4l'] .react-flow__edge-path,
+[data-device='m4l'] .curve-line,
+[data-device='m4l'] .import-plot-box path {
+  filter: none !important;
+}
