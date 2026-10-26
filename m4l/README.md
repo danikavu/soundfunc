@@ -36,6 +36,17 @@ Max for Live devices are saved from Max's own editor, so this one step is by han
 After a rebuild (`npm run build:m4l`), the `.amxd` picks up the new `soundfunc.js` and `ui/`
 next time it loads. Repeat steps 2–5 only if the patch itself changed.
 
+## Where the editing is
+
+The device strip is just the controls. **All of SoundFunc — the node board, Score and Function
+views, formulas, sliders, curves, presets, harmony, mutate and the dice, explode/collapse,
+blocks — is in the editor window: click Open editor….** It's the same app as in the browser, sound
+off (Live plays the device's MIDI).
+
+When the editor's page has loaded, the device's status line ends in **· editor ready**, and the Max
+Console shows `SoundFunc editor page: …/ui/index.html` — the file it opened. If the window is
+empty, check that file exists (`npm run build:m4l`) and sits beside the device.
+
 ## Use it
 
 - **Play** — Live's transport plays it. Stop, loop and jump in Live and it follows; notes never hang.

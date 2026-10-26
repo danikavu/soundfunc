@@ -229,6 +229,7 @@ export function createHost(io: Io) {
     ui(cmd: string) {
       if (cmd === 'ready') {
         editorReady = true;
+        io.status(`${describe()} · editor ready`);
         io.writeShared(JSON.stringify(project));
         io.ui('sf_load', io.sharedName);
         if (pendingImport) handOver(pendingImport.kind, pendingImport.text), (pendingImport = null);

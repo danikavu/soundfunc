@@ -84,13 +84,21 @@ const io: Io = {
 
 const host = createHost(io);
 
-/** Max path → file URL: "Macintosh HD:/Users/x/SoundFunc" → file:///Users/x/SoundFunc; "C:/x" → file:///C:/x */
-function fileUrl(maxPath: string, file: string): string {
-  let p = maxPath.replace(/\\/g, '/');
-  if (/\.(amxd|maxpat)$/i.test(p)) p = p.slice(0, p.lastIndexOf('/'));
-  const drive = /^[A-Za-z]:\//.test(p);
-  if (!drive) p = p.replace(/^[^/]*:/, ''); // a Mac volume name
-  return encodeURI(`file://${drive ? '/' : ''}${p}/${file}`);
+/**
+ * The editor's page, beside the device: the device's (or patch's) path with its file name
+ * swapped for ui/index.html — in Max's own path form ("Macintosh HD:/…" or "C:/…"), which
+ * [jweb]'s readfile takes directly.
+ */
+let editorPage = '';
+function showEditorFrom(path: string) {
+  if (!path) return;
+  let folder = path.replace(/\\/g, '/');
+  if (/\.(amxd|maxpat|maxhelp)$/i.test(folder)) folder = folder.slice(0, folder.lastIndexOf('/'));
+  const page = `${folder}/ui/index.html`;
+  if (page === editorPage) return;
+  editorPage = page;
+  post(`SoundFunc editor page: ${page}\n`);
+  io.ui('readfile', page);
 }
 
 // ---------- messages from the patch ----------
@@ -118,9 +126,12 @@ g.importfile = (...parts: unknown[]) => {
   host.importText(text, path);
 };
 /** where the device lives, so the editor window can find its page (ui/index.html beside the device) */
-g.devicepath = (...parts: unknown[]) => io.ui('url', fileUrl(parts.join(' '), 'ui/index.html'));
+g.devicepath = (...parts: unknown[]) => showEditorFrom(parts.join(' '));
 g.loadbang = () => {
   io.status(host.describe());
+  // where this script's patch lives — the editor page sits beside it
+  const self = (globalThis as unknown as { patcher?: { filepath?: string } }).patcher;
+  if (self?.filepath) showEditorFrom(self.filepath);
   post('SoundFunc ready\n');
 };
 g.bang = () => io.status(host.describe());

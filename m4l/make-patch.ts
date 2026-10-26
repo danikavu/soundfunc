@@ -75,7 +75,10 @@ wire(clockMsg, 0, v8, 0);
 
 // where the device lives, so the editor can find ui/index.html beside it
 const thisDevice = obj('live.thisdevice', [1, 3], [240, 40]);
+// …and Max's own loadbang, so it also works with the patch opened on its own in Max
+const loaded = obj('loadbang', [1, 1], [340, 40]);
 const pathMsg = msg('path', [240, 80]);
+wire(loaded, 0, pathMsg, 0);
 const thisPatcher = obj('thispatcher', [1, 2], [240, 120]);
 const routePath = obj('route path', [2, 2], [240, 160]);
 const pathPre = obj('prepend devicepath', [2, 1], [240, 200]);
