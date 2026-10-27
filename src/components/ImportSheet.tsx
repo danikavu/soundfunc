@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { compileAst, type Ast } from '../engine/expr';
-import { importMath, ImportError, type Imported } from '../engine/importMath';
+import { fitToSpan, importedPitch, importMath, ImportError, type Imported, type YMeans } from '../engine/importMath';
+import { DEFAULT_PITCH_RANGE, midiToName } from '../engine/music';
 import { TRACK_COLORS, layoutGraph, uid } from '../engine/presets';
 import { simplify, substitute, toSource, toTex } from '../engine/symbolic';
 import { TRACK_DEFAULTS, type Slider, type Track, type Waveform } from '../engine/project';
@@ -12,7 +13,6 @@ import { StepPicker } from './StepPicker';
 import { fixedLengthFor, shortBeats } from '../engine/steps';
 
 type XMeans = 'beats' | 'steps' | 'loop';
-type YMeans = 'octaves' | 'semitones' | 'degrees';
 
 const EXAMPLES: { label: string; src: string }[] = [
   { label: 'Desmos LaTeX', src: '\\frac{\\operatorname{floor}\\left(\\frac{12\\operatorname{mod}\\left(3\\operatorname{floor}\\left(\\frac{x}{2}\\right)+2\\operatorname{mod}\\left(\\operatorname{floor}\\left(4x\\right),4\\right)+5,7\\right)+2}{7}\\right)}{12}+\\frac{e^{-12\\operatorname{mod}\\left(4x,1\\right)}}{6}' },
@@ -41,6 +41,9 @@ export function ImportSheet() {
   const [paramEdits, setParamEdits] = useState<Record<string, number>>({});
   /** when the function's length isn't the song's: free (each channel loops on its own), grow the song, or fit the song */
   const [fit, setFit] = useState<'free' | 'grow' | 'song'>('free');
+  /** fit y into a span of octaves: null = decide from the function (on when it can't be played as written) */
+  const [fitChoice, setFitChoice] = useState<boolean | null>(null);
+  const [fitOctaves, setFitOctaves] = useState(3);
   const song = useStore((s) => s.project.song);
   const katex = useKatex(open);
 
@@ -55,6 +58,7 @@ export function ImportSheet() {
   useEffect(() => {
     setTimeChoice(null);
     setParamEdits({});
+    setFitChoice(null);
   }, [src]);
 
   const parsed = useMemo((): { ok: Imported | null; error: string | null } => {
@@ -86,35 +90,65 @@ export function ImportSheet() {
   const grown = fixedLengthFor(ownLength);
   const heard = !mismatch || fit === 'free' ? ownLength : fit === 'grow' ? grown : song.lengthBeats;
 
-  // sample the function across exactly what the channel will play, for the plot
-  const plot = useMemo(() => {
+  // sample the function across exactly what the channel will play
+  const range = song.pitchRange ?? DEFAULT_PITCH_RANGE;
+  const sampled = useMemo(() => {
     const r = parsed.ok;
     if (!r) return null;
     const v = compileAst(r.value), g = r.gate ? compileAst(r.gate) : () => 1;
     const N = 480;
-    const pts: (number | null)[] = [];
+    const xs: number[] = [], ys: (number | null)[] = [];
     let lo = Infinity, hi = -Infinity;
     for (let i = 0; i < N; i++) {
       const beats = (i / N) * heard;
       const x = xStart + (xMeans === 'beats' ? beats : xMeans === 'steps' ? beats / stepBeats : i / N);
       const scope = { ...paramScope, t: x };
       const y = g(scope) ? v(scope) : NaN;
+      xs.push(x);
       if (Number.isFinite(y)) {
-        pts.push(y);
+        ys.push(y);
         (lo = Math.min(lo, y)), (hi = Math.max(hi, y));
-      } else pts.push(null);
+      } else ys.push(null);
     }
-    if (!Number.isFinite(lo)) return { pts, lo: -1, hi: 1, silent: true };
-    if (hi - lo < 1e-9) (lo -= 1), (hi += 1);
-    return { pts, lo, hi, silent: false };
-  }, [parsed.ok, heard, xMeans, stepBeats, xStart, paramScope]);
+    if (!Number.isFinite(lo)) return { xs, ys, lo: 0, hi: 0, silent: true, runsAway: false };
+    // as written: does it leave MIDI altogether, or span more than the pitch range holds?
+    let pLo = Infinity, pHi = -Infinity;
+    for (const y of ys) if (y !== null) {
+      const { raw } = importedPitch(y, yMeans, song, glide);
+      (pLo = Math.min(pLo, raw)), (pHi = Math.max(pHi, raw));
+    }
+    const runsAway = pLo < 0 || pHi > 127 || (range.mode !== 'off' && pHi - pLo > range.high - range.low);
+    return { xs, ys, lo, hi, silent: false, runsAway };
+  }, [parsed.ok, heard, xMeans, stepBeats, xStart, paramScope, yMeans, song, glide, range]);
+  const fitting = !!sampled && !sampled.silent && (fitChoice ?? sampled.runsAway) && sampled.hi - sampled.lo > 1e-9;
+
+  // …and the notes it becomes: what the channel plays, after the fit and the song's pitch range
+  const plot = useMemo(() => {
+    if (!sampled) return null;
+    const { xs, ys } = sampled;
+    const fitted = fitting ? compileAst(fitToSpan({ k: 'var', name: 'y' }, sampled.lo, sampled.hi, fitOctaves, yMeans, song.scale)) : null;
+    const notes = ys.map((y) => (y === null ? null : importedPitch(fitted ? fitted({ y }) : y, yMeans, song, glide)));
+    let lo = Infinity, hi = -Infinity, up = 0, down = 0, firstOut = -1;
+    notes.forEach((p, i) => {
+      if (!p) return;
+      (lo = Math.min(lo, p.heard)), (hi = Math.max(hi, p.heard));
+      if (Math.abs(p.heard - p.raw) > 1e-6) {
+        if (firstOut < 0) firstOut = i;
+        p.heard < p.raw ? up++ : down++;
+      }
+    });
+    if (!Number.isFinite(lo)) return { notes, lo: 48, hi: 72, silent: true, up, down, firstX: null };
+    // at least an octave in view, a semitone of room each side
+    const mid = (lo + hi) / 2, half = Math.max(6, (hi - lo) / 2 + 1);
+    return { notes, lo: mid - half, hi: mid + half, silent: false, up, down, firstX: firstOut < 0 ? null : xs[firstOut] };
+  }, [sampled, fitting, fitOctaves, yMeans, song, glide]);
 
   if (!open) return null;
 
   const plant = () => {
     const r = parsed.ok;
     if (!r) return;
-    const value = toSource(toSf(r.value));
+    const value = toSource(toSf(fitting && sampled ? fitToSpan(r.value, sampled.lo, sampled.hi, fitOctaves, yMeans, song.scale) : r.value));
     const gateParts = [r.gate ? `(${toSource(toSf(r.gate))})` : null, articulate ? `(fract(t / ${stepBeats}) < 0.85)` : null].filter(Boolean);
     const velocity = gateParts.length ? `0.8 * ${gateParts.join(' * ')}` : '0.8';
     const nodes: Record<string, [string, Record<string, string | number>]> = {
@@ -160,16 +194,25 @@ export function ImportSheet() {
     plantTrack(track);
     setOpen(false);
     const room = !mismatch ? '' : fit === 'free' ? ' · the song is now Free' : fit === 'grow' ? ` · the song is now ${grown} beats` : '';
-    toast(`Planted “${track.name}” — ${shortBeats(heard)}, ${glide ? 'glide' : 'notes'}${room}${made.length ? ` · new slider${made.length > 1 ? 's' : ''}: ${made.join(', ')}` : ''}`);
+    toast(`Planted “${track.name}” — ${shortBeats(heard)}, ${glide ? 'glide' : 'notes'}${fitting ? `, fitted into ${fitOctaves} octaves` : ''}${room}${made.length ? ` · new slider${made.length > 1 ? 's' : ''}: ${made.join(', ')}` : ''}`);
   };
 
   const W = 640, H = 140;
-  const path = plot
-    ? plot.pts
-        .map((y, i) => (y === null ? null : `${(i / (plot.pts.length - 1)) * W},${(H - 8 - ((y - plot.lo) / (plot.hi - plot.lo)) * (H - 16)).toFixed(1)}`))
-        .reduce<string[]>((acc, p, i, arr) => (p === null ? acc : [...acc, `${i && arr[i - 1] !== null ? 'L' : 'M'}${p}`]), [])
-        .join('')
-    : '';
+  const yOf = (m: number) => (plot ? H - 8 - ((m - plot.lo) / (plot.hi - plot.lo)) * (H - 16) : 0);
+  /** a polyline through the points `keep` allows, broken where it doesn't */
+  const pathOf = (keep: (p: { raw: number; heard: number }) => boolean) =>
+    plot
+      ? plot.notes
+          .map((p, i) => (p && keep(p) ? `${(i / (plot.notes.length - 1)) * W},${yOf(p.heard).toFixed(1)}` : null))
+          .reduce<string[]>((acc, p, i, arr) => (p === null ? acc : [...acc, `${i && arr[i - 1] !== null ? 'L' : 'M'}${p}`]), [])
+          .join('')
+      : '';
+  const path = pathOf(() => true);
+  /** where the pitch range pinned or folded the function: drawn over the line in the warning colour */
+  const outPath = pathOf((p) => Math.abs(p.heard - p.raw) > 1e-6);
+  const band: [number, number] = range.mode === 'off' ? [0, 127] : [range.low, range.high];
+  const bandLabel = range.mode === 'off' ? 'any pitch — MIDI 0…127' : `${midiToName(range.low)}–${midiToName(range.high)}, ${range.mode}`;
+  const fmt = (v: number) => (Math.abs(v) >= 1000 || (Math.abs(v) < 0.01 && v !== 0) ? v.toExponential(1) : String(Number(v.toPrecision(3))));
 
   return (
     <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
@@ -241,19 +284,80 @@ export function ImportSheet() {
             <div className="import-plot-box">
               {parsed.ok && plot ? (
                 <svg className="import-plot" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-                  <line x1="0" x2={W} y1={H - 8 - ((0 - plot.lo) / (plot.hi - plot.lo)) * (H - 16)} y2={H - 8 - ((0 - plot.lo) / (plot.hi - plot.lo)) * (H - 16)} stroke="var(--line)" strokeDasharray="2 4" />
+                  {/* every C, faintly — the plot is in notes, as the channel will play them */}
+                  {Array.from({ length: 11 }, (_, o) => o * 12)
+                    .filter((m) => m > plot.lo && m < plot.hi)
+                    .map((m) => (
+                      <line key={m} x1="0" x2={W} y1={yOf(m)} y2={yOf(m)} stroke="var(--line-soft)" />
+                    ))}
+                  {/* the edges of the pitch range, when the notes reach them */}
+                  {band
+                    .filter((m) => m > plot.lo && m < plot.hi)
+                    .map((m) => (
+                      <line key={`edge${m}`} className="import-edge" x1="0" x2={W} y1={yOf(m)} y2={yOf(m)} strokeDasharray="3 4" />
+                    ))}
                   <path d={path} fill="none" stroke="var(--ink)" strokeWidth={1.6} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+                  {outPath && <path className="import-out" d={outPath} fill="none" strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />}
                 </svg>
               ) : (
                 <div className="import-plot empty" />
               )}
               {parsed.error && <p className="import-error import-overlay">{parsed.error}</p>}
+              {parsed.ok && plot && !plot.silent && (
+                <>
+                  <span className="import-note top">{midiToName(Math.round(plot.hi - 1))}</span>
+                  <span className="import-note bottom">{midiToName(Math.round(plot.lo + 1))}</span>
+                </>
+              )}
               {parsed.ok && <span className="import-heard">{shortBeats(heard)}</span>}
               {parsed.ok && plot?.silent && <p className="import-error import-overlay">The function is undefined (silent) over the whole length.</p>}
             </div>
           </div>
           {parsed.ok && (
             <>
+              {plot && sampled && !sampled.silent && (fitting || plot.up + plot.down > 0 || sampled.runsAway) && (
+                <div className="import-fit">
+                  <span>
+                    {fitting ? (
+                      <>
+                        Fitted: y from <b>{fmt(sampled.lo)}</b> to <b>{fmt(sampled.hi)}</b> is scaled into <b>{fitOctaves} octaves</b> around {midiToName(60 + song.root)}, so the
+                        whole shape plays.
+                      </>
+                    ) : (
+                      sampled.runsAway && (
+                      <>
+                        As written, y runs from <b>{fmt(sampled.lo)}</b> to <b>{fmt(sampled.hi)}</b>
+                        {yMeans === 'octaves' ? ' octaves' : yMeans === 'semitones' ? ' semitones' : ' scale degrees'} — more than the pitch range holds ({bandLabel}).
+                      </>
+                      )
+                    )}
+                    {plot.up + plot.down > 0 && plot.firstX !== null && (
+                      <>
+                        {' '}
+                        From {parsed.ok.timeVar} ≈ {fmt(plot.firstX)}, {Math.round(((plot.up + plot.down) / plot.notes.filter(Boolean).length) * 100)}% of it{' '}
+                        {range.mode === 'wrap' ? 'is folded back by octaves' : plot.up && plot.down ? 'sits on the top or bottom note' : plot.up ? 'sits on the top note' : 'sits on the bottom note'} — the
+                        highlighted part of the preview.
+                      </>
+                    )}
+                  </span>
+                  <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <Seg<boolean>
+                      value={fitting}
+                      onChange={setFitChoice}
+                      options={[
+                        { value: false, label: 'As written' },
+                        { value: true, label: 'Fit y to range' },
+                      ]}
+                    />
+                    {fitting && (
+                      <label className="row" style={{ gap: 6, fontSize: 12 }}>
+                        <NumberField className="input num" min={0.25} max={10} value={fitOctaves} onValue={setFitOctaves} aria-label="Octaves to fit into" style={{ width: 64 }} />
+                        octaves
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
               {mismatch && (
                 <div className="import-fit">
                   <span>

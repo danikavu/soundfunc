@@ -3336,6 +3336,28 @@ aside.panel:last-of-type .info-pop {
   display: block;
   height: 140px;
 }
+/* the preview is in notes: the pitch range's edges, and where the range pins or folds the function */
+.import-edge {
+  stroke: var(--accent);
+  opacity: 0.7;
+}
+.import-out {
+  stroke: var(--accent);
+}
+.import-note {
+  position: absolute;
+  left: 8px;
+  font: 400 10px/1 var(--mono);
+  color: var(--ink-2);
+  opacity: 0.8;
+  pointer-events: none;
+}
+.import-note.top {
+  top: 6px;
+}
+.import-note.bottom {
+  bottom: 6px;
+}
 .import-plot.empty {
   background: repeating-linear-gradient(90deg, transparent 0 39px, var(--line-soft) 39px 40px), var(--paper);
   opacity: 0.6;

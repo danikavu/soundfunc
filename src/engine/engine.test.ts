@@ -19,7 +19,7 @@ import { parsePattern } from './graph';
 import { timbreHarmonics } from './timbre';
 import { PATCHES, applySauce, cutoffHz, drumOf, surprise, synthOf } from './synth';
 import { WAVEFORMS, type Waveform } from './project';
-import { importMath } from './importMath';
+import { fitToSpan, importedPitch, importMath } from './importMath';
 import { auditionGraph, blockFromSelection, collapseNodes, curveToFormula, explodeFormula, insertBlock } from './graphEdit';
 import { BLOCKS } from './blocks';
 import { applyGrid } from './steps';
@@ -1478,5 +1478,55 @@ describe('the synth: patches, sauce and surprises', () => {
     expect(v.synth).toEqual({ cutoff: 0.3, sauce: 0.6 });
     expect(wearsVoice(t, v)).toBe(true);
     expect(wearsVoice({ ...t, synth: { cutoff: 0.3 } }, v)).toBe(false);
+  });
+});
+
+describe('paste a function: where it lands as notes', () => {
+  const src = `y(x) =
+
+IF mod(x,1) >= 0.55:
+  y = (5/4)*x^2 - 5
+
+ELSE IF mod(x,1.6) < 0.8:
+  y = 1.49*tanh(5*sin(pi*x/2)) + 0.91
+
+OTHERWISE:
+  y = -2.4 + 2.98*sqrt(max(0,1-3.11*(mod(x,2)-1)^2))`;
+  const song = { root: 0, scale: 'major', pitchRange: { mode: 'off' as const, low: 24, high: 96 } };
+
+  it('a riser that runs past MIDI is pinned to the top note as written — which the preview now shows', () => {
+    const f = compileAst(importMath(src).value);
+    const at = (x: number) => importedPitch(f({ t: x }), 'octaves', song, true);
+    expect(at(1.6).heard).toBeLessThan(127); // the riser starts in range…
+    const late = at(40.6); // …and is long gone by x = 40
+    expect(late.raw).toBeGreaterThan(1000);
+    expect(late.heard).toBe(127);
+    // with the default pitch range it is folded by octaves instead, but still lands inside it
+    const wrapped = importedPitch(f({ t: 40.6 }), 'octaves', { ...song, pitchRange: { mode: 'wrap', low: 24, high: 96 } }, true);
+    expect(wrapped.heard).toBeGreaterThanOrEqual(24);
+    expect(wrapped.heard).toBeLessThanOrEqual(96);
+  });
+
+  it('Fit y to range scales lowest…highest onto the octaves asked for, around the channel’s octave', () => {
+    const r = importMath(src);
+    const f = compileAst(r.value);
+    const xs = Array.from({ length: 641 }, (_, i) => i / 10);
+    const ys = xs.map((x) => f({ t: x }));
+    const lo = Math.min(...ys), hi = Math.max(...ys);
+    const g = compileAst(fitToSpan(r.value, lo, hi, 3, 'octaves', 'major'));
+    const notes = xs.map((x) => importedPitch(g({ t: x }), 'octaves', song, true));
+    const heard = notes.map((n) => n.heard);
+    expect(Math.min(...heard)).toBeCloseTo(60 - 18, 0);
+    expect(Math.max(...heard)).toBeCloseTo(60 + 18, 0);
+    expect(notes.every((n) => n.heard === n.raw)).toBe(true); // nothing pinned
+    // still a riser: the riser branch's peaks climb
+    const peaks = [10.6, 30.6, 60.6].map((x) => importedPitch(g({ t: x }), 'octaves', song, true).heard);
+    expect(peaks[0]).toBeLessThan(peaks[1]);
+    expect(peaks[1]).toBeLessThan(peaks[2]);
+    // in semitones and scale degrees the same span means 36 semitones / 3 × 7 degrees
+    const s = compileAst(fitToSpan({ k: 'var', name: 'y' }, 0, 1, 3, 'semitones', 'major'));
+    expect(s({ y: 1 }) - s({ y: 0 })).toBeCloseTo(36, 6);
+    const d = compileAst(fitToSpan({ k: 'var', name: 'y' }, 0, 1, 3, 'degrees', 'major'));
+    expect(d({ y: 1 }) - d({ y: 0 })).toBeCloseTo(21, 6);
   });
 });

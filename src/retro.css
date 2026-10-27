@@ -742,6 +742,16 @@ body {
 .import-read {
   --ink: inherit;
 }
+.import-plot-box .import-out {
+  stroke: #ffb347;
+  filter: drop-shadow(0 0 2px rgba(255, 170, 60, 0.7));
+}
+.import-plot-box .import-edge {
+  stroke: #ffb347;
+}
+.import-plot-box .import-note {
+  color: var(--lcd-ink-2);
+}
 
 /* the toolbar's Copy-to is a key, not a display */
 .app .toolbar .lock-status .dropdown.compact .dropdown-field {

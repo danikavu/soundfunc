@@ -6,6 +6,7 @@
  */
 import { compileAst, FUNCTIONS, type Ast, type BinOp } from './expr';
 import { simplify, substitute, toSource, varsOf } from './symbolic';
+import { DEFAULT_PITCH_RANGE, limitPitch, SCALES, valueToPitch, type PitchRange } from './music';
 
 const UNDEF: Ast = { k: 'var', name: '__undefined' };
 
@@ -897,4 +898,47 @@ function topLevelColon(text: string): number {
     else if (c === ':' && depth === 0) return i;
   }
   return -1;
+}
+
+// ---------- where an imported function lands as notes ----------
+
+export type YMeans = 'octaves' | 'semitones' | 'degrees';
+
+/** one octave, in the units y is read in */
+export function octaveOf(yMeans: YMeans, scaleKey: string): number {
+  return yMeans === 'octaves' ? 1 : yMeans === 'semitones' ? 12 : (SCALES[scaleKey] ?? SCALES.major).steps.length;
+}
+
+/**
+ * The note a value of y becomes on the planted channel (octave 4, the song's key and pitch
+ * range): `raw` as written, `heard` once the range has pinned (clamp, any pitch → MIDI 0…127)
+ * or folded (wrap) it — the same steps renderTrack takes.
+ */
+export function importedPitch(
+  y: number,
+  yMeans: YMeans,
+  song: { root: number; scale: string; pitchRange?: PitchRange },
+  glide: boolean,
+  octave = 4,
+): { raw: number; heard: number } {
+  const value = yMeans === 'octaves' ? y * 12 : y;
+  const raw = valueToPitch(value, yMeans === 'degrees' ? 'degree' : 'semitone', song.root, song.scale, octave, !glide, false);
+  return { raw, heard: limitPitch(raw, song.pitchRange ?? DEFAULT_PITCH_RANGE) };
+}
+
+/** a number kept short in a formula */
+const tidy = (v: number) => Number(v.toPrecision(4));
+
+/**
+ * Fit y into a span: the function's lowest…highest value (`lo`…`hi`) is scaled onto
+ * `octaves` octaves centred on the channel's octave — a riser that runs away stays a riser.
+ */
+export function fitToSpan(value: Ast, lo: number, hi: number, octaves: number, yMeans: YMeans, scaleKey: string): Ast {
+  if (!(hi - lo > 1e-12)) return value;
+  const span = octaves * octaveOf(yMeans, scaleKey);
+  const a = tidy(span / (hi - lo)), b = tidy(-lo * (span / (hi - lo)) - span / 2);
+  // kept as written: a formula prints numbers to 4 decimals, and a runaway riser needs a tiny scale
+  const num = (v: number): Ast => ({ k: 'num', v, raw: String(v) });
+  const scaled: Ast = { k: 'bin', op: '*', a: num(a), b: value };
+  return b ? { k: 'bin', op: b < 0 ? '-' : '+', a: scaled, b: num(Math.abs(b)) } : scaled;
 }
