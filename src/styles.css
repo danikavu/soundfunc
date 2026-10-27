@@ -2751,6 +2751,29 @@ button:focus-visible {
   color: var(--ink-3);
   margin: 10px 0 4px;
 }
+/* My functions: Export all and the presets folder, above the list */
+.mine-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 6px;
+  min-width: 0;
+}
+.mine-tools .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.mine-tools .btn svg {
+  flex: none;
+}
+/* a long folder name ends in … rather than pushing the row wider */
+.mine-tools .btn .mine-folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .mine-row {
   position: relative;
 }

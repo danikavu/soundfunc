@@ -6,6 +6,7 @@ import { Icon, download, fileSafe } from './ui';
 import { useRef, useState, type ReactNode } from 'react';
 import { functionFile, functionOf, readFunctionFile, useLibrary, type SavedFunction } from '../state/library';
 import { toast } from './TopBar';
+import { canLinkFolder, forgetPresetFolder, mergeFunctions, openPresetFolder, readFolderFiles, usePresetFolder } from '../state/presetFolder';
 
 /** Functions you saved: whole tracks — every node with its values — to plant in any garden, or share as a file. */
 function MyFunctions() {
@@ -14,6 +15,19 @@ function MyFunctions() {
   const plantFunction = useStore((s) => s.plantFunction);
   const [naming, setNaming] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
+  const folder = usePresetFolder();
+
+  const openFolder = async () => {
+    // browsers without the File System Access API (Safari, Firefox): read a folder once instead
+    if (!canLinkFolder()) return folderRef.current?.click();
+    try {
+      toast(await openPresetFolder());
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return; // closed the picker
+      toast(err instanceof Error ? `Couldn’t open the folder — ${err.message}` : 'Couldn’t open the folder');
+    }
+  };
 
   const save = () => {
     const name = (naming ?? '').trim();
@@ -84,6 +98,51 @@ function MyFunctions() {
         </div>
       )}
       <Fold id="my-functions" title="My functions" count={functions.length} defaultOpen>
+        <div className="mine-tools">
+          <button
+            className="btn small ghost"
+            disabled={!functions.length}
+            onClick={() => exportFns(functions, 'soundfunc-functions.json')}
+            title={functions.length ? `Export all ${functions.length} functions as one file — Import reads it back` : 'Nothing to export yet'}
+          >
+            <Icon name="download" size={13} /> Export all
+          </button>
+          <button
+            className={`btn small ghost ${folder.name && !folder.needsAccess ? 'on' : ''}`}
+            disabled={folder.busy}
+            onClick={openFolder}
+            title={
+              !canLinkFolder()
+                ? 'Load every function file in a folder (this browser can read a folder, not keep it in step — Chrome and Edge can)'
+                : folder.name
+                  ? folder.needsAccess
+                    ? `Reconnect “${folder.name}” — the browser asks for access again after a reload`
+                    : `Your presets folder is “${folder.name}”: one file per function, kept in step as you save and delete. Click to choose another folder.`
+                  : 'Choose a folder for your presets: its functions load here, and every function you save or delete is written to it — one file each'
+            }
+          >
+            <Icon name="folder" size={13} /> <span className="mine-folder-name">{folder.name ? (folder.needsAccess ? `Reconnect ${folder.name}` : folder.name) : 'Open presets folder'}</span>
+          </button>
+          {folder.name && (
+            <button className="icon-btn" title={`Stop keeping “${folder.name}” in step (its files stay)`} aria-label="Forget presets folder" onClick={() => void forgetPresetFolder()}>
+              <Icon name="close" size={11} />
+            </button>
+          )}
+          <input
+            ref={folderRef}
+            type="file"
+            hidden
+            {...({ webkitdirectory: '' } as Record<string, string>)}
+            onChange={async (e) => {
+              const list = e.target.files;
+              if (!list?.length) return;
+              const { fns, skipped } = await readFolderFiles(list);
+              e.target.value = '';
+              mergeFunctions(fns);
+              toast(fns.length ? `Loaded ${fns.length} function${fns.length > 1 ? 's' : ''} from the folder${skipped ? ` · ${skipped} file${skipped > 1 ? 's weren’t functions' : ' wasn’t a function'}` : ''}` : 'No function files in that folder');
+            }}
+          />
+        </div>
         {functions.length === 0 && <p className="muted fold-empty">Nothing saved yet.</p>}
         {functions.map((fn) => (
         <div key={fn.id} className="mine-row">
@@ -99,7 +158,11 @@ function MyFunctions() {
             >
               <Icon name="download" size={12} />
             </button>
-            <button className="icon-btn" title={`Delete “${fn.name}”`} onClick={() => confirm(`Delete the function “${fn.name}”?`) && deleteFunction(fn.id)}>
+            <button
+              className="icon-btn"
+              title={`Delete “${fn.name}”`}
+              onClick={() => confirm(`Delete the function “${fn.name}”?${folder.name && !folder.needsAccess ? ` Its file in “${folder.name}” goes too.` : ''}`) && deleteFunction(fn.id)}
+            >
               <Icon name="close" size={11} />
             </button>
           </span>
