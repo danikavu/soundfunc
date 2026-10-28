@@ -2751,6 +2751,29 @@ button:focus-visible {
   color: var(--ink-3);
   margin: 10px 0 4px;
 }
+/* My functions: Export all and the presets folder, above the list */
+.mine-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 6px;
+  min-width: 0;
+}
+.mine-tools .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.mine-tools .btn svg {
+  flex: none;
+}
+/* a long folder name ends in … rather than pushing the row wider */
+.mine-tools .btn .mine-folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .mine-row {
   position: relative;
 }
@@ -3335,6 +3358,28 @@ aside.panel:last-of-type .info-pop {
 .import-plot-box .import-plot {
   display: block;
   height: 140px;
+}
+/* the preview is in notes: the pitch range's edges, and where the range pins or folds the function */
+.import-edge {
+  stroke: var(--accent);
+  opacity: 0.7;
+}
+.import-out {
+  stroke: var(--accent);
+}
+.import-note {
+  position: absolute;
+  left: 8px;
+  font: 400 10px/1 var(--mono);
+  color: var(--ink-2);
+  opacity: 0.8;
+  pointer-events: none;
+}
+.import-note.top {
+  top: 6px;
+}
+.import-note.bottom {
+  bottom: 6px;
 }
 .import-plot.empty {
   background: repeating-linear-gradient(90deg, transparent 0 39px, var(--line-soft) 39px 40px), var(--paper);
