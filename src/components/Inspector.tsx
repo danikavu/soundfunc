@@ -747,7 +747,7 @@ function GuideTab() {
       <div className="eyebrow">Randomizer</div>
       <p style={{ margin: 0 }}>
         <b>Mutate</b> (R, or ⇧R for the whole track) rewrites parameters and formulas, renders ~40 candidates and keeps the one that scores best on
-        melodic contour, chord-tone fit, rhythmic density and distance from the original. The 調和 ↔ 実験 dial trades consonance for novelty. Lock a node
+        melodic contour, chord-tone fit, rhythmic density and distance from the original. The Safe ↔ Wild dial trades consonance for novelty. Lock a node
         (hover its header) to protect it.
       </p>
       <div className="eyebrow">Building & experimenting</div>

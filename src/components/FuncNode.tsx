@@ -271,7 +271,6 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
             onClick={() => setLocked(ctx.trackId, [id], !d.locked)}
           >
             <Icon name={d.locked ? 'lock' : 'unlock'} size={12} />
-            {d.locked && <span className="serif">固</span>}
           </button>
         )}
       </div>
