@@ -3249,6 +3249,47 @@ button:focus-visible {
 .channel-grid .stepper {
   height: 32px;
 }
+/* the top bar's Glide all + Snap / Free pitch */
+.all-channels-bar {
+  gap: 4px;
+  height: var(--ctl-h);
+  align-items: center;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.all-channels-bar .btn.on {
+  color: var(--accent);
+}
+.all-channels-bar .seg {
+  flex-wrap: nowrap;
+  gap: 3px;
+}
+.all-channels-bar .seg button,
+.all-channels-bar .btn {
+  height: var(--ctl-h);
+  padding: 0 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+/* the Sound tab: which channel it is */
+.sound-tab-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 14px;
+  min-width: 0;
+}
+.sound-tab-head b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sound-tab-head .stone {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
 .all-channels {
   display: flex;
   align-items: center;
@@ -3502,5 +3543,16 @@ aside.panel:last-of-type .info-pop {
 @media (max-width: 1160px) {
   .topbar .w-prog {
     width: 84px;
+  }
+}
+
+/* narrow screens: the top bar's All channels switch gives up a little room so Export stays in view */
+@media (max-width: 1340px) {
+  .all-channels-bar .seg button,
+  .all-channels-bar .btn {
+    padding: 0 5px;
+  }
+  .topbar .w-space {
+    width: 56px;
   }
 }

@@ -126,7 +126,10 @@ export interface Song {
   bpm: number;
   root: number;
   scale: string;
+  /** the room's level for every channel's reverb send (set per channel; no longer in the top bar) */
   reverb: number;
+  /** the whole track's output level 0..1 — the top bar's Volume (sound only, not exports) */
+  volume?: number;
   /** how many times the longest pattern repeats on MIDI export */
   exportLoops: number;
   /** chord progression: the chord's scale degree as a function of `bar` (and `k`) */

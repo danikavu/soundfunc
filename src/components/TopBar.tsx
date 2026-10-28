@@ -7,8 +7,8 @@ import { togglePlay } from '../state/transport';
 import { GardenMenu } from './GardenMenu';
 import { FIXED_LENGTHS, shortBeats } from '../engine/steps';
 import { Dropdown } from './Dropdown';
-import { HARMONY_VARS, patternBeats } from '../engine/project';
-import { Icon, Stepper, TextField, download, fileSafe, isProject } from './ui';
+import { HARMONY_VARS, isDrum, patternBeats } from '../engine/project';
+import { Icon, Seg, Stepper, TextField, download, fileSafe, isProject } from './ui';
 
 export function toast(msg: string) {
   window.dispatchEvent(new CustomEvent('sf-toast', { detail: msg }));
@@ -210,6 +210,49 @@ function SongLengthField() {
   );
 }
 
+/** Glide all / Snap all: how every melodic channel plays, in one click */
+function AllChannels() {
+  const tracks = useStore((s) => s.project.tracks);
+  const patchMelodic = useStore((s) => s.patchMelodic);
+  const melodic = tracks.filter((t) => !isDrum(t.waveform));
+  const allGlide = melodic.length > 0 && melodic.every((t) => t.playMode === 'glide');
+  const allSnap = melodic.length > 0 && melodic.every((t) => t.quantize);
+  const allFree = melodic.length > 0 && melodic.every((t) => !t.quantize);
+  const none = melodic.length === 0;
+  return (
+    <div className="field-inline">
+      <span title="Set on every melodic channel at once">All channels</span>
+      <div className="row all-channels-bar">
+        <button
+          className={`btn small ${allGlide ? 'on' : ''}`}
+          disabled={none}
+          aria-pressed={allGlide}
+          onClick={() => {
+            patchMelodic({ playMode: allGlide ? 'notes' : 'glide' });
+            toast(`${allGlide ? 'Every channel plays notes again' : 'Every melodic channel glides'} — ⌘Z to undo`);
+          }}
+          title={allGlide ? 'Every melodic channel glides — click to play notes again' : 'Glide all — every melodic channel follows its curve'}
+        >
+          Glide all
+        </button>
+        {/* both lit only when every glide agrees — a mix of the two shows neither */}
+        <Seg<'snap' | 'free' | 'mixed'>
+          value={allSnap ? 'snap' : allFree ? 'free' : 'mixed'}
+          onChange={(v) => {
+            if (v === 'mixed') return;
+            patchMelodic({ quantize: v === 'snap' });
+            toast(`${v === 'snap' ? 'Every glide snaps to the scale' : 'Every glide is free pitch — between the notes'} — ⌘Z to undo`);
+          }}
+          options={[
+            { value: 'snap', label: 'Snap' },
+            { value: 'free', label: 'Free pitch' },
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function TopBar() {
   const { project, setSong, setProjectName, playing, theme, toggleTheme, undo, redo, past, future, checkpoint } = useStore();
   const { song } = project;
@@ -312,10 +355,11 @@ export function TopBar() {
             </div>
           </div>
         </div>
-        <label className="field-inline hide-narrow w-space" title="Reverb — how much of the whole track rings in the room">
-          <span>Reverb</span>
+        <AllChannels />
+        <label className="field-inline hide-narrow w-space" title={`Volume — the whole track's level: ${Math.round((song.volume ?? 0.8) * 100)}% (each channel's own is in its Sound tab)`}>
+          <span>Volume</span>
           <span className="space-slider">
-            <input type="range" min={0} max={1} step={0.01} value={song.reverb} onChange={(e) => setSong({ reverb: Number(e.target.value) })} aria-label="Reverb" />
+            <input type="range" min={0} max={1} step={0.01} value={song.volume ?? 0.8} onChange={(e) => setSong({ volume: Number(e.target.value) }, false)} aria-label="Volume" />
           </span>
         </label>
       </div>

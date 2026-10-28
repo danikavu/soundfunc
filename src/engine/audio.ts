@@ -40,6 +40,9 @@ const glideKey = (t: Track) => `${t.waveform}|${t.waveform === 'custom' ? t.timb
 /** how loud each oscillator is at full level, so voices come out evenly */
 const WAVE_LEVEL: Record<OscWave, number> = { sine: 1, triangle: 0.95, sawtooth: 0.5, square: 0.45, custom: 0.8, fm: 0.8 };
 
+/** the top bar's Volume (0…1, default 0.8) → the master gain: a gentle curve, so the slider's lower half stays useful */
+export const masterLevel = (v: number | undefined) => Math.pow(Math.min(1, Math.max(0, v ?? 0.8)), 1.5) / Math.pow(0.8, 1.5) * 0.8;
+
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
@@ -58,6 +61,9 @@ export class AudioEngine {
   private originBeat = 0;
   private scheduledBeat = 0;
   private bpm = 90;
+  /** the master gain the top bar's Volume sets */
+  private volume = masterLevel(undefined);
+  private fadeUntil = 0;
   playing = false;
 
   private ensure(): AudioContext {
@@ -71,7 +77,7 @@ export class AudioEngine {
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 2048;
     this.master = ctx.createGain();
-    this.master.gain.value = 0.8;
+    this.master.gain.value = this.volume;
     this.dry = ctx.createGain();
     this.wet = ctx.createGain();
     const verb = ctx.createConvolver();
@@ -172,11 +178,14 @@ export class AudioEngine {
     }
     this.project = project;
     this.bpm = project.song.bpm;
+    this.volume = masterLevel(project.song.volume);
     this.renderCache.clear();
     if (this.ctx) {
       const r = project.song.reverb;
       this.wet.gain.setTargetAtTime(r * 0.9, this.ctx.currentTime, 0.05);
       this.dry.gain.setTargetAtTime(1 - r * 0.45, this.ctx.currentTime, 0.05);
+      // after a stop's fade-out, never in the middle of it
+      this.master.gain.setTargetAtTime(this.volume, Math.max(this.ctx.currentTime, this.fadeUntil), 0.03);
       for (const t of project.tracks) if (this.buses.has(t.id)) this.bus(t);
     }
   }
@@ -217,7 +226,8 @@ export class AudioEngine {
       this.master.gain.cancelScheduledValues(now);
       this.master.gain.setValueAtTime(this.master.gain.value, now);
       this.master.gain.linearRampToValueAtTime(0, now + 0.08);
-      this.master.gain.setValueAtTime(0.8, now + 0.25);
+      this.master.gain.setValueAtTime(this.volume, now + 0.25);
+      this.fadeUntil = now + 0.25;
       for (const id of [...this.glides.keys()]) this.killGlide(id, 0.08);
       // detach the old buses (and every voice already scheduled on them) once faded
       const old = [...this.buses.values()];
