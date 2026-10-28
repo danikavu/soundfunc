@@ -125,7 +125,7 @@ function Palette({ state, hasOutput, onPick, onClose }: { state: PaletteState; h
   );
 }
 
-/** The randomizer: one button, one dial from 調和 harmonious to 実験 experimental. */
+/** The randomizer: one button, one dial from safe (harmonious) to wild (experimental). */
 export function runMutate(scope: 'track' | 'garden') {
   const { mutate, chaos } = useStore.getState();
   const r = mutate(scope);
@@ -147,9 +147,9 @@ function Mutator() {
         <Icon name="dice" size={14} /> Mutate
       </button>
       <label className="chaos" title="How far the randomizer may wander">
-        <span className="serif">調和</span>
+        <span>Safe</span>
         <input type="range" min={0} max={1} step={0.01} value={chaos} onChange={(e) => setChaos(Number(e.target.value))} aria-label="Harmonious to experimental" />
-        <span className="serif">実験</span>
+        <span>Wild</span>
       </label>
       <Seg<'track' | 'garden'>
         value={scope}

@@ -1,4 +1,4 @@
-# SoundFunc 音 · 数
+# SoundFunc
 
 Sonification -> make melodies from mathematical functions with a node editor, hear them live, and export to MIDI.
 

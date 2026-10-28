@@ -16,7 +16,7 @@ import { FormulaEditor } from './FormulaEditor';
 import { Dropdown } from './Dropdown';
 import { MAX_STEPS, shortBeats, stepLabel } from '../engine/steps';
 
-type Tab = 'sound' | 'notes' | 'guide';
+type Tab = 'channel' | 'sound' | 'notes' | 'guide';
 
 
 function TimbreEditor() {
@@ -406,17 +406,14 @@ function StretchField() {
   );
 }
 
-/** The selected channel's grid: steps × step length, octave — and things to set on every channel at once. */
+/** The selected channel's grid: steps × step length, stretch, octave. (Glide all / Snap all are in the top bar.) */
 function ChannelGrid() {
   const track = useSelectedTrack()!;
   const song = useStore((s) => s.project.song);
   const tracks = useStore((s) => s.project.tracks);
-  const { updateTrack, setGrid, setStepBeatsAll, patchMelodic } = useStore();
+  const { updateTrack, setGrid, setStepBeatsAll } = useStore();
   const free = song.lengthMode === 'free';
   const drum = isDrum(track.waveform);
-  const melodic = tracks.filter((t) => !isDrum(t.waveform));
-  const allGlide = melodic.length > 0 && melodic.every((t) => t.playMode === 'glide');
-  const allSnap = melodic.length > 0 && melodic.every((t) => t.quantize);
   return (
     <>
       <div className="eyebrow eyebrow-info">
@@ -459,31 +456,6 @@ function ChannelGrid() {
           </label>
         )}
       </div>
-      {melodic.length > 0 && (
-        <div className="all-channels">
-          <span className="muted">All channels</span>
-          <button
-            className={`btn small ghost ${allGlide ? 'on' : ''}`}
-            onClick={() => {
-              patchMelodic({ playMode: allGlide ? 'notes' : 'glide' });
-              toast(`${allGlide ? 'Every channel plays notes again' : 'Every melodic channel glides'} — ⌘Z to undo`);
-            }}
-            title={allGlide ? 'Unglide all — every melodic channel plays notes' : 'Glide all — every melodic channel follows its curve'}
-          >
-            {allGlide ? 'Unglide all' : 'Glide all'}
-          </button>
-          <button
-            className={`btn small ghost ${allSnap ? 'on' : ''}`}
-            onClick={() => {
-              patchMelodic({ quantize: !allSnap });
-              toast(`${allSnap ? 'Every glide is free pitch' : 'Every glide snaps to the scale'} — ⌘Z to undo`);
-            }}
-            title={allSnap ? 'Free pitch on every channel — glides go between the notes' : 'Snap every channel’s glide to the scale'}
-          >
-            {allSnap ? 'Free pitch all' : 'Snap all'}
-          </button>
-        </div>
-      )}
     </>
   );
 }
@@ -548,7 +520,7 @@ function ColorRow({ color, onColor }: { color: string; onColor: (c: string) => v
   );
 }
 
-function SoundTab() {
+function ChannelTab() {
   const track = useSelectedTrack()!;
   const { project, updateTrack, setSong, duplicateTrack, removeTrack, checkpoint } = useStore();
   const up = (patch: Parameters<typeof updateTrack>[1]) => updateTrack(track.id, patch);
@@ -565,12 +537,6 @@ function SoundTab() {
       </div>
 
       <ChannelGrid />
-
-      <div className="eyebrow">Voice</div>
-      <VoicePicker />
-      {track.waveform === 'custom' && <TimbreEditor />}
-      <SoundPanel />
-      {(track.waveform === 'custom' || Object.keys(track.synth ?? {}).length > 0) && <SaveVoice />}
 
       {!drum && (
         <>
@@ -603,11 +569,6 @@ function SoundTab() {
           )}
         </>
       )}
-
-      <div className="eyebrow">Mix</div>
-      <Slider label="Volume" value={track.volume} min={0} max={1} onChange={(volume) => up({ volume })} />
-      <Slider label="Pan" value={track.pan} min={-1} max={1} format={(v) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `L${Math.round(-v * 100)}` : `R${Math.round(v * 100)}`)} onChange={(pan) => up({ pan })} />
-      <Slider label="Reverb" value={track.send} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(send) => up({ send })} />
 
       <div className="eyebrow">Feel</div>
       {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} />}
@@ -681,6 +642,33 @@ function SoundTab() {
           <Icon name="trash" size={12} /> Remove
         </button>
       </div>
+    </>
+  );
+}
+
+/** The channel's sound: its place in the mix first, then the voice that plays it. */
+function SoundTab() {
+  const track = useSelectedTrack()!;
+  const { updateTrack } = useStore();
+  const up = (patch: Parameters<typeof updateTrack>[1]) => updateTrack(track.id, patch);
+
+  return (
+    <>
+      <div className="sound-tab-head">
+        <span className="stone" style={{ background: track.color }} aria-hidden />
+        <b>{track.name}</b>
+      </div>
+      <div className="eyebrow">Mix</div>
+      <Slider label="Volume" value={track.volume} min={0} max={1} onChange={(volume) => up({ volume })} />
+      <Slider label="Pan" value={track.pan} min={-1} max={1} format={(v) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `L${Math.round(-v * 100)}` : `R${Math.round(v * 100)}`)} onChange={(pan) => up({ pan })} />
+      <Slider label="Reverb" value={track.send} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(send) => up({ send })} />
+
+      <div className="eyebrow">Voice</div>
+      <VoicePicker />
+      {track.waveform === 'custom' && <TimbreEditor />}
+      <SoundPanel />
+      {(track.waveform === 'custom' || Object.keys(track.synth ?? {}).length > 0) && <SaveVoice />}
+
     </>
   );
 }
@@ -759,7 +747,7 @@ function GuideTab() {
       <div className="eyebrow">Randomizer</div>
       <p style={{ margin: 0 }}>
         <b>Mutate</b> (R, or ⇧R for the whole track) rewrites parameters and formulas, renders ~40 candidates and keeps the one that scores best on
-        melodic contour, chord-tone fit, rhythmic density and distance from the original. The 調和 ↔ 実験 dial trades consonance for novelty. Lock a node
+        melodic contour, chord-tone fit, rhythmic density and distance from the original. The Safe ↔ Wild dial trades consonance for novelty. Lock a node
         (hover its header) to protect it.
       </p>
       <div className="eyebrow">Building & experimenting</div>
@@ -806,7 +794,7 @@ function GuideTab() {
 
 export function Inspector() {
   const track = useSelectedTrack();
-  const [tab, setTab] = useState<Tab>('sound');
+  const [tab, setTab] = useState<Tab>('channel');
   return (
     <aside className="panel">
       <div style={{ marginBottom: 18 }}>
@@ -814,13 +802,14 @@ export function Inspector() {
           value={tab}
           onChange={setTab}
           options={[
-            { value: 'sound', label: 'Channel' },
+            { value: 'channel', label: 'Channel' },
+            { value: 'sound', label: 'Sound' },
             { value: 'notes', label: 'Notes' },
             { value: 'guide', label: 'Guide' },
           ]}
         />
       </div>
-      {tab === 'guide' ? <GuideTab /> : !track ? <p className="empty">No channel selected.</p> : tab === 'sound' ? <SoundTab /> : <NotesTab />}
+      {tab === 'guide' ? <GuideTab /> : !track ? <p className="empty">No channel selected.</p> : tab === 'channel' ? <ChannelTab /> : tab === 'sound' ? <SoundTab /> : <NotesTab />}
     </aside>
   );
 }

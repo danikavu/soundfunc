@@ -1340,7 +1340,7 @@ export const KITS: Kit[] = [
   {
     id: 'royal',
     name: 'Royal Road Ballad',
-    description: '王道進行 IV–V–iii–vi, the progression of a thousand J-pop ballads: 7th-chord pads, strummed koto, an arpeggio and bass that all read the chord h.',
+    description: 'The Royal Road, IV–V–iii–vi: the progression of a thousand J-pop ballads: 7th-chord pads, strummed koto, an arpeggio and bass that all read the chord h.',
     song: { bpm: 76, root: 2, scale: 'major', harmony: 'pick(bar, 3, 4, 2, 5)' },
     tracks: [
       voice('Pad', 'pad', 'h', '0.5 * every(n, 16)', { chord: 4, length: 16 }, { octave: 3, volume: 0.5, send: 0.9, attack: 0.5, release: 1.8 }),
