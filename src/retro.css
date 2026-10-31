@@ -1053,3 +1053,19 @@ body {
   right: 8px;
   bottom: 9px;
 }
+
+/* mini scores sit on a little LCD, like the plots */
+.mini-score {
+  background: var(--lcd);
+  border: 1px solid var(--lcd-edge);
+  border-radius: 2px;
+  padding: 0;
+  box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.35);
+}
+.mini-score.loading {
+  opacity: 1;
+}
+/* the channel colours, lifted so the darker ones read on the screen */
+.mini-score > * {
+  filter: brightness(1.35) saturate(1.1);
+}

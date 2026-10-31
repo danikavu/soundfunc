@@ -1,4 +1,5 @@
-import { PRESETS } from '../engine/presets';
+import { PRESETS, TRACK_COLORS, trackFromPreset, trackFromTemplate } from '../engine/presets';
+import { MiniScore } from './MiniScore';
 import { KitPicker } from './KitPicker';
 import { audibleTracks, stretchOf, voiceLabel } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
@@ -144,10 +145,13 @@ function MyFunctions() {
           />
         </div>
         {functions.length === 0 && <p className="muted fold-empty">Nothing saved yet.</p>}
-        {functions.map((fn) => (
+        {functions.map((fn, i) => (
         <div key={fn.id} className="mine-row">
           <button className="preset reveal" onClick={() => plantFunction(fn)} title={`Plant “${fn.name}” — ${fn.description}`}>
-            <b>{fn.name}</b>
+            <span className="preset-line">
+              <b>{fn.name}</b>
+              <MiniScore id={`${fn.id}@${fn.savedAt}`} make={() => trackFromTemplate(fn.track, fn.name, 0)} color={TRACK_COLORS[i % TRACK_COLORS.length]} />
+            </span>
             <code>{fn.description}</code>
           </button>
           <span className="mine-actions">
@@ -303,9 +307,12 @@ export function Sidebar() {
       <div className="eyebrow">Plant a function</div>
       <MyFunctions />
       <Fold id="function-presets" title="Function presets" count={PRESETS.length}>
-        {PRESETS.map((p) => (
+        {PRESETS.map((p, i) => (
           <button key={p.id} className="preset reveal" onClick={() => addTrack(p.id)} title={p.description}>
-            <b>{p.name}</b>
+            <span className="preset-line">
+              <b>{p.name}</b>
+              <MiniScore id={`preset:${p.id}`} make={() => trackFromPreset(p, i)} color={TRACK_COLORS[i % TRACK_COLORS.length]} />
+            </span>
             <code>{p.formula}</code>
           </button>
         ))}
