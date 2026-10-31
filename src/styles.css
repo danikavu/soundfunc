@@ -2036,6 +2036,11 @@ button:focus-visible {
   width: 320px;
   max-height: 70vh;
 }
+/* in the channel sidebar the menu is as wide as its field, so it never runs off the window */
+.pitch-means .dropdown.compact .dropdown-pop {
+  right: 0;
+  width: auto;
+}
 .step-all {
   width: 100%;
   justify-content: center;
