@@ -1530,3 +1530,30 @@ OTHERWISE:
     expect(d({ y: 1 }) - d({ y: 0 })).toBeCloseTo(21, 6);
   });
 });
+
+describe('mini scores for the preset lists', () => {
+  it('draws every preset from the real render: notes, glides and drums, inside the box', async () => {
+    const { miniScore, songKey, MINI_W, MINI_H } = await import('./preview');
+    const song = defaultProject().song;
+    const kinds = new Set<string>();
+    for (const [i, p] of PRESETS.entries()) {
+      const t = trackFromPreset(p, i);
+      const m = miniScore(t, song);
+      kinds.add(m.kind);
+      const r = renderTrack(t, song, 0, false);
+      if (m.kind === 'notes' || m.kind === 'drums') expect(m.bars.length, p.name).toBe(r.notes.length);
+      for (const [x, y, w, h] of m.bars) {
+        expect(x, p.name).toBeGreaterThanOrEqual(0);
+        expect(x + w, p.name).toBeLessThanOrEqual(MINI_W + 1.5);
+        expect(y, p.name).toBeGreaterThanOrEqual(-0.5);
+        expect(y + h, p.name).toBeLessThanOrEqual(MINI_H + 0.5);
+      }
+      if (m.kind === 'glide') expect(m.path.length, p.name).toBeLessThan(2000); // short paths for the DOM
+    }
+    expect([...kinds]).toEqual(expect.arrayContaining(['notes', 'glide']));
+    // what the drawing depends on: key and scale yes; tempo, volume and reverb no
+    expect(songKey({ ...song, bpm: 140, volume: 0.2, reverb: 0.9 })).toBe(songKey(song));
+    expect(songKey({ ...song, root: song.root + 1 })).not.toBe(songKey(song));
+    expect(songKey({ ...song, harmony: 'pick(bar, 0, 3)' })).not.toBe(songKey(song));
+  });
+});

@@ -391,7 +391,8 @@ export const useStore = create<State>()(
 );
 
 /** with a fixed song length, a track is re-gridded to fill it exactly; a free song leaves it as it is */
-function fitToSong(t: Track, song: Song): Track {
+/** a track re-gridded to the song's Length, as planting it does */
+export function fitToSong(t: Track, song: Song): Track {
   const L = songGridLength(song);
   return L === null ? t : { ...t, ...applyGrid(gridOf(t), {}, L) };
 }

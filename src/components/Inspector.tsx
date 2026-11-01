@@ -578,16 +578,24 @@ function ChannelTab() {
           <Info>On drums, pitch tunes the hit in semitones, and ratchet turns a step into a roll.</Info>
         </p>
       ) : (
-        <label className="field" style={{ marginTop: 12 }}>
+        <div className="field pitch-means" style={{ marginTop: 12 }}>
           <span>Pitch means</span>
-          <select className="select" value={track.pitchMode} onChange={(e) => up({ pitchMode: e.target.value as PitchMode })}>
-            {Object.entries(PITCH_MODES).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </label>
+          {/* the same LCD dropdown as the top bar's Key and Scale: "Scale degree (0, 1, 2…)" → name + hint */}
+          <Dropdown
+            compact
+            label="Pitch means"
+            value={<b>{PITCH_MODES[track.pitchMode].replace(/\s*\(.*\)$/, '')}</b>}
+            groups={[
+              {
+                title: 'What the pitch input means',
+                items: (Object.entries(PITCH_MODES) as [PitchMode, string][]).map(([k, v]) => {
+                  const [, name = v, hint] = v.match(/^(.*?)\s*(?:\((.*)\))?$/) ?? [];
+                  return { key: k, label: name, hint, selected: track.pitchMode === k, onSelect: () => up({ pitchMode: k }) };
+                }),
+              },
+            ]}
+          />
+        </div>
       )}
 
       <div className="eyebrow">Export</div>
