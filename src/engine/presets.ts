@@ -1,3 +1,4 @@
+import { LIBRARY_PRESETS } from './presetsLibrary';
 import { NODE_DEFS, type GEdge, type GNode, type Graph, type NodeData } from './graph';
 import { DEFAULT_PITCH_RANGE, type PitchMode } from './music';
 import { TRACK_DEFAULTS, type DrumVoice, type Project, type Song, type Track, type Waveform } from './project';
@@ -115,8 +116,34 @@ export interface Preset {
   name: string;
   description: string;
   formula: string;
+  /** where it sits in the Function presets list (built-ins are placed by GROUP_OF) */
+  group?: PresetGroup;
   track: Template & { waveform: Waveform; pitchMode: PitchMode };
 }
+
+/** the Function presets list, in this order */
+export type PresetGroup = 'start' | 'math' | 'melodies' | 'harmony' | 'bass' | 'curves' | 'rave' | 'fx';
+export const PRESET_GROUPS: Record<PresetGroup, { label: string; hint: string }> = {
+  start: { label: 'Start here', hint: 'the simplest functions' },
+  math: { label: 'Math & nature', hint: 'sequences, fractals, chaos and constants' },
+  melodies: { label: 'Melodies & leads', hint: 'tunes and lines to play over the harmony' },
+  harmony: { label: 'Chords & keys', hint: 'chords, comps and arpeggios on the song’s harmony' },
+  bass: { label: 'Bass', hint: 'roots, walks and wobbles under the chords' },
+  curves: { label: 'Glide curves', hint: 'wild shapes, followed continuously' },
+  rave: { label: 'Rave & piecewise', hint: 'kicks, riffs and drops written as one piecewise function' },
+  fx: { label: 'Risers & FX', hint: 'builds and swells' },
+};
+/** the built-in presets' groups (library presets carry their own) */
+const GROUP_OF: Record<string, PresetGroup> = {
+  pond: 'start', blank: 'start',
+  fib: 'math', chaos: 'math', golden: 'math', pi: 'math', collatz: 'math', lissajous: 'math', recaman: 'math', sierpinski: 'math', lorenzGlide: 'math', evolve: 'math',
+  theremin: 'melodies', desmos: 'melodies', drawn: 'melodies', scooplead: 'melodies', wavetable: 'melodies', form: 'melodies',
+  chordPad: 'harmony', strum: 'harmony', arp: 'harmony', quartal: 'harmony', bloomchords: 'harmony', pump: 'harmony', pumppad: 'harmony', discostrings: 'harmony', housestabs: 'harmony', rhodes: 'harmony', bossaguitar: 'harmony', montuno: 'harmony', clav: 'harmony',
+  bass: 'bass', wobble: 'bass', slide808: 'bass', walking: 'bass', bossabass: 'bass', tumbao: 'bass', slap: 'bass', discobass: 'bass',
+  zap: 'rave',
+  riser: 'fx',
+};
+export const groupOf = (p: Preset): PresetGroup => p.group ?? GROUP_OF[p.id] ?? 'math';
 
 export interface Kit {
   id: string;
@@ -837,7 +864,7 @@ export const PRESETS: Preset[] = [
   },
   {
     id: 'pump',
-    name: 'Pumping Pad',
+    name: 'Ducking Pad',
     description: 'A pad on the song’s chord, ducked by a Curve on every beat — the sidechain pump, drawn instead of compressed.',
     formula: 'pitch = h · volume = duck curve × 4 per loop',
     track: {
@@ -1035,7 +1062,7 @@ export const PRESETS: Preset[] = [
   },
   {
     id: 'blank',
-    name: 'Empty Track',
+    name: 'Empty Channel',
     description: 'Just a clock and an output. Start from nothing.',
     formula: 'pitch = ?',
     track: {
@@ -1054,6 +1081,8 @@ export const PRESETS: Preset[] = [
       ),
     },
   },
+  // the function library: made in SoundFunc, saved from My functions
+  ...LIBRARY_PRESETS,
 ];
 
 

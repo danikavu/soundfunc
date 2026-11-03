@@ -334,7 +334,9 @@ describe('symbolic: the written-out function equals the graph', () => {
         for (let n = 0; n < track.steps; n++) {
           const scope = scopeFor(track, song, n, k);
           for (const b of c.math.bindings) scope[b.name] = compileAst(b.ast)(scope);
-          const val = (port: string) => compileAst(c.math.outputs.find((o) => o.port === port)!.ast)(scope);
+          // the engine plays a result that isn't a number (0/0) as 0; the written-out math can't say so
+          const fin = (v: number) => (Number.isFinite(v) ? v : 0);
+          const val = (port: string) => fin(compileAst(c.math.outputs.find((o) => o.port === port)!.ast)(scope));
           expect(val('pitch'), `${label} pitch n=${n} k=${k}`).toBeCloseTo(r.pitchCurve[n], 9);
           expect(Math.min(1, Math.max(0, val('velocity'))), `${label} vel n=${n} k=${k}`).toBeCloseTo(r.velocityCurve[n], 9);
         }
@@ -1533,22 +1535,25 @@ OTHERWISE:
 
 describe('mini scores for the preset lists', () => {
   it('draws every preset from the real render: notes, glides and drums, inside the box', async () => {
-    const { miniScore, songKey, MINI_W, MINI_H } = await import('./preview');
-    const song = defaultProject().song;
+    const { miniScore, songKey, MINI_W, MINI_H, PREVIEW_BEATS } = await import('./preview');
+    const song = { ...defaultProject().song, lengthMode: 'free' as const };
     const kinds = new Set<string>();
     for (const [i, p] of PRESETS.entries()) {
       const t = trackFromPreset(p, i);
       const m = miniScore(t, song);
       kinds.add(m.kind);
-      const r = renderTrack(t, song, 0, false);
-      if (m.kind === 'notes' || m.kind === 'drums') expect(m.bars.length, p.name).toBe(r.notes.length);
+      // the same 4 bars for every preset: pass after pass (k counting) until the window is full
+      const L = patternBeats(t);
+      let inWindow = 0;
+      for (let k = 0; k * L < PREVIEW_BEATS; k++) inWindow += renderTrack(t, song, k % 16, false).notes.filter((nt) => k * L + nt.beat < PREVIEW_BEATS).length;
+      if (m.kind === 'notes' || m.kind === 'drums') expect(m.bars.length, p.name).toBe(inWindow);
       for (const [x, y, w, h] of m.bars) {
         expect(x, p.name).toBeGreaterThanOrEqual(0);
         expect(x + w, p.name).toBeLessThanOrEqual(MINI_W + 1.5);
         expect(y, p.name).toBeGreaterThanOrEqual(-0.5);
         expect(y + h, p.name).toBeLessThanOrEqual(MINI_H + 0.5);
       }
-      if (m.kind === 'glide') expect(m.path.length, p.name).toBeLessThan(2000); // short paths for the DOM
+      if (m.kind === 'glide') expect(m.path.length, p.name).toBeLessThan(4000); // about two points per unit of width, never thousands
     }
     expect([...kinds]).toEqual(expect.arrayContaining(['notes', 'glide']));
     // what the drawing depends on: key and scale yes; tempo, volume and reverb no
