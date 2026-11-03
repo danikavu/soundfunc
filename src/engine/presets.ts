@@ -956,7 +956,7 @@ export const PRESETS: Preset[] = [
   {
     id: 'scooplead',
     name: 'Scooped Lead',
-    description: 'A lead whose every note scoops up from below — a Curve on Note Out’s bend, restarting on each note through np. Export with MPE and each note keeps its own bend.',
+    description: 'A lead whose every note scoops up from below — a Curve on Note Out’s bend, restarting on each note through np. MIDI + automation exports it as pitch bend.',
     formula: 'pitch = 0 2 4 2 5 4 2 0 · bend = −2 + 2 · curve(np)',
     track: {
       waveform: 'square',
@@ -1022,7 +1022,7 @@ export const PRESETS: Preset[] = [
   {
     id: 'bloomchords',
     name: 'Blooming Chords',
-    description: 'Chords on the harmony that swell from soft (pressure) and grow a vibrato through each chord (bend) — every note of the chord moves together; with MPE each keeps its own channel.',
+    description: 'Chords on the harmony that swell from soft (pressure) and grow a vibrato through each chord (bend) — every note of the chord moves together.',
     formula: 'chord on h · bend = depth(np) · sin(4τt) · pressure = swell(np)',
     track: {
       waveform: 'flute',
