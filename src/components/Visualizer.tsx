@@ -5,6 +5,20 @@ import { BEATS_PER_BAR, audibleTracks, harmonyAt, isDrum, patternBeats, renderTr
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Seg, getRender } from './ui';
 import { RangeControl } from './RangeControl';
+import { RIPPLE_DEFAULTS, RIPPLE_STYLES, RippleMemory, drawRipple, type RippleOptions, type RippleStyle } from './ripple';
+
+/** the header's height: Ripple centres its figure in the space below it */
+const RIPPLE_TOP = 40;
+/** …and the options bar's, at the bottom */
+const RIPPLE_BOTTOM = 46;
+const RIPPLE_KEY = 'sf-ripple';
+function loadRipple(): RippleOptions {
+  try {
+    return { ...RIPPLE_DEFAULTS, ...JSON.parse(localStorage.getItem(RIPPLE_KEY) ?? '{}') };
+  } catch {
+    return RIPPLE_DEFAULTS;
+  }
+}
 
 type Mode = 'score' | 'function' | 'ripple';
 
@@ -109,6 +123,23 @@ export function Visualizer() {
   const selected = useSelectedTrack();
   const [mode, setMode] = useState<Mode>('score');
   const [tip, setTip] = useState<{ x: number; y: number; text: string[] } | null>(null);
+  /** Ripple's look, remembered between visits */
+  const [ripple, setRippleState] = useState<RippleOptions>(loadRipple);
+  const rippleRef = useRef(ripple);
+  rippleRef.current = ripple;
+  const rippleMem = useRef(new RippleMemory());
+  const rippleHeard = useRef(false);
+  const [rippleLive, setRippleLive] = useState(false);
+  const setRipple = (patch: Partial<RippleOptions>) =>
+    setRippleState((r) => {
+      const next = { ...r, ...patch };
+      try {
+        localStorage.setItem(RIPPLE_KEY, JSON.stringify(next));
+      } catch {
+        /* just not remembered */
+      }
+      return next;
+    });
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -288,6 +319,7 @@ export function Visualizer() {
   useEffect(() => {
     let raf = 0;
     const wave = new Float32Array(2048);
+    const spec = new Uint8Array(1024);
     const draw = () => {
       raf = requestAnimationFrame(draw);
       const pos = engine.position();
@@ -698,34 +730,30 @@ export function Visualizer() {
         }
       } else if (mode === 'ripple') {
         placedRef.current = [];
-        const cx = W / 2, cy = 24 + H / 2;
-        const R = Math.min(W, H - 48) * 0.28;
-        g.strokeStyle = P.rake;
-        g.lineWidth = 1;
-        for (let i = 1; i <= 9; i++) {
-          g.beginPath();
-          g.arc(cx, cy, R * 0.35 + i * R * 0.17, 0, Math.PI * 2);
-          g.stroke();
-        }
-        g.fillStyle = P.ink;
-        g.beginPath();
-        g.ellipse(cx, cy, R * 0.28, R * 0.22, -0.3, 0, Math.PI * 2);
-        g.fill();
-        if (engine.waveform(wave)) {
-          // find a rising zero crossing so the shape holds still
-          let start = 0;
-          for (let i = 1; i < 1024; i++) if (wave[i - 1] < 0 && wave[i] >= 0) { start = i; break; }
-          const N = 720;
-          g.strokeStyle = P.accent;
-          g.lineWidth = 1.4;
-          g.beginPath();
-          for (let i = 0; i <= N; i++) {
-            const a = (i / N) * Math.PI * 2 - Math.PI / 2;
-            const r = R * 0.75 + wave[start + (i % N)] * R * 1.1;
-            const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
-            i ? g.lineTo(x, y) : g.moveTo(x, y);
-          }
-          g.stroke();
+        const live = engine.waveform(wave);
+        if (live) engine.spectrum(spec);
+        const heard = drawRipple(
+          g,
+          W,
+          H,
+          RIPPLE_TOP,
+          RIPPLE_BOTTOM,
+          P,
+          {
+            wave: live ? wave : null,
+            spectrum: live ? spec : null,
+            sampleRate: engine.sampleRate,
+            playBeat: pos === null ? null : pos % score.total,
+            secPerBeat,
+            score,
+            now: performance.now() / 1000,
+          },
+          rippleRef.current,
+          rippleMem.current,
+        );
+        if (heard !== rippleHeard.current) {
+          rippleHeard.current = heard;
+          setRippleLive(heard);
         }
       }
     };
@@ -840,7 +868,7 @@ export function Visualizer() {
                 ? ` · ${Math.max(1, Math.round(fnRange.outside * 100))}% ${project.song.pitchRange.mode === 'wrap' ? 'wrapped' : 'clamped'} into ${midiToName(project.song.pitchRange.low)}–${midiToName(project.song.pitchRange.high)}`
                 : ''
             }`}
-          {mode === 'ripple' && (playing ? 'live waveform' : 'press space to listen')}
+          {mode === 'ripple' && `${RIPPLE_STYLES.find((x) => x.value === ripple.style)?.hint ?? ''}${playing || rippleLive ? '' : ' · press space to listen'}`}
         </span>
       </div>
       {mode !== 'ripple' && <RangeControl />}
@@ -860,6 +888,35 @@ export function Visualizer() {
           <button className="icon-btn" onClick={() => setView(0, 0)} title="Show the whole loop (double-click the view)" disabled={!view().zoomed}>
             <Icon name="fit" size={13} />
           </button>
+        </div>
+      )}
+      {mode === 'ripple' && (
+        <div className="ripple-opts">
+          <Seg<RippleStyle> value={ripple.style} onChange={(style) => setRipple({ style })} options={RIPPLE_STYLES.map(({ value, label }) => ({ value, label }))} />
+          <span className="ripple-opts-row">
+            <button className={`btn small ghost ${ripple.trails ? 'on' : ''}`} aria-pressed={ripple.trails} onClick={() => setRipple({ trails: !ripple.trails })} title="Older frames linger and fade">
+              Trails
+            </button>
+            <button
+              className={`btn small ghost ${ripple.colour === 'channels' ? 'on' : ''}`}
+              aria-pressed={ripple.colour === 'channels'}
+              onClick={() => setRipple({ colour: ripple.colour === 'channels' ? 'ink' : 'channels' })}
+              title={ripple.colour === 'channels' ? 'In the channels’ colours — click for one ink' : 'In one ink — click for the channels’ colours'}
+            >
+              Colours
+            </button>
+            {ripple.style === 'mandala' && (
+              <span className="ripple-sym" title="How many times the wave is folded round">
+                <button className="icon-btn" onClick={() => setRipple({ symmetry: Math.max(2, ripple.symmetry - 1) })} aria-label="Fewer folds">
+                  <Icon name="minus" size={11} />
+                </button>
+                <span className="mono">×{ripple.symmetry}</span>
+                <button className="icon-btn" onClick={() => setRipple({ symmetry: Math.min(16, ripple.symmetry + 1) })} aria-label="More folds">
+                  <Icon name="plus" size={11} />
+                </button>
+              </span>
+            )}
+          </span>
         </div>
       )}
       <div className="viz-tabs">

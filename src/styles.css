@@ -1706,6 +1706,8 @@ button:focus-visible {
   z-index: 70;
   display: grid;
   grid-template-columns: 190px 340px;
+  /* one row no taller than the window: the kit list and the details each scroll on their own */
+  grid-template-rows: minmax(0, 1fr);
   max-height: calc(100vh - 24px);
   background: var(--card);
   border: 1px solid var(--line);
@@ -1720,6 +1722,9 @@ button:focus-visible {
   padding: 8px;
   border-right: 1px solid var(--line-soft);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  scrollbar-width: thin;
 }
 .kit-list button {
   display: block;
@@ -1745,6 +1750,9 @@ button:focus-visible {
 .kit-detail {
   padding: 16px 18px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  scrollbar-width: thin;
 }
 .kit-detail h3 {
   margin: 0;
@@ -1803,10 +1811,14 @@ button:focus-visible {
   padding: 6px 0;
   border-bottom: 1px dashed var(--line-soft);
 }
-.kit-tracks .stone.drum {
-  border-radius: 50%;
-  width: 10px;
-  height: 10px;
+/* each channel's colour: the same small square swatch as the Channel sidebar's colours */
+.kit-swatch {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 1px;
+  border: 1px solid var(--edge, rgba(0, 0, 0, 0.35));
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(0, 0, 0, 0.3);
 }
 .kit-track-name {
   font-size: 12.5px;
@@ -3619,4 +3631,45 @@ aside.panel:last-of-type .info-pop {
   .topbar .w-space {
     width: 56px;
   }
+}
+
+/* Ripple's options: a small bar centred under the figure */
+.ripple-opts {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.ripple-opts .seg {
+  flex-wrap: nowrap;
+  gap: 3px;
+}
+.ripple-opts .seg button,
+.ripple-opts .btn {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.ripple-opts-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ripple-opts .btn.on {
+  color: var(--accent);
+}
+.ripple-sym {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--ink-2);
 }

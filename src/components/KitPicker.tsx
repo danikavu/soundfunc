@@ -121,10 +121,9 @@ export function KitPicker() {
             </div>
             <ul className="kit-tracks">
               {kit.tracks.map((t, i) => {
-                const drum = isDrum(t.waveform as Waveform);
                 return (
                   <li key={t.name}>
-                    <span className={`stone ${drum ? 'drum' : ''}`} style={{ background: TRACK_COLORS[i % TRACK_COLORS.length] }} />
+                    <span className="kit-swatch" style={{ background: TRACK_COLORS[i % TRACK_COLORS.length] }} aria-hidden />
                     <span className="kit-track-name">
                       {t.name}
                       <small>

@@ -534,6 +534,18 @@ export class AudioEngine {
     return true;
   }
 
+  /** the output's spectrum right now, 0 – 255 per bin (bin i ≈ i × sampleRate / 2048 Hz); false before any sound */
+  spectrum(out: Uint8Array<ArrayBuffer>): boolean {
+    if (!this.ctx) return false;
+    this.analyser.getByteFrequencyData(out);
+    return true;
+  }
+
+  /** the output's sample rate, for reading the spectrum's bins as frequencies */
+  get sampleRate(): number {
+    return this.ctx?.sampleRate ?? 48000;
+  }
+
   // ---------- drums ----------
 
   /** `tune` is a frequency ratio (2 = an octave up). Tone, decay and drive come from the channel's drum settings. */
