@@ -1392,12 +1392,12 @@ describe('chords, bass and style kits', () => {
     expect([0, 1, 2, 3, 4, 5, 6, 7].map((b) => harmonyAt(song, b))).toEqual([0, 0, 5, 5, 1, 1, 4, 4]);
   });
   it('style kits plant at one fixed length, and their basses land on the chord roots', () => {
-    for (const id of ['jazz', 'bossa', 'salsa', 'funk', 'disco', 'deephouse']) {
+    for (const id of ['jazz', 'bossa', 'salsa', 'funk', 'disco', 'deephouse', 'clicks', 'pocket', 'lofi', 'gfunk', 'dembow', 'amapiano']) {
       const kit = KITS.find((k) => k.id === id)!;
       const lens = new Set(kit.tracks.map((t) => (t.steps ?? 16) * (t.stepBeats ?? 0.25) * (t.stretch ?? 1)));
       expect(lens.size, `${id}: every channel the same length`).toBe(1);
       const song = { ...defaultProject().song, ...kit.song };
-      const bass = kit.tracks.find((t) => /bass/i.test(t.name))!;
+      const bass = kit.tracks.find((t) => /bass|sub|log drum/i.test(t.name))!;
       const tr = trackFromTemplate(bass, bass.name, 0);
       const scale = SCALES[song.scale!].steps;
       const r = renderTrack(tr, song, 0, false);

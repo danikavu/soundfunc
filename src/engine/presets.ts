@@ -1094,9 +1094,9 @@ function drum(
   waveform: DrumVoice,
   steps: number,
   vel: string,
-  opts: Partial<Track> & { ratchet?: string; tune?: string } = {},
+  opts: Partial<Track> & { ratchet?: string; tune?: string; shift?: string } = {},
 ): Template & { name: string } {
-  const { ratchet, tune, ...rest } = opts;
+  const { ratchet, tune, shift, ...rest } = opts;
   const nodes: Record<string, [string, NodeData?]> = { vel: ['expr', { formula: vel }], out: ['output'] };
   const wires = ['vel.out>out.velocity'];
   if (ratchet) {
@@ -1106,6 +1106,11 @@ function drum(
   if (tune) {
     nodes.tune = ['expr', { formula: tune }];
     wires.push('tune.out>out.pitch');
+  }
+  // played late by part of a step: a laid-back snare, a drunk kick
+  if (shift) {
+    nodes.shift = ['expr', { formula: shift }];
+    wires.push('shift.out>out.shift');
   }
   return { name, waveform, steps, stepBeats: 0.25, send: 0.12, volume: 0.8, graph: wire(nodes, wires), ...rest };
 }
@@ -1363,6 +1368,129 @@ export const KITS: Kit[] = [
       }),
       voice('808', 'sine', 'h + (n % 16 >= 12) * pick(n, 3, 3, 5, 7)', '0.9 * (1 - 0.6 * phase(n, 16))', {}, {
         playMode: 'glide', quantize: true, glide: 0.14, octave: 2, steps: 32, send: 0, volume: 0.9, release: 0.3,
+      }),
+    ],
+  },
+  // ---------- grooves with swing and vibe ----------
+  {
+    id: 'clicks',
+    name: 'Tongue Clicks',
+    description:
+      '92 bpm West Coast minimalism in the spirit of the Neptunes’ tongue-click hits: almost nothing. Two-tone mouth clicks, a dry finger snap on 2 and 4, a deep kick, a sub under it and a lone synth blip. The space is the groove.',
+    song: { bpm: 92, root: 1, scale: 'minor', harmony: 'pick(bar, 0, 0, 0, 3)' },
+    tracks: [
+      drum('Click high', 'tom', 32, '0.75 * bits(pick(floor(n / 16), 0x9228, 0x922A), n) * (0.85 + 0.15 * rand(n + 32k, 1))', {
+        tune: '24', volume: 0.55, send: 0.08, swing: 0.06, pan: -0.15, synth: { decay: 0.25, tone: 0.6 },
+      }),
+      drum('Click low', 'tom', 32, '0.7 * bits(pick(floor(n / 16), 0x0480, 0x0490), n)', {
+        tune: '17', volume: 0.55, send: 0.08, swing: 0.06, pan: 0.15, synth: { decay: 0.25, tone: 0.5 },
+      }),
+      drum('Snap', 'clap', 32, '0.8 * every(n, 8, 4)', { volume: 0.6, send: 0.18, synth: { decay: 0.3, tone: 0.5 } }),
+      drum('Kick', 'kick', 32, 'bits(pick(floor(n / 16), 0x8010, 0x8012), n)', { volume: 0.85, synth: { decay: 1.6, tone: -0.3 } }),
+      voice('Sub', 'sine', ROOT, "0.8 * bits(pick(floor(n / 16), 0x8010, 0x8012), n)", { length: 3 }, {
+        steps: 32, octave: 2, volume: 0.7, attack: 0.005, release: 0.25, send: 0,
+      }),
+      voice('Blip', 'square', 'h + pick(k % 4, 4, 4, 7, 2)', '0.45 * (n % 32 == 22)', { length: 0.6 }, {
+        steps: 32, octave: 5, volume: 0.3, release: 0.12, send: 0.3, synth: { cutoff: 0.55, delay: 0.35, delayTime: 0.75 },
+      }),
+    ],
+  },
+  {
+    id: 'pocket',
+    name: 'Drunk Pocket',
+    description:
+      '86 bpm neo-soul with the drummer leaning back: a kick that stumbles in late, a lazy snare dragged behind the beat, heavily swung hats with ghosts, ninth chords on a Rhodes and a bass that walks into every change. F dorian, i9–IV9.',
+    song: { bpm: 86, root: 5, scale: 'dorian', harmony: 'pick(bar, 0, 3)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.9 * bits(pick(floor(n / 16), 0x8024, 0x8124), n)', { shift: '0.18 * (n % 4 != 0)', swing: 0.22, volume: 0.9, synth: { decay: 1.2 } }),
+      drum('Snare', 'snare', 32, 'max(0.85 * every(n, 8, 4), 0.16 * chance(n + 32k, 0.35, 3) * (n % 2))', { shift: '0.22 * every(n, 8, 4)', swing: 0.22, volume: 0.7, send: 0.2, synth: { tone: -0.2 } }),
+      drum('Hats', 'hat', 32, '(0.38 + 0.22 * every(n, 4) + 0.1 * rand(n + 32k, 5)) * (every(n, 2) + 0.35 * chance(n + 32k, 0.3, 8))', { swing: 0.28, volume: 0.45, synth: { tone: -0.3 } }),
+      voice('Rhodes', 'keys', voicedPitch(5), '0.55 * bits(pick(floor(n / 16), 0x8208, 0x0882), n)', { chord: 5, inversion: voicedInversion(5), length: 3, strum: 0.03 }, {
+        steps: 32, octave: 4, volume: 0.45, send: 0.45, swing: 0.22, synth: { chorus: 0.35 },
+      }),
+      voice('Bass', 'triangle', `${ROOT} - (n % 16 == 14)`, '0.8 * bits(pick(floor(n / 16), 0x8022, 0x8126), n)', { length: 1.6 }, {
+        steps: 32, octave: 2, volume: 0.7, release: 0.12, swing: 0.22, send: 0.05,
+      }),
+    ],
+  },
+  {
+    id: 'lofi',
+    name: 'Rainy Window',
+    description:
+      '72 bpm lo-fi: a soft, dark kick, a rim on 2 and 4, lazy swung hats, vinyl crackle, a warm detuned e-piano on IV–iii–ii–I sevenths, a round sub and a few bell notes drifting over it.',
+    song: { bpm: 72, root: 0, scale: 'major', harmony: 'pick(bar, 3, 2, 1, 0)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.75 * bits(pick(floor(n / 16), 0x8020, 0x8024), n)', { swing: 0.2, volume: 0.75, synth: { tone: -0.5, decay: 0.9 } }),
+      drum('Rim', 'rim', 32, '0.6 * every(n, 8, 4)', { shift: '0.1 * every(n, 8, 4)', volume: 0.5, send: 0.4, synth: { tone: -0.3 } }),
+      drum('Hats', 'hat', 32, 'every(n, 2) * chance(n + 32k, 0.85, 2) * (0.25 + 0.15 * every(n, 4) + 0.08 * rand(n + 32k, 4))', { swing: 0.25, volume: 0.35, synth: { tone: -0.5 } }),
+      drum('Crackle', 'hat', 32, '0.05 + 0.1 * chance(n + 32k, 0.4, 9)', { ratchet: '1 + floor(3 * rand(n + 32k, 10))', volume: 0.18, pan: 0.2, send: 0, synth: { tone: 0.8, decay: 0.3 } }),
+      voice('E-piano', 'keys', voicedPitch(4), '0.5 * every(n, 16) + 0.25 * (n % 16 == 10)', { chord: 4, inversion: voicedInversion(4), length: 7, strum: 0.04 }, {
+        steps: 32, octave: 4, volume: 0.45, send: 0.55, swing: 0.2, synth: { cutoff: 0.5, vibrato: 0.25, chorus: 0.45 },
+      }),
+      voice('Sub', 'sine', ROOT, '0.65 * bits(pick(floor(n / 16), 0x8020, 0x8024), n)', { length: 5 }, { steps: 32, octave: 2, volume: 0.6, release: 0.3, send: 0 }),
+      voice('Bells', 'bell', 'h + pick(floor(n / 4) + k, 4, 2, 7, 4, 9, 7)', '0.35 * every(n, 8, 6) * chance(floor(n / 8) + 4k, 0.55, 12)', { length: 2 }, {
+        steps: 32, octave: 5, volume: 0.3, send: 0.75, swing: 0.25, pan: -0.25,
+      }),
+    ],
+  },
+  {
+    id: 'gfunk',
+    name: 'Sunset Cruise',
+    description:
+      '94 bpm G-funk, windows down: a bouncing kick, a fat clap-snare on 2 and 4, swung sixteenth hats, a rubbery synth bass sliding between roots, Rhodes ninths and the high whistle lead gliding over D dorian, i–IV.',
+    song: { bpm: 94, root: 2, scale: 'dorian', harmony: 'pick(bar, 0, 0, 3, 3)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.95 * bits(pick(floor(n / 16), 0x8824, 0x8A20), n)', { swing: 0.12, volume: 0.9 }),
+      drum('Snare', 'snare', 32, '0.85 * every(n, 8, 4)', { volume: 0.7, send: 0.2 }),
+      drum('Clap', 'clap', 32, '0.6 * every(n, 8, 4)', { volume: 0.5, send: 0.25 }),
+      drum('Hats', 'hat', 32, '0.3 + 0.25 * every(n, 2) + 0.08 * rand(n + 32k, 7)', { swing: 0.14, volume: 0.42 }),
+      voice('Synth bass', 'sawtooth', `${ROOT} + pick(n % 16, 0,0,0,0, 0,0,L,0, 0,0,0,0, 0,0,-1,0)`, '0.8 * bits(pick(floor(n / 16), 0x8A22, 0x8A2A), n)', { length: 1.5 }, {
+        steps: 32, octave: 2, volume: 0.6, release: 0.1, swing: 0.12, send: 0.05, synth: { cutoff: 0.35, resonance: 0.35, envAmount: 0.35, envDecay: 0.15 },
+      }),
+      voice('Rhodes', 'keys', voicedPitch(5), '0.4 * bits(0x0808, n)', { chord: 5, inversion: voicedInversion(5), length: 2 }, {
+        steps: 32, octave: 4, volume: 0.35, send: 0.4, swing: 0.12,
+      }),
+      voice('Whistle', 'sine', 'h + pick(floor(n / 8) + 4 * (k % 2), 7, 9, 8, 7, 4, 7, 6, 4)', 'phase(n, 8) < 0.8 ? 0.45 : 0', {}, {
+        playMode: 'glide', quantize: true, glide: 0.12, steps: 32, octave: 6, volume: 0.32, send: 0.55, synth: { vibrato: 0.6 },
+      }),
+    ],
+  },
+  {
+    id: 'dembow',
+    name: 'Dembow Heat',
+    description:
+      '95 bpm reggaetón: the dembow (kick on every beat, the snare on the and-of-1 and the and-of-2, boom-ch-boom-chick), shaker hats, a sub that follows the kick, offbeat plucked chords and a bright stab, over i–VI–III–VII in A minor.',
+    song: { bpm: 95, root: 9, scale: 'minor', harmony: 'pick(bar, 0, 5, 2, 6)' },
+    tracks: [
+      drum('Kick', 'kick', 16, 'every(n, 4)', { volume: 0.92 }),
+      drum('Snare', 'snare', 16, '0.75 * bits(0x1212, n)', { volume: 0.65, send: 0.15, synth: { tone: 0.2, decay: 0.8 } }),
+      drum('Rim', 'rim', 16, '0.45 * bits(0x1212, n)', { volume: 0.45 }),
+      drum('Shaker', 'hat', 16, '0.22 + 0.2 * every(n, 2) + 0.06 * rand(n + 16k, 3)', { swing: 0.05, volume: 0.4, synth: { tone: 0.3 } }),
+      voice('Sub', 'sine', ROOT, '0.75 * (every(n, 4) + bits(0x1212, n) * 0.6)', { length: 1.2 }, { steps: 16, octave: 2, volume: 0.65, release: 0.1, send: 0 }),
+      voice('Pluck chords', 'pluck', voicedPitch(3), '0.5 * every(n, 4, 2)', { chord: 3, inversion: voicedInversion(3), length: 0.8 }, {
+        steps: 16, octave: 4, volume: 0.4, send: 0.35, pan: 0.2,
+      }),
+      voice('Stab', 'supersaw', `${voicedPitch(3)} + L`, '(n % 16 == 14) * (0.25 + 0.2 * (k % 2))', { chord: 3, inversion: voicedInversion(3), length: 1 }, {
+        steps: 16, octave: 4, volume: 0.3, send: 0.45, pan: -0.2,
+      }),
+    ],
+  },
+  {
+    id: 'amapiano',
+    name: 'Log Drum Sunday',
+    description:
+      '113 bpm amapiano: a soft kick, swung shaker sixteenths, a rim and clap on 2 and 4, the bouncy log-drum bass sliding in short syncopated hits, and airy piano sevenths over i–VI–VII–i in F minor.',
+    song: { bpm: 113, root: 5, scale: 'minor', harmony: 'pick(bar, 0, 5, 6, 0)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.7 * every(n, 8) + 0.35 * every(n, 32, 22)', { volume: 0.75, synth: { tone: -0.3 } }),
+      drum('Shaker', 'hat', 32, '0.2 + 0.18 * every(n, 2, 1) + 0.07 * rand(n + 32k, 4)', { swing: 0.2, volume: 0.42, synth: { tone: 0.2 } }),
+      drum('Rim', 'rim', 32, '0.5 * every(n, 8, 4) + 0.25 * every(n, 16, 7)', { swing: 0.2, volume: 0.5, send: 0.25 }),
+      drum('Clap', 'clap', 32, '0.5 * every(n, 16, 12)', { volume: 0.5, send: 0.35 }),
+      voice('Log drum', 'triangle', `${ROOT} + pick(n % 16, 0,0,0,L, 0,0,0,0, 0,0,0,4, 0,0,0,0)`, '0.85 * bits(pick(floor(n / 16), 0x9248, 0x9252), n)', { length: 0.8 }, {
+        playMode: 'notes', steps: 32, octave: 2, volume: 0.75, attack: 0.002, release: 0.08, swing: 0.2, send: 0.05, synth: { drive: 0.35, decay: 0.25, sustain: 0 },
+      }),
+      voice('Piano', 'keys', voicedPitch(4), '0.45 * bits(pick(floor(n / 16), 0x8090, 0x0410), n)', { chord: 4, inversion: voicedInversion(4), length: 2.5 }, {
+        steps: 32, octave: 4, volume: 0.4, send: 0.55, swing: 0.2, pan: 0.15,
       }),
     ],
   },
