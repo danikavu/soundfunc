@@ -1,10 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { NOTE_NAMES, SCALES } from '../engine/music';
-import { KITS, TRACK_COLORS } from '../engine/presets';
-import { isDrum, voiceLabel, type Waveform } from '../engine/project';
-import { useStore } from '../state/store';
-import { toast } from './TopBar';
-import { Icon } from './ui';
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { NOTE_NAMES, SCALES } from "../engine/music";
+import {
+  KIT_GROUPS,
+  KITS,
+  TRACK_COLORS,
+  kitGroupOf,
+  type KitGroup,
+} from "../engine/presets";
+import { isDrum, voiceLabel, type Waveform } from "../engine/project";
+import { useStore } from "../state/store";
+import { toast } from "./TopBar";
+import { Icon } from "./ui";
 
 /**
  * Rhythm kits in one place: pick a kit, then plant all of it, layer it, or bring
@@ -20,32 +26,48 @@ export function KitPicker() {
   const { addKit, addKitTracks } = useStore();
   const bpm = useStore((s) => s.project.song.bpm);
   const kit = KITS.find((k) => k.id === kitId)!;
-  const drums = kit.tracks.map((t, i) => (isDrum(t.waveform as Waveform) ? i : -1)).filter((i) => i >= 0);
+  const drums = kit.tracks
+    .map((t, i) => (isDrum(t.waveform as Waveform) ? i : -1))
+    .filter((i) => i >= 0);
 
   useLayoutEffect(() => {
     if (!open || !btn.current) return;
     const r = btn.current.getBoundingClientRect();
     const h = pop.current?.offsetHeight ?? 420;
-    setPos({ left: r.right + 10, top: Math.max(12, Math.min(r.top - 40, window.innerHeight - h - 12)) });
+    setPos({
+      left: r.right + 10,
+      top: Math.max(12, Math.min(r.top - 40, window.innerHeight - h - 12)),
+    });
   }, [open, kitId]);
 
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => !pop.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node) && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    window.addEventListener('mousedown', close);
-    window.addEventListener('keydown', esc);
+    const close = (e: MouseEvent) =>
+      !pop.current?.contains(e.target as Node) &&
+      !btn.current?.contains(e.target as Node) &&
+      setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", esc);
     return () => {
-      window.removeEventListener('mousedown', close);
-      window.removeEventListener('keydown', esc);
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", esc);
     };
   }, [open]);
 
-  const tempoNote = adopt && kit.song?.bpm && kit.song.bpm !== bpm ? ` · tempo → ${kit.song.bpm}` : '';
+  const tempoNote =
+    adopt && kit.song?.bpm && kit.song.bpm !== bpm
+      ? ` · tempo → ${kit.song.bpm}`
+      : "";
 
   return (
     <>
-      <button ref={btn} className={`kit-trigger ${open ? 'open' : ''}`} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <button
+        ref={btn}
+        className={`kit-trigger ${open ? "open" : ""}`}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
         <span>
           <b className="serif">Rhythm kits</b>
         </span>
@@ -55,19 +77,40 @@ export function KitPicker() {
       </button>
 
       {open && (
-        <div className="kit-pop" ref={pop} style={{ left: pos.left, top: pos.top }} role="dialog" aria-label="Rhythm kits">
+        <div
+          className="kit-pop"
+          ref={pop}
+          style={{ left: pos.left, top: pos.top }}
+          role="dialog"
+          aria-label="Rhythm kits"
+        >
           <ul className="kit-list">
-            {KITS.map((k) => (
-              <li key={k.id}>
-                <button className={k.id === kitId ? 'on' : ''} onMouseEnter={() => setKitId(k.id)} onFocus={() => setKitId(k.id)} onClick={() => setKitId(k.id)}>
-                  <span className="serif">{k.name}</span>
-                  <small>
-                    {k.song?.bpm ? `${k.song.bpm} bpm · ` : ''}
-                    {k.tracks.length} channels
-                  </small>
-                </button>
-              </li>
-            ))}
+            {(Object.keys(KIT_GROUPS) as KitGroup[]).flatMap((g) => {
+              const kits = KITS.filter((k) => kitGroupOf(k) === g);
+              return kits.length
+                ? [
+                    <li key={`group-${g}`} className="kit-group-head">
+                      {KIT_GROUPS[g]}
+                    </li>,
+                    ...kits.map((k) => (
+                      <li key={k.id}>
+                        <button
+                          className={k.id === kitId ? "on" : ""}
+                          onMouseEnter={() => setKitId(k.id)}
+                          onFocus={() => setKitId(k.id)}
+                          onClick={() => setKitId(k.id)}
+                        >
+                          <span className="serif">{k.name}</span>
+                          <small>
+                            {k.song?.bpm ? `${k.song.bpm} bpm · ` : ""}
+                            {k.tracks.length} channels
+                          </small>
+                        </button>
+                      </li>
+                    )),
+                  ]
+                : [];
+            })}
           </ul>
 
           <div className="kit-detail">
@@ -76,7 +119,8 @@ export function KitPicker() {
             {kit.song && (
               <p className="kit-meta">
                 {kit.song.bpm} bpm
-                {kit.song.root !== undefined && ` · ${NOTE_NAMES[kit.song.root]} ${(SCALES[kit.song.scale ?? 'major'] ?? SCALES.major).label}`}
+                {kit.song.root !== undefined &&
+                  ` · ${NOTE_NAMES[kit.song.root]} ${(SCALES[kit.song.scale ?? "major"] ?? SCALES.major).label}`}
               </p>
             )}
 
@@ -94,7 +138,11 @@ export function KitPicker() {
               <button
                 className="btn small"
                 onClick={() => {
-                  addKitTracks(kit.id, kit.tracks.map((_, i) => i), adopt);
+                  addKitTracks(
+                    kit.id,
+                    kit.tracks.map((_, i) => i),
+                    adopt,
+                  );
                   toast(`Layered all of ${kit.name}${tempoNote}`);
                 }}
               >
@@ -105,7 +153,9 @@ export function KitPicker() {
                   className="btn small"
                   onClick={() => {
                     addKitTracks(kit.id, drums, adopt);
-                    toast(`Added ${drums.length} percussion channels from ${kit.name}${tempoNote}`);
+                    toast(
+                      `Added ${drums.length} percussion channels from ${kit.name}${tempoNote}`,
+                    );
                   }}
                 >
                   <Icon name="plus" size={11} /> Percussion only
@@ -116,19 +166,31 @@ export function KitPicker() {
             <div className="kit-tracks-head">
               <span>Channels — add one at a time</span>
               <label title="Off: channels join your track at its own tempo. On: the track takes the kit’s tempo and key.">
-                <input type="checkbox" checked={adopt} onChange={(e) => setAdopt(e.target.checked)} /> use kit tempo & key
+                <input
+                  type="checkbox"
+                  checked={adopt}
+                  onChange={(e) => setAdopt(e.target.checked)}
+                />{" "}
+                use kit tempo & key
               </label>
             </div>
             <ul className="kit-tracks">
               {kit.tracks.map((t, i) => {
                 return (
                   <li key={t.name}>
-                    <span className="kit-swatch" style={{ background: TRACK_COLORS[i % TRACK_COLORS.length] }} aria-hidden />
+                    <span
+                      className="kit-swatch"
+                      style={{
+                        background: TRACK_COLORS[i % TRACK_COLORS.length],
+                      }}
+                      aria-hidden
+                    />
                     <span className="kit-track-name">
                       {t.name}
                       <small>
                         {voiceLabel(t.waveform as Waveform)}
-                        {t.playMode === 'glide' ? ' · glide' : ''} · {t.steps ?? 16} steps
+                        {t.playMode === "glide" ? " · glide" : ""} ·{" "}
+                        {t.steps ?? 16} steps
                       </small>
                     </span>
                     <button

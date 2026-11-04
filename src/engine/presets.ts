@@ -149,9 +149,35 @@ export interface Kit {
   id: string;
   name: string;
   description: string;
+  /** where it sits in the Rhythm kits list (older kits are placed by KIT_GROUP_OF) */
+  group?: KitGroup;
   song?: Partial<Song>;
   tracks: (Template & { name: string })[];
 }
+
+/** the Rhythm kits list, in this order */
+export type KitGroup = 'hiphop' | 'phonk' | 'soul' | 'triphop' | 'dance' | 'latin' | 'breaks' | 'math';
+export const KIT_GROUPS: Record<KitGroup, string> = {
+  hiphop: 'Hip-hop & lo-fi',
+  phonk: 'Trap, phonk & funk trap',
+  soul: 'Soul, jazz & funk',
+  triphop: 'Trip hop & chill',
+  dance: 'Dance & swing',
+  latin: 'Latin & world',
+  breaks: 'Breaks & DnB',
+  math: 'Math rhythms',
+};
+const KIT_GROUP_OF: Record<string, KitGroup> = {
+  boombap: 'hiphop', clicks: 'hiphop', lofi: 'hiphop', gfunk: 'hiphop',
+  trap: 'phonk',
+  jazz: 'soul', funk: 'soul', pocket: 'soul',
+  royal: 'triphop',
+  disco: 'dance', deephouse: 'dance', house: 'dance',
+  bossa: 'latin', salsa: 'latin', dembow: 'latin', amapiano: 'latin',
+  dnb: 'breaks', amen: 'breaks', jungle: 'breaks',
+  poly: 'math',
+};
+export const kitGroupOf = (k: Kit): KitGroup => k.group ?? KIT_GROUP_OF[k.id] ?? 'math';
 
 const OUT_X = 640;
 
@@ -1491,6 +1517,230 @@ export const KITS: Kit[] = [
       }),
       voice('Piano', 'keys', voicedPitch(4), '0.45 * bits(pick(floor(n / 16), 0x8090, 0x0410), n)', { chord: 4, inversion: voicedInversion(4), length: 2.5 }, {
         steps: 32, octave: 4, volume: 0.4, send: 0.55, swing: 0.2, pan: 0.15,
+      }),
+    ],
+  },
+  // ---------- ten more: phonk, jazzy soul, trip hop, funk trap, swing and late-night vibes ----------
+  {
+    id: 'memphisdrift',
+    group: 'phonk',
+    name: 'Memphis Drift',
+    description:
+      '132 bpm drift phonk in G phrygian, i–♭II: a cowbell riff that hammers the minor second, a distorted 808 that slides between roots, triplet hi-hat rolls, a hard clap on the three and a crushed kick. Built for night driving.',
+    song: { bpm: 132, root: 7, scale: 'phrygian', harmony: 'pick(bar, 0, 0, 1, 0)' },
+    tracks: [
+      drum('Cowbell', 'tom', 32, '0.8 * bits(pick(floor(n / 16), 0xAAA8, 0xAA9A), n) * (0.8 + 0.2 * every(n, 4))', {
+        tune: 'pick(n % 16, 24, 0, 25, 0, 24, 0, 27, 0, 24, 0, 25, 0, 22, 0, 20, 0)', volume: 0.5, send: 0.18, pan: 0.1, synth: { decay: 0.35, tone: 0.8, drive: 0.6 },
+      }),
+      drum('Kick', 'kick', 32, 'bits(pick(floor(n / 16), 0x8020, 0x8024), n)', { volume: 0.95, synth: { drive: 0.7, decay: 1.3 } }),
+      drum('Clap', 'clap', 32, '0.9 * every(n, 16, 8)', { volume: 0.7, send: 0.3, synth: { drive: 0.4 } }),
+      drum('Hats', 'hat', 32, '0.35 + 0.25 * every(n, 2) + 0.1 * rand(n + 32k, 3)', {
+        ratchet: 'pick(n, 1,1,1,1, 1,1,3,1, 1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,3,3, 1,1,6,1)', volume: 0.42, synth: { tone: 0.2 },
+      }),
+      voice('808', 'sine', `${ROOT} + (n % 16 == 14) * 1`, '(phase(n, 16) < 0.92) * 0.95 * (1 - 0.5 * phase(n, 16))', {}, {
+        playMode: 'glide', quantize: true, glide: 0.1, steps: 32, octave: 2, volume: 0.85, release: 0.2, send: 0, synth: { drive: 0.75, sub: 0.3 },
+      }),
+    ],
+  },
+  {
+    id: 'hauntedmemphis',
+    group: 'phonk',
+    name: 'Haunted Tape',
+    description:
+      '70 bpm old-school Memphis, recorded to a worn cassette: a boomy 808 kick, a snare on the backbeat, swung hats with stutters, tape crackle, a sparse cowbell, a long sub and a creepy music-box bell line in E minor, i–VI–i–VII.',
+    song: { bpm: 70, root: 4, scale: 'minor', harmony: 'pick(bar, 0, 5, 0, 6)' },
+    tracks: [
+      drum('Kick', 'kick', 32, 'bits(pick(floor(n / 16), 0x8022, 0x80A0), n)', { volume: 0.95, synth: { decay: 1.8, tone: -0.4, drive: 0.3 } }),
+      drum('Snare', 'snare', 32, '0.85 * every(n, 8, 4) + 0.2 * (n == 31)', { volume: 0.7, send: 0.35, synth: { tone: -0.3, decay: 1.2 } }),
+      drum('Hats', 'hat', 32, '(0.3 + 0.2 * every(n, 2)) * chance(n + 32k, 0.9, 2)', { ratchet: 'chance(n + 32k, 0.12, 6) ? 2 : 1', swing: 0.12, volume: 0.4, synth: { tone: -0.2 } }),
+      drum('Cowbell', 'tom', 32, '0.45 * bits(0x0020, n) + 0.35 * (n == 30)', { tune: '22', volume: 0.35, send: 0.4, synth: { decay: 0.3, tone: 0.7 } }),
+      drum('Tape', 'hat', 32, '0.05 + 0.08 * chance(n + 32k, 0.35, 9)', { ratchet: '1 + floor(3 * rand(n + 32k, 10))', volume: 0.16, send: 0, synth: { tone: 0.9, decay: 0.3 } }),
+      voice('Sub', 'sine', ROOT, '0.8 * bits(pick(floor(n / 16), 0x8022, 0x80A0), n)', { length: 4 }, { steps: 32, octave: 2, volume: 0.7, release: 0.35, send: 0, synth: { drive: 0.25 } }),
+      voice('Music box', 'bell', 'h + pick(floor(n / 2) % 8, 7, 4, 2, 4, 9, 7, 4, 2)', '0.4 * every(n, 2) * (n % 8 != 6) * chance(n + 32k, 0.8, 4)', { length: 1.5 }, {
+        steps: 32, octave: 5, volume: 0.32, send: 0.75, swing: 0.12, pan: -0.2, synth: { vibrato: 0.35, delay: 0.3, delayTime: 0.75 },
+      }),
+    ],
+  },
+  {
+    id: 'goldteeth',
+    group: 'phonk',
+    name: 'Gold Teeth',
+    description:
+      '142 bpm funk trap in E dorian, i–IV: an 808 kick pattern with a sliding sub, a clap on the three, rolling hats, a slap bass that pops octaves in the gaps, and clavinet stabs on the off-sixteenths. Strut, not swagger.',
+    song: { bpm: 142, root: 4, scale: 'dorian', harmony: 'pick(bar, 0, 0, 3, 3)' },
+    tracks: [
+      drum('Kick', 'kick', 32, 'bits(pick(floor(n / 16), 0x8120, 0x8028), n)', { volume: 0.95, synth: { decay: 1.4 } }),
+      drum('Clap', 'clap', 32, 'every(n, 16, 8) + 0.3 * (n == 31)', { volume: 0.7, send: 0.3 }),
+      drum('Hats', 'hat', 32, '0.38 + 0.22 * every(n, 2) + 0.12 * rand(n + 32k, 5)', {
+        ratchet: 'pick(n + 32 * (k % 2), 1,1,1,1, 1,1,1,1, 1,1,2,1, 1,1,1,1, 1,1,1,1, 1,1,1,1, 3,1,1,1, 4,1,2,2, 1,1,1,1, 1,1,1,1, 1,1,2,1, 1,1,1,1, 1,1,1,1, 1,1,3,1, 1,1,1,1, 6,1,1,1)',
+        tune: 'n % 16 >= 12 ? (n % 16 - 12) * 2 : 0', volume: 0.45,
+      }),
+      voice('808', 'sine', `${ROOT} + (n % 32 >= 28) * 3`, 'bits(pick(floor(n / 16), 0x8120, 0x8028), n) * 0.9', { length: 3 }, {
+        playMode: 'notes', steps: 32, octave: 1, volume: 0.8, release: 0.25, send: 0, synth: { drive: 0.4 },
+      }),
+      voice('Slap bass', 'sawtooth', `${ROOT} + L * bits(0x0410, n)`, '0.75 * bits(pick(floor(n / 16), 0x0514, 0x0452), n)', { length: 0.45 }, {
+        steps: 32, octave: 2, volume: 0.45, release: 0.05, send: 0.05, synth: { cutoff: 0.45, resonance: 0.3, envAmount: 0.5, envDecay: 0.08 },
+      }),
+      voice('Clav', 'square', voicedPitch(3), '0.45 * bits(pick(floor(n / 16), 0x2222, 0x2232), n)', { chord: 3, inversion: voicedInversion(3), length: 0.4 }, {
+        steps: 32, octave: 4, volume: 0.33, release: 0.04, send: 0.2, pan: 0.25, synth: { cutoff: 0.6, envAmount: 0.4, envDecay: 0.06 },
+      }),
+    ],
+  },
+  {
+    id: 'velour',
+    group: 'phonk',
+    name: 'Velour Bounce',
+    description:
+      '96 bpm funk with trap drums in B♭ mixolydian, I–IV: a wah-wah acid bass that talks, a lazy backbeat with ghost notes, trap rolls in the hats, brass stabs and a square-wave talkbox lead that slides into its notes.',
+    song: { bpm: 96, root: 10, scale: 'mixolydian', harmony: 'pick(bar, 0, 0, 3, 3)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.95 * bits(pick(floor(n / 16), 0x8822, 0x8092), n)', { volume: 0.9 }),
+      drum('Snare', 'snare', 32, 'max(0.85 * every(n, 8, 4), 0.18 * bits(0x0241, n))', { shift: '0.08 * every(n, 8, 4)', volume: 0.7, send: 0.2 }),
+      drum('Hats', 'hat', 32, '0.3 + 0.25 * every(n, 2) + 0.08 * rand(n + 32k, 2)', { ratchet: 'pick(n, 1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,3,1, 1,1,1,1, 1,1,1,1, 1,1,1,1, 2,2,4,1)', swing: 0.1, volume: 0.42 }),
+      voice('Wah bass', 'acid', `${ROOT} + pick(n % 8, 0, 0, L, 0, 0, 4, 0, 6)`, '0.8 * bits(pick(floor(n / 16), 0xA2A6, 0xA2AA), n)', { length: 0.8 }, {
+        steps: 32, octave: 2, volume: 0.55, release: 0.06, swing: 0.1, send: 0.05, synth: { cutoff: 0.32, resonance: 0.55, envAmount: 0.6, envDecay: 0.18 },
+      }),
+      voice('Brass', 'brass', `${voicedPitch(3)} + L`, '0.5 * bits(pick(floor(n / 16), 0, 0x0012), n)', { chord: 3, inversion: voicedInversion(3), length: 0.9 }, {
+        steps: 32, octave: 4, volume: 0.36, send: 0.3, pan: -0.2,
+      }),
+      voice('Talkbox', 'square', 'h + pick(floor(n / 4) + 8 * (k % 2), 4, 4, 5, 4, 2, 0, 2, -1, 4, 4, 5, 7, 6, 4, 2, 4)', 'phase(n, 4) < 0.75 ? 0.4 : 0', {}, {
+        playMode: 'glide', quantize: true, glide: 0.06, steps: 32, octave: 5, volume: 0.28, send: 0.35, pan: 0.2, synth: { cutoff: 0.5, resonance: 0.35, vibrato: 0.3 },
+      }),
+    ],
+  },
+  {
+    id: 'velvet',
+    group: 'soul',
+    name: 'Velvet Soul',
+    description:
+      '84 bpm neo-soul in D♭, ii9–V9–Imaj9–vi9: a soft swung kick, brushed snare dragged behind the beat, ride with ghosts, a Rhodes playing ninth chords with a lazy strum, a round bass that walks into each chord, and strings swelling underneath.',
+    song: { bpm: 84, root: 1, scale: 'major', harmony: 'pick(bar, 1, 4, 0, 5)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.8 * bits(pick(floor(n / 16), 0x8024, 0x8120), n)', { swing: 0.24, volume: 0.8, synth: { tone: -0.3 } }),
+      drum('Brushes', 'snare', 32, 'max(0.7 * every(n, 8, 4), 0.14 * chance(n + 32k, 0.45, 5))', { shift: '0.15 * every(n, 8, 4)', swing: 0.24, volume: 0.55, send: 0.35, synth: { tone: -0.5, decay: 1.3 } }),
+      drum('Ride', 'hat', 32, '(0.3 + 0.2 * every(n, 4)) * every(n, 2) + 0.1 * chance(n + 32k, 0.3, 7)', { swing: 0.28, volume: 0.4, send: 0.25, synth: { decay: 2.2, tone: -0.2 } }),
+      voice('Rhodes', 'keys', voicedPitch(5), '0.5 * bits(pick(floor(n / 16), 0x8208, 0x8802), n)', { chord: 5, inversion: voicedInversion(5), length: 3.5, strum: 0.05 }, {
+        steps: 32, octave: 4, volume: 0.45, send: 0.5, swing: 0.24, synth: { chorus: 0.4, vibrato: 0.1 },
+      }),
+      voice('Bass', 'triangle', `${ROOT} + pick(n % 16, 0,0,0,0, 0,0,0,0, 4,0,0,0, 2,0,1,0)`, '0.8 * bits(0x8A8A, n) * (0.85 + 0.15 * every(n, 8))', { length: 1.8 }, {
+        steps: 32, octave: 2, volume: 0.7, release: 0.12, swing: 0.24, send: 0.08,
+      }),
+      voice('Strings', 'pad', voicedPitch(4), '0.35 * every(n, 16)', { chord: 4, inversion: voicedInversion(4), length: 16 }, {
+        steps: 32, octave: 4, volume: 0.3, attack: 0.8, release: 1.5, send: 0.7,
+      }),
+    ],
+  },
+  {
+    id: 'bluenotehop',
+    group: 'soul',
+    name: 'Blue Note Hop',
+    description:
+      '88 bpm jazz hop in F, ii–V–I–I: a dusty swung boom-bap, a walking upright bass on the quarters, vibraphone comping with a little tremolo, and a muted horn line that wanders the chord tones. Head nod meets late night.',
+    song: { bpm: 88, root: 5, scale: 'major', harmony: 'pick(bar, 1, 4, 0, 0)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.9 * bits(pick(floor(n / 16), 0x8120, 0x8024), n)', { swing: 0.2, volume: 0.88, synth: { tone: -0.2 } }),
+      drum('Snare', 'snare', 32, 'max(0.8 * every(n, 8, 4), 0.15 * bits(0x0104, n))', { shift: '0.1 * every(n, 8, 4)', swing: 0.2, volume: 0.65, send: 0.25, synth: { tone: -0.2 } }),
+      drum('Hats', 'hat', 32, 'every(n, 2) * (0.32 + 0.18 * every(n, 4) + 0.1 * rand(n + 32k, 3))', { swing: 0.3, volume: 0.42, synth: { tone: -0.3 } }),
+      voice('Upright bass', 'triangle', `${ROOT} + pick(floor(n / 4) % 4, 0, 2, 4, 5)`, '0.8 * every(n, 4)', { length: 3.6 }, {
+        steps: 32, octave: 2, volume: 0.75, attack: 0.004, release: 0.1, send: 0.12, synth: { cutoff: 0.4 },
+      }),
+      voice('Vibes', 'bell', voicedPitch(4), '0.45 * bits(pick(floor(n / 16), 0x0820, 0x8008), n)', { chord: 4, inversion: voicedInversion(4), length: 2.5 }, {
+        steps: 32, octave: 4, volume: 0.38, send: 0.5, swing: 0.3, synth: { vibrato: 0.5, chorus: 0.2 },
+      }),
+      voice('Muted horn', 'flute', 'h + pick(floor(n / 2) + 3 * k, 4, 2, 0, 2, 4, 6, 7, 6, 4, 2)', '0.42 * every(n, 2) * chance(floor(n / 2) + 16k, 0.55, 13) * (n % 16 < 12)', { length: 1.6 }, {
+        steps: 32, octave: 5, volume: 0.32, send: 0.45, swing: 0.3, attack: 0.03, pan: -0.25, synth: { cutoff: 0.55 },
+      }),
+    ],
+  },
+  {
+    id: 'bristol',
+    group: 'triphop',
+    name: 'Bristol Fog',
+    description:
+      '80 bpm trip hop in C minor, i–i–VI–v: a heavy, slow kick, a cavernous rimshot snare, half-asleep swung hats, a deep sub, a dark minor-seventh pad and an eerie bell that drifts in and out of the reverb.',
+    song: { bpm: 80, root: 0, scale: 'minor', harmony: 'pick(bar, 0, 0, 5, 4)' },
+    tracks: [
+      drum('Kick', 'kick', 32, 'bits(pick(floor(n / 16), 0x8020, 0x8420), n)', { volume: 0.95, synth: { decay: 1.5, tone: -0.4, drive: 0.25 } }),
+      drum('Snare', 'snare', 32, '0.75 * every(n, 16, 8)', { volume: 0.6, send: 0.75, synth: { tone: -0.3, decay: 1.6 } }),
+      drum('Rim', 'rim', 32, '0.45 * every(n, 16, 8) + 0.2 * (n == 29)', { volume: 0.45, send: 0.6 }),
+      drum('Hats', 'hat', 32, 'every(n, 2) * (0.22 + 0.14 * every(n, 4)) * chance(n + 32k, 0.8, 3)', { swing: 0.18, volume: 0.35, synth: { tone: -0.4 } }),
+      voice('Sub', 'sine', ROOT, '0.75 * bits(pick(floor(n / 16), 0x8020, 0x8420), n)', { length: 6 }, { steps: 32, octave: 2, volume: 0.7, release: 0.5, send: 0 }),
+      voice('Pad', 'pad', voicedPitch(4), '0.4 * every(n, 16)', { chord: 4, inversion: voicedInversion(4), length: 16 }, {
+        steps: 32, octave: 4, volume: 0.35, attack: 1.2, release: 2, send: 0.85, synth: { cutoff: 0.35 },
+      }),
+      voice('Bell', 'bell', 'h + pick(floor(n / 8) + k, 7, 4, 6, 2)', '0.35 * (n % 16 == 10) * chance(floor(n / 16) + 2k, 0.7, 2)', { length: 6 }, {
+        steps: 32, octave: 5, volume: 0.28, send: 0.9, pan: 0.3, synth: { delay: 0.45, delayTime: 0.75, vibrato: 0.3 },
+      }),
+    ],
+  },
+  {
+    id: 'smokerings',
+    group: 'triphop',
+    name: 'Smoke Rings',
+    description:
+      '72 bpm cinematic trip hop in A minor, i–iv: a dusty, dragging breakbeat with ghost notes, vinyl crackle, an upright bass, minor-seventh Rhodes and a theremin that glides and quivers over the top like a 60s spy film.',
+    song: { bpm: 72, root: 9, scale: 'minor', harmony: 'pick(bar, 0, 3)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.9 * bits(pick(floor(n / 16), 0x8030, 0x8024), n)', { swing: 0.16, volume: 0.88, synth: { tone: -0.3, drive: 0.2 } }),
+      drum('Snare', 'snare', 32, 'max(0.8 * every(n, 8, 4), 0.2 * bits(0x0122, n) * chance(n + 32k, 0.7, 8))', { shift: '0.12 * every(n, 8, 4)', swing: 0.16, volume: 0.62, send: 0.3, synth: { tone: -0.4 } }),
+      drum('Hats', 'hat', 32, '0.3 * every(n, 2) + 0.1 * chance(n + 32k, 0.4, 4)', { swing: 0.2, volume: 0.36, synth: { tone: -0.3 } }),
+      drum('Crackle', 'hat', 32, '0.05 + 0.08 * chance(n + 32k, 0.35, 11)', { ratchet: '1 + floor(3 * rand(n + 32k, 12))', volume: 0.15, send: 0, synth: { tone: 0.9, decay: 0.3 } }),
+      voice('Bass', 'triangle', `${ROOT} + pick(floor(n / 4) % 8, 0, 0, 4, 0, 0, 0, 6, 4)`, '0.75 * bits(0x8888, n) * (0.8 + 0.2 * every(n, 16))', { length: 3.2 }, {
+        steps: 32, octave: 2, volume: 0.68, release: 0.15, swing: 0.16, send: 0.1,
+      }),
+      voice('Rhodes', 'keys', voicedPitch(4), '0.4 * bits(pick(floor(n / 16), 0x8040, 0x0208), n)', { chord: 4, inversion: voicedInversion(4), length: 5 }, {
+        steps: 32, octave: 4, volume: 0.38, send: 0.55, synth: { chorus: 0.4, cutoff: 0.5 },
+      }),
+      voice('Theremin', 'sine', 'h + pick(floor(n / 8) + 4 * (k % 2), 4, 6, 7, 6, 9, 7, 6, 4)', 'phase(n, 16) < 0.9 ? 0.4 : 0', {}, {
+        playMode: 'glide', quantize: false, glide: 0.25, steps: 32, octave: 5, volume: 0.3, send: 0.7, synth: { vibrato: 0.9 },
+      }),
+    ],
+  },
+  {
+    id: 'afterglow',
+    group: 'triphop',
+    name: 'Afterglow',
+    description:
+      '68 bpm late-night R&B in E♭, Imaj7–vi7–ii7–V7: a soft kick and a finger snap, sparse hats with little rolls, a warm sliding sub, a clean guitar strumming major sevenths, a pad that breathes in and glassy bells. Lights low.',
+    song: { bpm: 68, root: 3, scale: 'major', harmony: 'pick(bar, 0, 5, 1, 4)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.75 * bits(pick(floor(n / 16), 0x8020, 0x8024), n)', { volume: 0.78, synth: { tone: -0.4, decay: 1.1 } }),
+      drum('Snap', 'clap', 32, '0.65 * every(n, 16, 8)', { volume: 0.55, send: 0.4, synth: { decay: 0.4, tone: 0.4 } }),
+      drum('Hats', 'hat', 32, '(0.25 + 0.12 * every(n, 4)) * every(n, 2) * chance(n + 32k, 0.85, 3)', { ratchet: 'n % 16 == 14 && k % 2 ? 3 : 1', swing: 0.14, volume: 0.36 }),
+      voice('Sub', 'sine', ROOT, 'phase(n, 16) < 0.85 ? 0.7 : 0', {}, {
+        playMode: 'glide', quantize: true, glide: 0.18, steps: 32, octave: 2, volume: 0.62, send: 0, release: 0.3,
+      }),
+      voice('Guitar', 'pluck', voicedPitch(4), '0.45 * bits(pick(floor(n / 16), 0x8208, 0x0822), n)', { chord: 4, inversion: voicedInversion(4), length: 3, strum: 0.06 }, {
+        steps: 32, octave: 4, volume: 0.42, send: 0.55, pan: -0.2, synth: { chorus: 0.35 },
+      }),
+      voice('Pad', 'pad', voicedPitch(4), '0.3 * every(n, 16)', { chord: 4, inversion: voicedInversion(4), length: 16 }, {
+        steps: 32, octave: 3, volume: 0.28, attack: 1, release: 1.8, send: 0.85,
+      }),
+      voice('Bells', 'bell', 'h + pick(floor(n / 4) + k, 4, 6, 7, 9, 7, 6)', '0.28 * every(n, 4, 2) * chance(floor(n / 4) + 8k, 0.45, 17)', { length: 2 }, {
+        steps: 32, octave: 5, volume: 0.24, send: 0.8, pan: 0.3, synth: { delay: 0.35, delayTime: 0.75 },
+      }),
+    ],
+  },
+  {
+    id: 'electroswing',
+    group: 'dance',
+    name: 'Electro Swing',
+    description:
+      '124 bpm swing house in G minor, i–iv–V–i: four on the floor under swung triplet hats, a clap on 2 and 4, a walking bass, brass stabs on the offbeats, a clarinet-like line in harmonic minor and a scratchy 78-rpm crackle.',
+    song: { bpm: 124, root: 7, scale: 'harmonicMinor', harmony: 'pick(bar, 0, 3, 4, 0)' },
+    tracks: [
+      drum('Kick', 'kick', 32, 'every(n, 4)', { volume: 0.9 }),
+      drum('Clap', 'clap', 32, '0.75 * every(n, 8, 4)', { volume: 0.6, send: 0.25 }),
+      drum('Hats', 'hat', 32, '0.3 + 0.25 * every(n, 2, 1) + 0.06 * rand(n + 32k, 5)', { swing: 0.33, volume: 0.45 }),
+      drum('Crackle', 'hat', 32, '0.05 + 0.07 * chance(n + 32k, 0.3, 21)', { ratchet: '1 + floor(2 * rand(n + 32k, 22))', volume: 0.14, send: 0, synth: { tone: 0.9, decay: 0.3 } }),
+      voice('Walking bass', 'triangle', `${ROOT} + pick(floor(n / 4) % 4, 0, 2, 4, 6)`, '0.8 * every(n, 4) + 0.3 * every(n, 8, 6)', { length: 3.2 }, {
+        steps: 32, octave: 2, volume: 0.72, release: 0.1, swing: 0.33, send: 0.08,
+      }),
+      voice('Brass', 'brass', voicedPitch(3), '0.5 * bits(pick(floor(n / 16), 0x2220, 0x2026), n)', { chord: 3, inversion: voicedInversion(3), length: 1 }, {
+        steps: 32, octave: 4, volume: 0.36, swing: 0.33, send: 0.3, pan: 0.2,
+      }),
+      voice('Clarinet', 'flute', 'h + pick(floor(n / 2) + 4 * (k % 2), 4, 3, 4, 6, 7, 6, 4, 2, 0, 2, 3, 4, 7, 6, 4, 2)', '0.42 * every(n, 2) * (n % 16 < 14)', { length: 1.7 }, {
+        steps: 32, octave: 5, volume: 0.3, swing: 0.33, send: 0.35, attack: 0.02, pan: -0.2, synth: { vibrato: 0.4 },
       }),
     ],
   },

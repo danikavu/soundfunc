@@ -1726,6 +1726,18 @@ button:focus-visible {
   min-height: 0;
   scrollbar-width: thin;
 }
+.kit-list .kit-group-head {
+  padding: 10px 10px 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 2px;
+}
+.kit-list .kit-group-head:first-child {
+  padding-top: 2px;
+}
 .kit-list button {
   display: block;
   width: 100%;
