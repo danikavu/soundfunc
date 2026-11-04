@@ -22,6 +22,7 @@ import { WAVEFORMS, type Waveform } from './project';
 import { fitToSpan, importedPitch, importMath } from './importMath';
 import { auditionGraph, blockFromSelection, collapseNodes, curveToFormula, explodeFormula, insertBlock } from './graphEdit';
 import { BLOCKS } from './blocks';
+import { Take, jamMidi, jamWav } from './jam';
 import { applyGrid } from './steps';
 import { asKit, cleanProject, kitFile, kitOf, readKitFile, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
 
@@ -1585,5 +1586,72 @@ describe('saved rhythm kits', () => {
       expect(a, t.name).toEqual(b);
     });
     expect(() => readKitFile('{"kind":"soundfunc-functions","functions":[]}')).toThrow(/kits file/);
+  });
+});
+
+describe('jam takes', () => {
+  /** the tempo (bpm at tick) meta events and the note-ons of a MIDI file */
+  const scan = (bytes: Uint8Array) => {
+    const tempos: number[] = [];
+    let ons = 0;
+    for (let i = 0; i + 5 < bytes.length; i++) {
+      if (bytes[i] === 0xff && bytes[i + 1] === 0x51 && bytes[i + 2] === 3) tempos.push(Math.round(60_000_000 / ((bytes[i + 3] << 16) | (bytes[i + 4] << 8) | bytes[i + 5])));
+    }
+    // count note-ons with velocity (status 0x9n, a note, a velocity > 0) — fine for a sanity check
+    for (let i = 0; i + 2 < bytes.length; i++) if ((bytes[i] & 0xf0) === 0x90 && bytes[i + 1] < 128 && bytes[i + 2] > 0 && bytes[i + 2] < 128) ons++;
+    return { tempos, ons };
+  };
+
+  it('records what plays from its bar line, cuts at its end, and keeps the tempo changes', () => {
+    const kit = KITS.find((k) => k.id === 'lowrider')!;
+    const song = { ...defaultProject().song, ...kit.song };
+    const tracks = kit.tracks.map((t, i) => trackFromTemplate(t, t.name, i));
+    // the take is armed at beat 8 of the engine and ends at beat 24
+    const take = new Take(8, 'Jam', song);
+    for (let k = 0; k < 4; k++)
+      for (const tr of tracks) {
+        const r = renderTrack(tr, song, k, false);
+        const len = patternBeats(tr);
+        for (const n of r.notes) take.note(tr, k * len + n.beat, n);
+        r.curve.beat.forEach((b, i) => take.glide(tr, k * len + b, r.curve.midi[i], r.curve.velocity[i]));
+      }
+    take.tempo(16, 100);
+    take.end = 24;
+    const jam = take.finish(24, 10, null);
+    expect(jam.beats).toBe(16);
+    expect(jam.tempos).toEqual([{ beat: 0, bpm: 92 }, { beat: 8, bpm: 100 }]);
+    const kick = jam.parts.find((p) => p.track.name === 'Kick')!;
+    // the kick from engine beats 8 – 24 only, shifted to start at 0, nothing ringing past the end
+    expect(kick.notes.every((n) => n.beat >= 0 && n.beat + n.duration <= 16 + 1e-9)).toBe(true);
+    expect(kick.notes.length).toBe(16); // four a bar
+    expect(jam.parts.find((p) => p.track.name === 'G-funk whistle')!.glide.length).toBeGreaterThan(10);
+    const { tempos, ons } = scan(jamMidi(jam, 'standard'));
+    expect(tempos).toEqual([92, 100]);
+    expect(ons).toBeGreaterThan(20);
+    expect(scan(jamMidi(jam, 'notes')).ons).toBeGreaterThan(20);
+  });
+
+  it('a silent glide closes its phrase, and channels that never sounded are left out', () => {
+    const tr = trackFromTemplate(KITS.find((k) => k.id === 'lowrider')!.tracks.find((t) => t.name === 'G-funk whistle')!, 'Whistle', 0);
+    const quiet = trackFromTemplate(KITS[0].tracks[0], 'Quiet', 1);
+    const take = new Take(0, 'Jam', defaultProject().song);
+    take.glide(tr, 0, 80, 0.5);
+    take.glide(tr, 1, 81, 0.5);
+    take.hush(tr.id, 2);
+    take.glide(quiet, 1, 60, 0);
+    const jam = take.finish(4, 2, null);
+    expect(jam.parts.length).toBe(1);
+    expect(jam.parts[0].glide.at(-1)).toEqual({ beat: 2, midi: 81, velocity: 0 });
+  });
+
+  it('writes the audio as a 16-bit stereo WAV', () => {
+    const chunks = [new Int16Array([1, -1, 2, -2]), new Int16Array([3, -3])];
+    const wav = jamWav({ sampleRate: 48000, chunks, frames: 3 });
+    const v = new DataView(wav.buffer);
+    expect(String.fromCharCode(...wav.slice(0, 4))).toBe('RIFF');
+    expect(v.getUint32(24, true)).toBe(48000);
+    expect(v.getUint16(22, true)).toBe(2);
+    expect(v.getUint32(40, true)).toBe(12);
+    expect(v.getInt16(44 + 10, true)).toBe(-3);
   });
 });

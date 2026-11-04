@@ -9,6 +9,9 @@ import { FIXED_LENGTHS, shortBeats } from '../engine/steps';
 import { Dropdown } from './Dropdown';
 import { HARMONY_VARS, isDrum, patternBeats } from '../engine/project';
 import { Icon, Seg, Stepper, TextField, download, fileSafe, isProject } from './ui';
+import { JamRecorder } from './JamRecorder';
+import { clock } from '../engine/jam';
+import { JAM_FILES, exportJam, useJam } from '../state/jam';
 
 export function toast(msg: string) {
   window.dispatchEvent(new CustomEvent('sf-toast', { detail: msg }));
@@ -49,6 +52,7 @@ function FileMenu() {
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { project, loadProject } = useStore();
+  const jam = useJam((s) => s.jam);
 
   useEffect(() => {
     if (!open) return;
@@ -91,6 +95,18 @@ function FileMenu() {
               </small>
             </button>
           ))}
+          {jam && (
+            <>
+              <hr />
+              <div className="menu-title">Last jam · {clock(jam.seconds)}</div>
+              {JAM_FILES.map((f) => (
+                <button key={f.kind} disabled={f.kind === 'wav' && !jam.audio} onClick={run(() => exportJam(f.kind))}>
+                  Jam — {f.label} <small>{f.hint}</small>
+                </button>
+              ))}
+              <hr />
+            </>
+          )}
           <button onClick={run(() => download(`${name}-notes.csv`, exportNotesCsv(project), 'text/csv'))}>
             Note data <small>CSV of pitch, velocity, key, timing</small>
           </button>
@@ -260,6 +276,7 @@ export function TopBar() {
         <button className={`play ${playing ? 'on' : ''}`} onClick={() => void togglePlay()} title="Play / stop (space)">
           <Icon name={playing ? 'stop' : 'play'} size={18} />
         </button>
+        <JamRecorder />
         <div className="field-inline w-tempo">
           <span>Tempo</span>
           <Stepper className="tempo" label="Tempo" title="Beats per minute (20–300) — type it, use the arrows, or ↑/↓" min={20} max={300} value={song.bpm} onValue={(bpm) => setSong({ bpm })} />

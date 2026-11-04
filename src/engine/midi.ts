@@ -1,4 +1,4 @@
-import { audibleTracks, isDrum, keyLabel, patternBeats, renderTrack, songBeats, songWindows, type Note, type Project, type Track, type Waveform } from './project';
+import { audibleTracks, isDrum, keyLabel, patternBeats, renderTrack, songBeats, songWindows, type Note, type Project, type Song, type Track, type Waveform } from './project';
 
 const PPQ = 480;
 /** the pitch-bend ranges we offer: the instrument receiving the file must be set to the same */
@@ -380,16 +380,29 @@ function glideAsNotes(points: GlidePoint[], total: number): Note[] {
 }
 
 export function exportMidi(project: Project, stats: CurveStats = { raw: 0, kept: 0 }, mode: MidiMode = project.song.exportMidi ?? 'standard'): Uint8Array {
-  const { song } = project;
-  const all = collectNotes(project);
-  const total = exportBeats(project);
+  return writeMidi(project.name, project.song, collectNotes(project), exportBeats(project), [{ beat: 0, bpm: project.song.bpm }], stats, mode);
+}
 
+/** a tempo from `beat` on — a jam can change tempo as it goes */
+export interface TempoMark {
+  beat: number;
+  bpm: number;
+}
+
+/**
+ * A type-1 MIDI file of `all` (notes and glides in absolute beats, 0 … total): a conductor track
+ * with the name, tempo map, 4/4 and the key, then one track per channel.
+ */
+export function writeMidi(name: string, song: Song, all: ExportTrack[], total: number, tempos: TempoMark[], stats: CurveStats = { raw: 0, kept: 0 }, mode: MidiMode = 'standard'): Uint8Array {
   const minor = MINOR_SCALES.has(song.scale);
   const sf = MAJOR_SF[minor ? (song.root + 3) % 12 : song.root];
-  const usPerBeat = Math.round(60_000_000 / song.bpm);
+  const tempo = (beat: number, bpm: number) => {
+    const us = Math.round(60_000_000 / bpm);
+    return meta(tick(beat), 0x51, [(us >> 16) & 0xff, (us >> 8) & 0xff, us & 0xff]);
+  };
   const conductor = chunk([
-    meta(0, 0x03, ascii(project.name || 'SoundFunc')),
-    meta(0, 0x51, [(usPerBeat >> 16) & 0xff, (usPerBeat >> 8) & 0xff, usPerBeat & 0xff]),
+    meta(0, 0x03, ascii(name || 'SoundFunc')),
+    ...(tempos.length ? tempos : [{ beat: 0, bpm: song.bpm }]).map((t) => tempo(t.beat, t.bpm)),
     meta(0, 0x58, [4, 2, 24, 8]),
     meta(0, 0x59, [sf & 0xff, minor ? 1 : 0]),
   ]);

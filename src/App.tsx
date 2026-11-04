@@ -3,6 +3,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { engine } from './engine/audio';
 import { useStore } from './state/store';
 import { togglePlay } from './state/transport';
+import { toggleRecord } from './state/jam';
 import { withAudition } from './state/audition';
 import { TopBar } from './components/TopBar';
 import { TitleStrip } from './components/TitleStrip';
@@ -55,6 +56,9 @@ export function App() {
       } else if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         runMutate(e.shiftKey ? 'garden' : 'track');
+      } else if (e.key.toLowerCase() === 'j' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        void toggleRecord();
       } else if (e.code === 'Space') {
         e.preventDefault();
         void togglePlay();

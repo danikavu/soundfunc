@@ -1,6 +1,7 @@
 ## Using it
 
 - **Space** plays / stops. **⌘Z / ⇧⌘Z** undo / redo. Edits are heard live while playing.
+- **Record a jam** — the ● key beside Play, or **J**. Stopped, it plays from the top and records from beat 1; playing, it starts on the next bar. Everything you hear is recorded — every channel, every mutation (R, ⇧R, a node's dice), every slider and tempo change. Press it again to end the take on the next bar (stopping playback ends it right there). The take's card gives **Audio** (WAV of the mix, 16-bit stereo), **MIDI** (notes, with the tempo changes) and **MIDI + automation** (glides and bends as pitch bend), or **Export all** — every file starts on bar 1, so they line up in a DAW. The last take stays under **Export** until the next one. Takes end by themselves after 20 minutes (the audio is held in memory).
 - **Plant a function** (left) adds a channel from a preset: Fibonacci, logistic-map chaos, golden ratio, digits of π, Collatz, Lissajous, Euclidean rhythms…
 - **Node editor** (bottom): double-click the canvas or press *Add node*. Drag a wire into empty space to add a node that's already connected. Every node shows a sparkline of its output over the pattern.
 - **Note Out** decides what you hear each step: `pitch` (mapped onto the key & scale), `velocity` (0 = rest), `length` (in steps).
