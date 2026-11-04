@@ -156,8 +156,9 @@ export interface Kit {
 }
 
 /** the Rhythm kits list, in this order */
-export type KitGroup = 'hiphop' | 'phonk' | 'soul' | 'triphop' | 'dance' | 'latin' | 'breaks' | 'math';
+export type KitGroup = 'mine' | 'hiphop' | 'phonk' | 'soul' | 'triphop' | 'dance' | 'latin' | 'breaks' | 'math';
 export const KIT_GROUPS: Record<KitGroup, string> = {
+  mine: 'My kits',
   hiphop: 'Hip-hop & lo-fi',
   phonk: 'Trap, phonk & funk trap',
   soul: 'Soul, jazz & funk',

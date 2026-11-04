@@ -7,7 +7,7 @@ import { Icon, download, fileSafe } from './ui';
 import { useRef, useState, type ReactNode } from 'react';
 import { functionFile, functionOf, readFunctionFile, useLibrary, type SavedFunction } from '../state/library';
 import { toast } from './TopBar';
-import { canLinkFolder, forgetPresetFolder, mergeFunctions, openPresetFolder, readFolderFiles, usePresetFolder } from '../state/presetFolder';
+import { canLinkFolder, forgetPresetFolder, mergeFunctions, mergeKits, openPresetFolder, readFolderFiles, usePresetFolder } from '../state/presetFolder';
 
 /** Functions you saved: whole tracks — every node with its values — to plant in any garden, or share as a file. */
 function MyFunctions() {
@@ -118,8 +118,8 @@ function MyFunctions() {
                 : folder.name
                   ? folder.needsAccess
                     ? `Reconnect “${folder.name}” — the browser asks for access again after a reload`
-                    : `Your presets folder is “${folder.name}”: one file per function, kept in step as you save and delete. Click to choose another folder.`
-                  : 'Choose a folder for your presets: its functions load here, and every function you save or delete is written to it — one file each'
+                    : `Your presets folder: ${folder.name} — Functions, Rhythm kits and Factory presets, kept in step as you save and delete. Click to choose another.`
+                  : 'Choose where your presets live (Documents is a good place): SoundFunc makes a “SoundFunc Presets” folder there with Functions, Rhythm kits and Factory presets, and keeps it in step as you save and delete'
             }
           >
             <Icon name="folder" size={13} /> <span className="mine-folder-name">{folder.name ? (folder.needsAccess ? `Reconnect ${folder.name}` : folder.name) : 'Open presets folder'}</span>
@@ -137,10 +137,15 @@ function MyFunctions() {
             onChange={async (e) => {
               const list = e.target.files;
               if (!list?.length) return;
-              const { fns, skipped } = await readFolderFiles(list);
+              const { fns, kits, skipped } = await readFolderFiles(list);
               e.target.value = '';
               mergeFunctions(fns);
-              toast(fns.length ? `Loaded ${fns.length} function${fns.length > 1 ? 's' : ''} from the folder${skipped ? ` · ${skipped} file${skipped > 1 ? 's weren’t functions' : ' wasn’t a function'}` : ''}` : 'No function files in that folder');
+              mergeKits(kits);
+              toast(
+                fns.length || kits.length
+                  ? `Loaded ${fns.length} function${fns.length === 1 ? '' : 's'} and ${kits.length} kit${kits.length === 1 ? '' : 's'} from the folder${skipped ? ` · ${skipped} file${skipped > 1 ? 's' : ''} skipped` : ''}`
+                  : 'No SoundFunc files in that folder',
+              );
             }}
           />
         </div>

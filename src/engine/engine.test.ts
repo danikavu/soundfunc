@@ -23,7 +23,7 @@ import { fitToSpan, importedPitch, importMath } from './importMath';
 import { auditionGraph, blockFromSelection, collapseNodes, curveToFormula, explodeFormula, insertBlock } from './graphEdit';
 import { BLOCKS } from './blocks';
 import { applyGrid } from './steps';
-import { cleanProject, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
+import { asKit, cleanProject, kitFile, kitOf, readKitFile, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
 
 const ev = (s: string, scope = {}) => compile(s).fn(scope);
 
@@ -1562,5 +1562,28 @@ describe('mini scores for the preset lists', () => {
     expect(songKey({ ...song, bpm: 140, volume: 0.2, reverb: 0.9 })).toBe(songKey(song));
     expect(songKey({ ...song, root: song.root + 1 })).not.toBe(songKey(song));
     expect(songKey({ ...song, harmony: 'pick(bar, 0, 3)' })).not.toBe(songKey(song));
+  });
+});
+
+describe('saved rhythm kits', () => {
+  it('a track saved as a kit plants back the same channels and song, and survives a file round trip', () => {
+    const project = defaultProject();
+    const saved = kitOf(project, 'Garden');
+    expect(saved.tracks.map((t) => t.name)).toEqual(project.tracks.map((t) => t.name));
+    expect(saved.song).toMatchObject({ bpm: project.song.bpm, root: project.song.root, scale: project.song.scale, harmony: project.song.harmony });
+    const [back] = readKitFile(JSON.stringify(kitFile([saved])));
+    expect(back.name).toBe('Garden');
+    expect(back.tracks.length).toBe(saved.tracks.length);
+    // planted, every channel plays what it played before
+    useStore.getState().loadProject(defaultProject());
+    useStore.getState().addKit(asKit(back), false);
+    const planted = useStore.getState().project;
+    expect(planted.tracks.map((t) => t.name)).toEqual(project.tracks.map((t) => t.name));
+    planted.tracks.forEach((t, i) => {
+      const a = renderTrack(t, planted.song, 0, false).notes.map((n) => [n.beat, n.midi]);
+      const b = renderTrack(project.tracks[i], project.song, 0, false).notes.map((n) => [n.beat, n.midi]);
+      expect(a, t.name).toEqual(b);
+    });
+    expect(() => readKitFile('{"kind":"soundfunc-functions","functions":[]}')).toThrow(/kits file/);
   });
 });

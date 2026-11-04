@@ -4,7 +4,7 @@ import type { GEdge, GNode, Graph, NodeData } from '../engine/graph';
 import type { EditResult } from '../engine/graphEdit';
 import { applyGrid, fixedLengthFor, gridOf, type Grid } from '../engine/steps';
 import type { SavedFunction } from './library';
-import { defaultProject, KITS, pickColor, PRESETS, trackFromPreset, trackFromTemplate, uid } from '../engine/presets';
+import { defaultProject, KITS, pickColor, PRESETS, trackFromPreset, trackFromTemplate, uid, type Kit } from '../engine/presets';
 import { mutateHarmony, mutateOneNode, mutateTrack } from '../engine/mutate';
 import { blockFromSelection, insertBlock, type Block } from '../engine/graphEdit';
 import { formulaNames, harmonyCycleBars, isDrum, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
@@ -61,9 +61,10 @@ interface State {
   showImport: boolean;
   setShowImport: (open: boolean) => void;
   /** plant a multi-track kit (and its tempo/key); replaces the current tracks unless layering */
-  addKit: (kitId: string, layer?: boolean) => void;
+  /** a kit by id (built in), or the kit itself (a saved one) */
+  addKit: (kit: string | Kit, layer?: boolean) => void;
   /** add some of a kit's tracks (e.g. just its drums) to the current garden */
-  addKitTracks: (kitId: string, trackIndexes: number[], adoptSong?: boolean) => void;
+  addKitTracks: (kit: string | Kit, trackIndexes: number[], adoptSong?: boolean) => void;
   duplicateTrack: (id: string) => void;
   /** mute / solo every track at once (one undo step) */
   setAllTracks: (flag: 'muted' | 'solo', on: boolean) => void;
@@ -140,8 +141,8 @@ export const useStore = create<State>()(
           commit((p) => ({ ...p, tracks: [...p.tracks, track] }));
           set({ selectedTrackId: track.id });
         },
-        addKit: (kitId, layer = false) => {
-          const kit = KITS.find((k) => k.id === kitId);
+        addKit: (which, layer = false) => {
+          const kit = typeof which === 'string' ? KITS.find((k) => k.id === which) : which;
           if (!kit) return;
           const start = layer ? get().project.tracks.length : 0;
           const tracks = withNewColors(
@@ -223,8 +224,8 @@ export const useStore = create<State>()(
         },
         showImport: false,
         setShowImport: (showImport) => set({ showImport }),
-        addKitTracks: (kitId, trackIndexes, adoptSong = false) => {
-          const kit = KITS.find((k) => k.id === kitId);
+        addKitTracks: (which, trackIndexes, adoptSong = false) => {
+          const kit = typeof which === 'string' ? KITS.find((k) => k.id === which) : which;
           if (!kit || !trackIndexes.length) return;
           const start = get().project.tracks.length;
           const tracks = withNewColors(
