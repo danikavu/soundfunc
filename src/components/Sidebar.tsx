@@ -1,4 +1,4 @@
-import { PRESETS, TRACK_COLORS, trackFromPreset, trackFromTemplate } from '../engine/presets';
+import { PRESET_GROUPS, PRESETS, TRACK_COLORS, groupOf, trackFromPreset, trackFromTemplate, type PresetGroup } from '../engine/presets';
 import { MiniScore } from './MiniScore';
 import { KitPicker } from './KitPicker';
 import { audibleTracks, stretchOf, voiceLabel } from '../engine/project';
@@ -7,7 +7,7 @@ import { Icon, download, fileSafe } from './ui';
 import { useRef, useState, type ReactNode } from 'react';
 import { functionFile, functionOf, readFunctionFile, useLibrary, type SavedFunction } from '../state/library';
 import { toast } from './TopBar';
-import { canLinkFolder, forgetPresetFolder, mergeFunctions, openPresetFolder, readFolderFiles, usePresetFolder } from '../state/presetFolder';
+import { canLinkFolder, forgetPresetFolder, mergeFunctions, mergeKits, openPresetFolder, readFolderFiles, usePresetFolder } from '../state/presetFolder';
 
 /** Functions you saved: whole tracks — every node with its values — to plant in any garden, or share as a file. */
 function MyFunctions() {
@@ -118,8 +118,8 @@ function MyFunctions() {
                 : folder.name
                   ? folder.needsAccess
                     ? `Reconnect “${folder.name}” — the browser asks for access again after a reload`
-                    : `Your presets folder is “${folder.name}”: one file per function, kept in step as you save and delete. Click to choose another folder.`
-                  : 'Choose a folder for your presets: its functions load here, and every function you save or delete is written to it — one file each'
+                    : `Your presets folder: ${folder.name} — Functions, Rhythm kits and Factory presets, kept in step as you save and delete. Click to choose another.`
+                  : 'Choose where your presets live (Documents is a good place): SoundFunc makes a “SoundFunc Presets” folder there with Functions, Rhythm kits and Factory presets, and keeps it in step as you save and delete'
             }
           >
             <Icon name="folder" size={13} /> <span className="mine-folder-name">{folder.name ? (folder.needsAccess ? `Reconnect ${folder.name}` : folder.name) : 'Open presets folder'}</span>
@@ -137,10 +137,15 @@ function MyFunctions() {
             onChange={async (e) => {
               const list = e.target.files;
               if (!list?.length) return;
-              const { fns, skipped } = await readFolderFiles(list);
+              const { fns, kits, skipped } = await readFolderFiles(list);
               e.target.value = '';
               mergeFunctions(fns);
-              toast(fns.length ? `Loaded ${fns.length} function${fns.length > 1 ? 's' : ''} from the folder${skipped ? ` · ${skipped} file${skipped > 1 ? 's weren’t functions' : ' wasn’t a function'}` : ''}` : 'No function files in that folder');
+              mergeKits(kits);
+              toast(
+                fns.length || kits.length
+                  ? `Loaded ${fns.length} function${fns.length === 1 ? '' : 's'} and ${kits.length} kit${kits.length === 1 ? '' : 's'} from the folder${skipped ? ` · ${skipped} file${skipped > 1 ? 's' : ''} skipped` : ''}`
+                  : 'No SoundFunc files in that folder',
+              );
             }}
           />
         </div>
@@ -174,6 +179,59 @@ function MyFunctions() {
         ))}
       </Fold>
     </>
+  );
+}
+
+/** the presets, by index, in each group — worked out once */
+const PRESETS_BY_GROUP = new Map<PresetGroup, { p: (typeof PRESETS)[number]; i: number }[]>();
+PRESETS.forEach((p, i) => {
+  const g = groupOf(p);
+  PRESETS_BY_GROUP.set(g, [...(PRESETS_BY_GROUP.get(g) ?? []), { p, i }]);
+});
+
+/** One group of Function presets: a small header that folds, remembering whether you left it open. */
+function PresetGroupList({ group, onPlant }: { group: PresetGroup; onPlant: (id: string) => void }) {
+  const items = PRESETS_BY_GROUP.get(group) ?? [];
+  const key = `sf-preset-group-${group}`;
+  const [open, setOpen] = useState(() => {
+    try {
+      const v = localStorage.getItem(key);
+      return v === null ? group === 'start' : v === '1';
+    } catch {
+      return group === 'start';
+    }
+  });
+  if (!items.length) return null;
+  const { label, hint } = PRESET_GROUPS[group];
+  const toggle = () =>
+    setOpen((o) => {
+      try {
+        localStorage.setItem(key, o ? '0' : '1');
+      } catch {
+        /* the choice just isn't remembered */
+      }
+      return !o;
+    });
+  return (
+    <div className={`preset-group ${open ? 'open' : ''}`}>
+      <button className="preset-group-head" onClick={toggle} aria-expanded={open} title={hint}>
+        <span className="preset-group-chevron" aria-hidden>
+          ›
+        </span>
+        <span>{label}</span>
+        <small>{items.length}</small>
+      </button>
+      {open &&
+        items.map(({ p, i }) => (
+          <button key={p.id} className="preset reveal" onClick={() => onPlant(p.id)} title={p.description}>
+            <span className="preset-line">
+              <b>{p.name}</b>
+              <MiniScore id={`preset:${p.id}`} make={() => trackFromPreset(p, i)} color={TRACK_COLORS[i % TRACK_COLORS.length]} />
+            </span>
+            <code>{p.formula}</code>
+          </button>
+        ))}
+    </div>
   );
 }
 
@@ -307,14 +365,8 @@ export function Sidebar() {
       <div className="eyebrow">Plant a function</div>
       <MyFunctions />
       <Fold id="function-presets" title="Function presets" count={PRESETS.length}>
-        {PRESETS.map((p, i) => (
-          <button key={p.id} className="preset reveal" onClick={() => addTrack(p.id)} title={p.description}>
-            <span className="preset-line">
-              <b>{p.name}</b>
-              <MiniScore id={`preset:${p.id}`} make={() => trackFromPreset(p, i)} color={TRACK_COLORS[i % TRACK_COLORS.length]} />
-            </span>
-            <code>{p.formula}</code>
-          </button>
+        {(Object.keys(PRESET_GROUPS) as PresetGroup[]).map((g) => (
+          <PresetGroupList key={g} group={g} onPlant={addTrack} />
         ))}
       </Fold>
     </aside>

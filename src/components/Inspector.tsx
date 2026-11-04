@@ -11,7 +11,7 @@ import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Info, NumberField, Seg, Slider, Stepper, TextField, getRender } from './ui';
 import { StepPicker } from './StepPicker';
-import { BEND_RANGES, MPE_BEND_RANGES } from '../engine/midi';
+import { BEND_RANGES } from '../engine/midi';
 import { FormulaEditor } from './FormulaEditor';
 import { Dropdown } from './Dropdown';
 import { MAX_STEPS, shortBeats, stepLabel } from '../engine/steps';
@@ -610,19 +610,10 @@ function ChannelTab() {
         </Info>
       </div>
       <div className="row export-curves seg-tight" style={{ gap: 8, marginTop: 6, alignItems: 'center' }}>
-        <span className="muted" style={{ fontSize: 11.5, width: 44 }}>Classic</span>
         <Seg<number>
           value={project.song.bendRange ?? 24}
           onChange={(bendRange) => setSong({ bendRange })}
           options={BEND_RANGES.map((r) => ({ value: r, label: `±${r}` }))}
-        />
-      </div>
-      <div className="row export-curves seg-tight" style={{ gap: 8, marginTop: 6, alignItems: 'center' }}>
-        <span className="muted" style={{ fontSize: 11.5, width: 44 }}>MPE</span>
-        <Seg<number>
-          value={project.song.mpeBendRange ?? 48}
-          onChange={(mpeBendRange) => setSong({ mpeBendRange })}
-          options={MPE_BEND_RANGES.map((r) => ({ value: r, label: `±${r}` }))}
         />
       </div>
       <div className="row export-curves" style={{ gap: 8, marginTop: 10, alignItems: 'center' }}>
@@ -636,7 +627,7 @@ function ChannelTab() {
           ]}
         />
         <Info>
-          For the two automation exports (Export → MIDI + automation, MIDI + MPE automation): glides and note bends go out as pitch bend, volume as
+          For the automation export (Export → MIDI + automation): glides and note bends go out as pitch bend, volume as
           expression or pressure. Simplified keeps only the points that redraw each curve when a DAW joins them with straight lines — corners stay,
           straight runs collapse to their two ends (within 3 cents of pitch). Every sample writes all of them, 16 per step.
         </Info>

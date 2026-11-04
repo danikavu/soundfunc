@@ -7,7 +7,7 @@
  * the list only ever renders a function once per song setting.
  */
 import { DEFAULT_PITCH_RANGE } from './music';
-import { isDrum, patternBeats, renderTrack, type Song, type Track } from './project';
+import { isDrum, patternBeats, renderTrack, type Note, type Song, type Track } from './project';
 
 export const MINI_W = 120;
 export const MINI_H = 24;
@@ -28,29 +28,49 @@ export function songKey(song: Song): string {
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
-/** draw one pass of `track` (already fitted to the song, as planting would) */
+/** every preview shows the same stretch of time, so they compare at a glance: 4 bars of 4/4 */
+export const PREVIEW_BEATS = 16;
+/** passes rendered at most; a very short pattern cycles through them (only k-driven ones differ anyway) */
+const MAX_PASSES = 16;
+
+/** draw the first PREVIEW_BEATS of `track` (already fitted to the song, as planting would) — pass after pass, k counting */
 export function miniScore(track: Track, song: Song, W = MINI_W, H = MINI_H): MiniScore {
   const length = patternBeats(track);
-  const { notes, curve } = renderTrack(track, song, 0, false);
-  const drum = isDrum(track.waveform);
-  const xOf = (beat: number) => (beat / length) * W;
   if (!(length > 0)) return { kind: 'silent', bars: [], path: '' };
+  const window = PREVIEW_BEATS;
+  const passes = Math.ceil(window / length - 1e-9);
+  const renders = Array.from({ length: Math.min(passes, MAX_PASSES) }, (_, k) => renderTrack(track, song, k, false));
+  const notes: Note[] = [];
+  const beats: number[] = [], midi: number[] = [], velocity: number[] = [];
+  for (let k = 0; k < passes; k++) {
+    const r = renders[k % renders.length];
+    const at = k * length;
+    for (const n of r.notes) if (at + n.beat < window) notes.push({ ...n, beat: at + n.beat });
+    r.curve.beat.forEach((b, i) => {
+      if (at + b >= window) return;
+      beats.push(at + b);
+      midi.push(r.curve.midi[i]);
+      velocity.push(r.curve.velocity[i]);
+    });
+  }
+  const drum = isDrum(track.waveform);
+  const xOf = (beat: number) => (beat / window) * W;
 
   if (track.playMode === 'glide' && !drum) {
     let lo = Infinity, hi = -Infinity;
-    curve.midi.forEach((m, i) => curve.velocity[i] >= 0.01 && ((lo = Math.min(lo, m)), (hi = Math.max(hi, m))));
+    midi.forEach((m, i) => velocity[i] >= 0.01 && ((lo = Math.min(lo, m)), (hi = Math.max(hi, m))));
     if (!Number.isFinite(lo)) return { kind: 'silent', bars: [], path: '' };
     const mid = (lo + hi) / 2, half = Math.max(3, (hi - lo) / 2);
     const yOf = (m: number) => H - 2 - ((m - (mid - half)) / (2 * half)) * (H - 4);
-    // about one point per unit of width: plenty for the eye, a short path for the DOM
-    const stride = Math.max(1, Math.floor(curve.midi.length / W));
+    // about two points per unit of width: plenty for the eye, a short path for the DOM
+    const stride = Math.max(1, Math.floor(midi.length / (2 * W)));
     let path = '', pen = false;
-    for (let i = 0; i < curve.midi.length; i += stride) {
-      if (curve.velocity[i] < 0.01) {
+    for (let i = 0; i < midi.length; i += stride) {
+      if (velocity[i] < 0.01) {
         pen = false;
         continue;
       }
-      path += `${pen ? 'L' : 'M'}${r1(xOf(curve.beat[i]))},${r1(yOf(curve.midi[i]))}`;
+      path += `${pen ? 'L' : 'M'}${r1(xOf(beats[i]))},${r1(yOf(midi[i]))}`;
       pen = true;
     }
     return { kind: 'glide', bars: [], path };
@@ -77,7 +97,7 @@ export function miniScore(track: Track, song: Song, W = MINI_W, H = MINI_H): Min
   const yOf = (m: number) => H - 1 - ((m - base + 0.5) / span) * (H - 2) - noteH / 2;
   return {
     kind: 'notes',
-    // a note ringing past the pass ends at the box's edge
+    // a note ringing past the window ends at the box's edge
     bars: notes.map((n) => [r1(xOf(n.beat)), r1(yOf(n.midi)), Math.max(minW, r1(Math.min(xOf(n.duration), W - xOf(n.beat)) - 0.4)), noteH, 0.4 + n.velocity * 0.6]),
     path: '',
   };

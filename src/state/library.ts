@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { uid } from '../engine/presets';
+import { uid, type Kit } from '../engine/presets';
+import { NOTE_NAMES, SCALES } from '../engine/music';
 import type { Block } from '../engine/graphEdit';
-import { normalizeProject, TRACK_DEFAULTS, type Project, type Slider, type Track, type Waveform } from '../engine/project';
+import { normalizeProject, TRACK_DEFAULTS, type Project, type Slider, type Song, type Track, type Waveform } from '../engine/project';
 
 /** The sound of a track, without its notes: reusable across tracks and projects. */
 export interface Voice {
@@ -72,6 +73,70 @@ export function readFunctionFile(text: string): SavedFunction[] {
 
 export const functionFile = (functions: SavedFunction[]): FunctionFile => ({ kind: 'soundfunc-functions', version: 1, functions });
 
+/**
+ * A rhythm kit you saved: every channel of a track (nodes, sliders, sound, grid) and the
+ * song settings that make it groove: tempo, key, scale, harmony, length.
+ */
+export interface SavedKit {
+  id: string;
+  name: string;
+  description: string;
+  savedAt: number;
+  song: Partial<Song>;
+  tracks: Kit['tracks'];
+}
+
+/** the file format for sharing kits */
+export interface KitFile {
+  kind: 'soundfunc-kits';
+  version: 1;
+  kits: SavedKit[];
+}
+
+export function kitOf(project: Project, name: string): SavedKit {
+  const { song } = project;
+  const tracks = project.tracks.map((t) => {
+    const { id: _id, color: _color, muted: _m, solo: _s, ...rest } = t;
+    return {
+      ...rest,
+      graph: {
+        nodes: t.graph.nodes.map(({ id, type, position, data }) => ({ id, type, position: { x: Math.round(position.x), y: Math.round(position.y) }, data: structuredClone(data) })),
+        edges: t.graph.edges.map(({ id, source, sourceHandle, target, targetHandle }) => ({ id, source, sourceHandle, target, targetHandle })),
+      },
+      sliders: t.sliders.map((sl) => ({ ...sl })),
+    };
+  });
+  const scale = (SCALES[song.scale] ?? SCALES.major).label;
+  return {
+    id: uid('kit'),
+    name,
+    description: `${tracks.length} channel${tracks.length === 1 ? '' : 's'} · ${song.bpm} bpm · ${NOTE_NAMES[song.root]} ${scale}: ${tracks.map((t) => t.name).join(', ')}`,
+    savedAt: Date.now(),
+    song: { bpm: song.bpm, root: song.root, scale: song.scale, harmony: song.harmony, lengthMode: song.lengthMode, lengthBeats: song.lengthBeats, repeat: song.repeat, pitchRange: { ...song.pitchRange } },
+    tracks,
+  };
+}
+
+/** a saved kit as the kit picker plants it */
+export const asKit = (k: SavedKit): Kit => ({ id: `mine:${k.id}`, name: k.name, description: k.description, group: 'mine', song: k.song, tracks: k.tracks });
+
+/** read a kits file; throws a plain-language error for anything else */
+export function readKitFile(text: string): SavedKit[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error('That file isn’t JSON');
+  }
+  const f = data as Partial<KitFile>;
+  if (f.kind !== 'soundfunc-kits' || !Array.isArray(f.kits)) throw new Error('That file isn’t a SoundFunc kits file');
+  return f.kits
+    .filter((k) => k && typeof k.name === 'string' && Array.isArray(k.tracks) && k.tracks.every((t) => t && Array.isArray(t.graph?.nodes)))
+    .map((k) => ({ ...k, id: k.id || uid('kit'), description: k.description ?? '', savedAt: k.savedAt ?? Date.now(), song: k.song ?? {}, tracks: k.tracks.map((t) => ({ ...TRACK_DEFAULTS, ...t, sliders: t.sliders ?? [] })) }));
+}
+
+export const kitFile = (kits: SavedKit[]): KitFile => ({ kind: 'soundfunc-kits', version: 1, kits });
+
 export interface SavedProject {
   id: string;
   name: string;
@@ -117,6 +182,12 @@ interface Library {
   projects: SavedProject[];
   blocks: Block[];
   functions: SavedFunction[];
+  kits: SavedKit[];
+  /** saving under an existing name replaces it */
+  saveKit: (kit: SavedKit) => void;
+  deleteKit: (id: string) => void;
+  /** add kits from a file; names that already exist get a number; returns how many */
+  importKits: (kits: SavedKit[]) => number;
   saveFunction: (fn: SavedFunction) => void;
   deleteFunction: (id: string) => void;
   /** add functions from a file; names that already exist get a number; returns how many */
@@ -137,6 +208,20 @@ export const useLibrary = create<Library>()(
       projects: [],
       blocks: [],
       functions: [],
+      kits: [],
+      saveKit: (kit) => set((s) => ({ kits: [...s.kits.filter((k) => k.name !== kit.name), kit] })),
+      deleteKit: (id) => set((s) => ({ kits: s.kits.filter((k) => k.id !== id) })),
+      importKits: (kits) => {
+        const taken = new Set(get().kits.map((k) => k.name));
+        const added = kits.map((k) => {
+          let name = k.name, i = 2;
+          while (taken.has(name)) name = `${k.name} ${i++}`;
+          taken.add(name);
+          return { ...k, id: uid('kit'), name };
+        });
+        set((s) => ({ kits: [...s.kits, ...added] }));
+        return added.length;
+      },
       // saving under an existing name replaces it
       saveFunction: (fn) => set((s) => ({ functions: [...s.functions.filter((f) => f.name !== fn.name), fn] })),
       deleteFunction: (id) => set((s) => ({ functions: s.functions.filter((f) => f.id !== id) })),
@@ -172,6 +257,7 @@ export const useLibrary = create<Library>()(
           ...current,
           voices: p?.voices ?? [],
           blocks: p?.blocks ?? [],
+          kits: p?.kits ?? [],
           functions: (p?.functions ?? []).map(({ sliders, ...f }) => ({ ...f, track: { ...TRACK_DEFAULTS, ...f.track, sliders: f.track.sliders ?? sliders ?? [] } })),
           projects: (p?.projects ?? []).map((sp) => ({ ...sp, project: normalizeProject(sp.project) })),
         };

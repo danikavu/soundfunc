@@ -408,6 +408,17 @@ export function fmtNum(x: number): string {
   return String(Number(x.toFixed(4)));
 }
 
+/**
+ * A number in a formula or in code: short when 4 decimals hold it exactly, otherwise every
+ * digit. A rewritten formula must play exactly as before: 1/6 printed as 0.1667 shifts the
+ * step boundaries, and 0.002354 as 0.0024 changes a riser by 2%.
+ */
+export function exactNum(x: number): string {
+  if (Number.isInteger(x)) return String(x);
+  const short = Number(x.toFixed(4));
+  return short === x ? String(short) : String(x);
+}
+
 function precOf(ast: Ast): number {
   switch (ast.k) {
     case 'num':
@@ -428,7 +439,7 @@ export function toSource(ast: Ast, min = 0): string {
   const wrap = (s: string) => (precOf(ast) < min ? `(${s})` : s);
   switch (ast.k) {
     case 'num':
-      return wrap(ast.raw ?? fmtNum(ast.v));
+      return wrap(ast.raw ?? exactNum(ast.v));
     case 'var':
     case 'const':
       return ast.name;
@@ -571,7 +582,7 @@ export function toCode(ast: Ast, lang: Lang, min = 0): string {
   const r = (a: Ast, m = 0) => toCode(a, lang, m);
   switch (ast.k) {
     case 'num':
-      return wrap(ast.raw ?? fmtNum(ast.v));
+      return wrap(ast.raw ?? exactNum(ast.v));
     case 'var':
       return ast.name;
     case 'const':
@@ -629,6 +640,7 @@ export function toCode(ast: Ast, lang: Lang, min = 0): string {
 const JS_HELPERS: Record<string, string> = {
   mod: 'function mod(a, b) { return b === 0 ? 0 : ((a % b) + b) % b; }',
   div: 'function div(a, b) { return b === 0 ? 0 : a / b; }',
+  fin: 'function fin(v) { return Number.isFinite(v) ? v : 0; }',
   fract: 'function fract(x) { return x - Math.floor(x); }',
   bend: 'function bend(t, b) { const c = 6 * b; return Math.abs(c) < 1e-6 ? t : (Math.exp(c * t) - 1) / (Math.exp(c) - 1); }',
   clamp: 'function clamp(x, lo = 0, hi = 1) { return Math.min(Math.max(x, lo), hi); }',
@@ -673,6 +685,7 @@ const JS_HELPERS: Record<string, string> = {
 const PY_HELPERS: Record<string, string> = {
   mod: 'def mod(a, b):\n    return 0 if b == 0 else ((a % b) + b) % b',
   div: 'def div(a, b):\n    return 0 if b == 0 else a / b',
+  fin: 'def fin(v):\n    return v if isinstance(v, (int, float)) and math.isfinite(v) else 0',
   jsround: 'def jsround(x):\n    return math.floor(x + 0.5)  # JavaScript rounding: halves go up',
   sign: 'def sign(x):\n    return (x > 0) - (x < 0)',
   fract: 'def fract(x):\n    return x - math.floor(x)',
@@ -867,6 +880,7 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
   for (const c of cs) {
     const { track, math } = c;
     if (!math.hasOutput) continue;
+    fns.add('fin');
     let name = ident(track.name, lang);
     while (used.has(name)) name += '_';
     used.add(name);
@@ -892,17 +906,18 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
     }
     if (vars.has('L')) clock.push(`${pre}L = ${L}${end}  ${lang === 'js' ? '//' : '#'} scale degrees per octave`);
     // this track's sliders — change these to change the music
-    const sliders = (track.sliders ?? []).filter((sl) => vars.has(sl.name)).map((sl) => `${pre}${sl.name} = ${fmtNum(sl.value)}${end}  ${lang === 'js' ? '//' : '#'} slider ${fmtNum(sl.min)} … ${fmtNum(sl.max)}`);
+    const sliders = (track.sliders ?? []).filter((sl) => vars.has(sl.name)).map((sl) => `${pre}${sl.name} = ${exactNum(sl.value)}${end}  ${lang === 'js' ? '//' : '#'} slider ${fmtNum(sl.min)} … ${fmtNum(sl.max)}`);
     clock.unshift(...sliders);
     const binds = math.bindings.map((b) => `${pre}${b.name} = ${toCode(b.ast, lang)}${end}  ${lang === 'js' ? '//' : '#'} ${b.label}`);
     const mode = `${describeTrack(track, song)} · ${track.steps} steps of ${track.stepBeats} beats${stretchOf(track) !== 1 ? ` · stretched ×${fmtNum(stretchOf(track))} in time` : ''}`;
     if (lang === 'js') {
-      const outs = math.outputs.map((o) => `    ${o.port}: ${toCode(o.ast, 'js')},`);
+      // like the engine: a result that isn't a number (0/0, √−1) plays as 0
+      const outs = math.outputs.map((o) => `    ${o.port}: fin(${toCode(o.ast, 'js')}),`);
       body.push(
         `\n/** ${track.name} — ${mode} */\nexport function ${name}(n, k = 0${vars.has('np') ? ', np = 0' : ''}) {\n${[...clock, ...binds].map((l) => `  ${l}`).join('\n')}${clock.length + binds.length ? '\n' : ''}  return {\n${outs.join('\n')}\n  };\n}`,
       );
     } else {
-      const outs = math.outputs.map((o) => `        "${o.port}": ${toCode(o.ast, 'py')},`);
+      const outs = math.outputs.map((o) => `        "${o.port}": fin(${toCode(o.ast, 'py')}),`);
       body.push(
         `\n\ndef ${name}(n, k=0${vars.has('np') ? ', np=0' : ''}):\n    """${track.name} — ${mode}"""\n${[...clock, ...binds].map((l) => `    ${l}`).join('\n')}${clock.length + binds.length ? '\n' : ''}    return {\n${outs.join('\n')}\n    }`,
       );

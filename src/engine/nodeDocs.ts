@@ -109,9 +109,9 @@ export const NODE_DOCS: Record<string, string> = {
   'output.chord': 'chord — how many notes to stack (1 = a single note, 3 = a triad, 4 = a seventh chord)',
   'output.stack': 'stack — scale steps between chord notes: 2 = thirds (ordinary chords), 3 = fourths (open, modal), 1 = clusters',
   'output.inversion': 'inversion — lift the lowest chord notes an octave (0, 1, 2…) so the voicing changes shape',
-  'output.bend': 'bend — semitones added to each note while it sounds, read continuously: scoops, falls, vibrato, 808 slides. Chords bend together. Exports per note with MPE',
-  'output.pressure': 'pressure — how hard each note is held, 0 … 1, while it sounds: swells and fades inside a note. Exports as MPE pressure',
-  'output.slide': 'slide — MPE’s timbre axis (CC74), 0 … 1, while each note sounds. SoundFunc’s own voices ignore it; MPE synths use it for brightness',
+  'output.bend': 'bend — semitones added to each note while it sounds, read continuously: scoops, falls, vibrato, 808 slides. Chords bend together. Exports as pitch bend (MIDI + automation)',
+  'output.pressure': 'pressure — how hard each note is held, 0 … 1, while it sounds: swells and fades inside a note. Exports as channel pressure (MIDI + automation)',
+  'output.slide': 'slide — the timbre axis (CC74), 0 … 1, while each note sounds. SoundFunc’s own voices ignore it; many synths map CC74 to brightness',
   'output.strum': 'strum — spread the chord’s notes in time, in steps (0.05 = a quick strum; negative strums downward)',
 };
 

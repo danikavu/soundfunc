@@ -29,7 +29,10 @@ function Toast() {
   return msg ? <div className="toast">{msg}</div> : null;
 }
 
-/** the three MIDI files: plain notes, notes with automation (classic), notes with per-note automation (MPE) */
+/**
+ * The MIDI files offered: plain notes, and notes with automation. (The engine can also write MPE —
+ * exportMidi(…, 'mpe') — but it isn't offered until it carries more than the automation export does.)
+ */
 const MIDI_EXPORTS: { mode: MidiMode; label: string; hint: string; suffix: string; done: string }[] = [
   { mode: 'notes', label: 'MIDI — notes only', hint: 'Plain notes, tempo & key. Glides become stepped notes; no bends or controllers', suffix: '', done: 'MIDI (notes only)' },
   {
@@ -38,13 +41,6 @@ const MIDI_EXPORTS: { mode: MidiMode; label: string; hint: string; suffix: strin
     hint: 'Classic: one MIDI channel per channel — glides and bends as pitch bend, volume as expression, pressure, CC74',
     suffix: '-automation',
     done: 'MIDI with automation',
-  },
-  {
-    mode: 'mpe',
-    label: 'MIDI + MPE automation',
-    hint: 'Each note on its own channel with its own bend, pressure and slide — for MPE instruments',
-    suffix: '-mpe',
-    done: 'MIDI with MPE automation',
   },
 ];
 

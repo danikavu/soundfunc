@@ -23,7 +23,7 @@ import { fitToSpan, importedPitch, importMath } from './importMath';
 import { auditionGraph, blockFromSelection, collapseNodes, curveToFormula, explodeFormula, insertBlock } from './graphEdit';
 import { BLOCKS } from './blocks';
 import { applyGrid } from './steps';
-import { cleanProject, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
+import { asKit, cleanProject, kitFile, kitOf, readKitFile, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
 
 const ev = (s: string, scope = {}) => compile(s).fn(scope);
 
@@ -334,7 +334,9 @@ describe('symbolic: the written-out function equals the graph', () => {
         for (let n = 0; n < track.steps; n++) {
           const scope = scopeFor(track, song, n, k);
           for (const b of c.math.bindings) scope[b.name] = compileAst(b.ast)(scope);
-          const val = (port: string) => compileAst(c.math.outputs.find((o) => o.port === port)!.ast)(scope);
+          // the engine plays a result that isn't a number (0/0) as 0; the written-out math can't say so
+          const fin = (v: number) => (Number.isFinite(v) ? v : 0);
+          const val = (port: string) => fin(compileAst(c.math.outputs.find((o) => o.port === port)!.ast)(scope));
           expect(val('pitch'), `${label} pitch n=${n} k=${k}`).toBeCloseTo(r.pitchCurve[n], 9);
           expect(Math.min(1, Math.max(0, val('velocity'))), `${label} vel n=${n} k=${k}`).toBeCloseTo(r.velocityCurve[n], 9);
         }
@@ -1390,12 +1392,14 @@ describe('chords, bass and style kits', () => {
     expect([0, 1, 2, 3, 4, 5, 6, 7].map((b) => harmonyAt(song, b))).toEqual([0, 0, 5, 5, 1, 1, 4, 4]);
   });
   it('style kits plant at one fixed length, and their basses land on the chord roots', () => {
-    for (const id of ['jazz', 'bossa', 'salsa', 'funk', 'disco', 'deephouse']) {
+    for (const id of ['jazz', 'bossa', 'salsa', 'funk', 'disco', 'deephouse', 'clicks', 'pocket', 'lofi', 'gfunk', 'dembow', 'amapiano', 'memphisdrift', 'hauntedmemphis', 'goldteeth', 'velour', 'velvet', 'bluenotehop', 'bristol', 'smokerings', 'afterglow', 'electroswing', 'lowrider', 'comptonkeys', 'longbeach', 'talkboxblvd', 'hyphy', 'ratchet']) {
       const kit = KITS.find((k) => k.id === id)!;
       const lens = new Set(kit.tracks.map((t) => (t.steps ?? 16) * (t.stepBeats ?? 0.25) * (t.stretch ?? 1)));
       expect(lens.size, `${id}: every channel the same length`).toBe(1);
       const song = { ...defaultProject().song, ...kit.song };
-      const bass = kit.tracks.find((t) => /bass/i.test(t.name))!;
+      // a gliding 808 plays no separate notes to check: those kits are checked for length only
+      const bass = kit.tracks.find((t) => /bass|sub|log drum|808/i.test(t.name) && t.playMode !== 'glide');
+      if (!bass) continue;
       const tr = trackFromTemplate(bass, bass.name, 0);
       const scale = SCALES[song.scale!].steps;
       const r = renderTrack(tr, song, 0, false);
@@ -1533,27 +1537,53 @@ OTHERWISE:
 
 describe('mini scores for the preset lists', () => {
   it('draws every preset from the real render: notes, glides and drums, inside the box', async () => {
-    const { miniScore, songKey, MINI_W, MINI_H } = await import('./preview');
-    const song = defaultProject().song;
+    const { miniScore, songKey, MINI_W, MINI_H, PREVIEW_BEATS } = await import('./preview');
+    const song = { ...defaultProject().song, lengthMode: 'free' as const };
     const kinds = new Set<string>();
     for (const [i, p] of PRESETS.entries()) {
       const t = trackFromPreset(p, i);
       const m = miniScore(t, song);
       kinds.add(m.kind);
-      const r = renderTrack(t, song, 0, false);
-      if (m.kind === 'notes' || m.kind === 'drums') expect(m.bars.length, p.name).toBe(r.notes.length);
+      // the same 4 bars for every preset: pass after pass (k counting) until the window is full
+      const L = patternBeats(t);
+      let inWindow = 0;
+      for (let k = 0; k * L < PREVIEW_BEATS; k++) inWindow += renderTrack(t, song, k % 16, false).notes.filter((nt) => k * L + nt.beat < PREVIEW_BEATS).length;
+      if (m.kind === 'notes' || m.kind === 'drums') expect(m.bars.length, p.name).toBe(inWindow);
       for (const [x, y, w, h] of m.bars) {
         expect(x, p.name).toBeGreaterThanOrEqual(0);
         expect(x + w, p.name).toBeLessThanOrEqual(MINI_W + 1.5);
         expect(y, p.name).toBeGreaterThanOrEqual(-0.5);
         expect(y + h, p.name).toBeLessThanOrEqual(MINI_H + 0.5);
       }
-      if (m.kind === 'glide') expect(m.path.length, p.name).toBeLessThan(2000); // short paths for the DOM
+      if (m.kind === 'glide') expect(m.path.length, p.name).toBeLessThan(4000); // about two points per unit of width, never thousands
     }
     expect([...kinds]).toEqual(expect.arrayContaining(['notes', 'glide']));
     // what the drawing depends on: key and scale yes; tempo, volume and reverb no
     expect(songKey({ ...song, bpm: 140, volume: 0.2, reverb: 0.9 })).toBe(songKey(song));
     expect(songKey({ ...song, root: song.root + 1 })).not.toBe(songKey(song));
     expect(songKey({ ...song, harmony: 'pick(bar, 0, 3)' })).not.toBe(songKey(song));
+  });
+});
+
+describe('saved rhythm kits', () => {
+  it('a track saved as a kit plants back the same channels and song, and survives a file round trip', () => {
+    const project = defaultProject();
+    const saved = kitOf(project, 'Garden');
+    expect(saved.tracks.map((t) => t.name)).toEqual(project.tracks.map((t) => t.name));
+    expect(saved.song).toMatchObject({ bpm: project.song.bpm, root: project.song.root, scale: project.song.scale, harmony: project.song.harmony });
+    const [back] = readKitFile(JSON.stringify(kitFile([saved])));
+    expect(back.name).toBe('Garden');
+    expect(back.tracks.length).toBe(saved.tracks.length);
+    // planted, every channel plays what it played before
+    useStore.getState().loadProject(defaultProject());
+    useStore.getState().addKit(asKit(back), false);
+    const planted = useStore.getState().project;
+    expect(planted.tracks.map((t) => t.name)).toEqual(project.tracks.map((t) => t.name));
+    planted.tracks.forEach((t, i) => {
+      const a = renderTrack(t, planted.song, 0, false).notes.map((n) => [n.beat, n.midi]);
+      const b = renderTrack(project.tracks[i], project.song, 0, false).notes.map((n) => [n.beat, n.midi]);
+      expect(a, t.name).toEqual(b);
+    });
+    expect(() => readKitFile('{"kind":"soundfunc-functions","functions":[]}')).toThrow(/kits file/);
   });
 });

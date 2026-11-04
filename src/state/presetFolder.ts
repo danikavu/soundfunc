@@ -1,18 +1,30 @@
 /**
- * The presets folder: a folder on your disk that holds your functions, one file each
- * (`name.soundfunc-function.json`, the same file a single download gives). Once opened, My
- * functions and the folder stay in step: everything in the folder is loaded, and saving,
- * importing or deleting a function writes or removes its file.
+ * The presets folder: a "SoundFunc Presets" folder on your disk, laid out as
  *
- * A web page can't open Finder or Explorer, so "opening" the folder means choosing it once
- * (Chrome, Edge — the File System Access API); it is remembered, and the browser asks again
- * for access after a reload. Browsers without the API can still load a folder's functions.
+ *   SoundFunc Presets/
+ *     Functions/        your functions, one file each  (name.soundfunc-function.json)
+ *     Rhythm kits/      your kits, one file each       (name.soundfunc-kit.json)
+ *     Factory presets/  every built-in function and kit, to look at, copy and share
+ *
+ * Once opened, My functions, My kits and the folder stay in step: what's in Functions and
+ * Rhythm kits is loaded, and saving, importing or deleting writes or removes its file.
+ * Factory presets is written for you and never read back.
+ *
+ * A web page can't open Finder or Explorer by itself, so "opening" means choosing where the
+ * folder lives, once (Chrome, Edge — the File System Access API). Pick Documents and SoundFunc
+ * makes "SoundFunc Presets" inside it; pick the SoundFunc Presets folder itself and it's used as
+ * it is. It is remembered; after a reload the browser asks for access again with one click.
+ * Browsers without the API can still load a folder's files once.
  */
 import { create } from 'zustand';
-import { functionFile, readFunctionFile, useLibrary, type SavedFunction } from './library';
+import { functionFile, kitFile, readFunctionFile, readKitFile, useLibrary, type SavedFunction, type SavedKit } from './library';
 import { fileSafe } from '../components/ui';
+import { KITS, PRESETS, trackFromPreset } from '../engine/presets';
 
+export const ROOT_NAME = 'SoundFunc Presets';
+const DIRS = { functions: 'Functions', kits: 'Rhythm kits', factory: 'Factory presets' } as const;
 export const FUNCTION_FILE_SUFFIX = '.soundfunc-function.json';
+export const KIT_FILE_SUFFIX = '.soundfunc-kit.json';
 export const fileNameOf = (name: string) => `${fileSafe(name)}${FUNCTION_FILE_SUFFIX}`;
 
 // what the File System Access API gives (not in every TypeScript DOM library yet)
@@ -27,11 +39,12 @@ interface DirHandle {
   name: string;
   values(): AsyncIterable<FileHandle | DirHandle>;
   getFileHandle(name: string, opts?: { create?: boolean }): Promise<FileHandle>;
+  getDirectoryHandle(name: string, opts?: { create?: boolean }): Promise<DirHandle>;
   removeEntry(name: string): Promise<void>;
   queryPermission(opts: { mode: 'readwrite' }): Promise<PermissionState>;
   requestPermission(opts: { mode: 'readwrite' }): Promise<PermissionState>;
 }
-type Picker = (opts: { id?: string; mode?: 'readwrite' }) => Promise<DirHandle>;
+type Picker = (opts: { id?: string; mode?: 'readwrite'; startIn?: string }) => Promise<DirHandle>;
 const picker = (): Picker | null => (typeof window !== 'undefined' ? ((window as unknown as { showDirectoryPicker?: Picker }).showDirectoryPicker ?? null) : null);
 /** can this browser keep a folder in step (write to it), or only read one? */
 export const canLinkFolder = () => !!picker();
@@ -60,102 +73,116 @@ function idb<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest
   });
 }
 
-// ---------- reading and writing ----------
-
-/** every function in a folder: one per file, or several from an Export all file */
-async function readFolder(dir: DirHandle): Promise<{ fns: SavedFunction[]; fileOf: Map<string, string>; skipped: number }> {
-  const fns: SavedFunction[] = [];
-  const fileOf = new Map<string, string>();
-  let skipped = 0;
-  for await (const entry of dir.values()) {
-    if (entry.kind !== 'file' || !entry.name.toLowerCase().endsWith('.json')) continue;
-    try {
-      const found = readFunctionFile(await (await entry.getFile()).text());
-      for (const f of found) {
-        fns.push(f);
-        // only a one-function file belongs to its function (deleting it removes the file)
-        if (found.length === 1) fileOf.set(f.name, entry.name);
-      }
-    } catch {
-      skipped++;
-    }
-  }
-  return { fns, fileOf, skipped };
-}
+// ---------- files ----------
 
 async function writeFile(dir: DirHandle, name: string, text: string) {
   const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
   await w.write(text);
   await w.close();
 }
-const textOf = (fn: SavedFunction) => JSON.stringify(functionFile([fn]), null, 2);
 
-// ---------- the folder, kept in step with My functions ----------
-
-interface FolderState {
-  /** the folder's name, once chosen */
-  name: string | null;
-  /** chosen, but the browser needs a click to grant access again (after a reload) */
-  needsAccess: boolean;
-  busy: boolean;
+async function names(dir: DirHandle): Promise<Set<string>> {
+  const out = new Set<string>();
+  for await (const e of dir.values()) out.add(e.name);
+  return out;
 }
-export const usePresetFolder = create<FolderState>(() => ({ name: null, needsAccess: false, busy: false }));
 
-let dir: DirHandle | null = null;
-/** what's in the folder by function name: its file, and the text last written or read */
-let files = new Map<string, { file: string; text: string }>();
-let unsubscribe: (() => void) | null = null;
+/**
+ * One kind of thing kept in step with a folder: functions or kits. `read` turns a file into
+ * items (several for an Export all file), `text` writes one item as a file.
+ */
+interface Collection<T extends { name: string }> {
+  suffix: string;
+  read: (text: string) => T[];
+  text: (item: T) => string;
+  list: () => T[];
+  /** put the folder's items into the library: the folder's copy wins for a name both have */
+  merge: (items: T[]) => T[];
+  dir: DirHandle | null;
+  /** what's on disk by item name: its file ('' for one inside a several-item file), and the text last written or read */
+  files: Map<string, { file: string; text: string }>;
+}
 
-/** bring the folder and the library together: the folder's functions in, the library's missing ones out */
-async function connect(d: DirHandle): Promise<{ loaded: number; written: number; skipped: number }> {
-  dir = d;
-  usePresetFolder.setState({ name: d.name, needsAccess: false, busy: true });
-  try {
-    const { fns, fileOf, skipped } = await readFolder(d);
-    const { fromFolder, merged } = mergeFunctions(fns);
-    files = new Map(fromFolder.filter((f) => fileOf.has(f.name)).map((f) => [f.name, { file: fileOf.get(f.name)!, text: textOf(f) }]));
-    for (const f of fromFolder) if (!fileOf.has(f.name)) files.set(f.name, { file: '', text: textOf(f) }); // from a several-function file: already on disk
-    const written = await sync(merged);
-    unsubscribe?.();
-    unsubscribe = useLibrary.subscribe((s, prev) => {
-      if (s.functions !== prev.functions) void sync(s.functions);
-    });
-    return { loaded: fns.length, written, skipped };
-  } finally {
-    usePresetFolder.setState({ busy: false });
+function mergeByName<T extends { id: string; name: string }>(have: T[], incoming: T[]): T[] {
+  const byName = new Map(have.map((x) => [x.name, x]));
+  const fromFolder = incoming.map((x) => ({ ...x, id: byName.get(x.name)?.id ?? x.id }));
+  const taken = new Set(fromFolder.map((x) => x.name));
+  return [...have.filter((x) => !taken.has(x.name)), ...fromFolder];
+}
+
+const functions: Collection<SavedFunction> = {
+  suffix: FUNCTION_FILE_SUFFIX,
+  read: readFunctionFile,
+  text: (fn) => JSON.stringify(functionFile([fn]), null, 2),
+  list: () => useLibrary.getState().functions,
+  merge: (items) => {
+    const merged = mergeByName(useLibrary.getState().functions, items);
+    useLibrary.setState({ functions: merged });
+    return merged;
+  },
+  dir: null,
+  files: new Map(),
+};
+const kits: Collection<SavedKit> = {
+  suffix: KIT_FILE_SUFFIX,
+  read: readKitFile,
+  text: (k) => JSON.stringify(kitFile([k]), null, 2),
+  list: () => useLibrary.getState().kits,
+  merge: (items) => {
+    const merged = mergeByName(useLibrary.getState().kits, items);
+    useLibrary.setState({ kits: merged });
+    return merged;
+  },
+  dir: null,
+  files: new Map(),
+};
+
+/** read every item in a folder (and, for functions, in an older flat folder's top level) */
+async function load<T extends { name: string }>(c: Collection<T>, ...dirs: DirHandle[]): Promise<{ items: T[]; skipped: number }> {
+  const items: T[] = [];
+  let skipped = 0;
+  c.files = new Map();
+  for (const dir of dirs) {
+    for await (const entry of dir.values()) {
+      if (entry.kind !== 'file' || !entry.name.toLowerCase().endsWith('.json')) continue;
+      let found: T[];
+      try {
+        found = c.read(await (await entry.getFile()).text());
+      } catch {
+        // a file of the other kind, or not ours: leave it be
+        if (dir === c.dir) skipped++;
+        continue;
+      }
+      for (const it of found) {
+        items.push(it);
+        // only a one-item file in this collection's own folder belongs to its item (deleting it removes the file)
+        c.files.set(it.name, { file: found.length === 1 && dir === c.dir ? entry.name : '', text: c.text(it) });
+      }
+    }
   }
+  return { items, skipped };
 }
 
-/** put a folder's functions into My functions: the folder's copy wins for a name both have, the rest is added */
-export function mergeFunctions(fns: SavedFunction[]): { fromFolder: SavedFunction[]; merged: SavedFunction[] } {
-  const lib = useLibrary.getState();
-  const byName = new Map(lib.functions.map((f) => [f.name, f]));
-  const fromFolder = fns.map((f) => ({ ...f, id: byName.get(f.name)?.id ?? f.id }));
-  const names = new Set(fromFolder.map((f) => f.name));
-  const merged = [...lib.functions.filter((f) => !names.has(f.name)), ...fromFolder];
-  useLibrary.setState({ functions: merged });
-  return { fromFolder, merged };
-}
-
-/** write what changed, remove the files of deleted functions; returns how many files were written */
+/** write what changed, remove the files of deleted items; returns how many files were written */
 let queue: Promise<unknown> = Promise.resolve();
-function sync(fns: SavedFunction[]): Promise<number> {
+function sync<T extends { name: string }>(c: Collection<T>, items: T[]): Promise<number> {
   const run = async () => {
+    const dir = c.dir;
     if (!dir) return 0;
     let written = 0;
-    const now = new Set(fns.map((f) => f.name));
+    const now = new Set(items.map((x) => x.name));
     try {
-      for (const fn of fns) {
-        const text = textOf(fn), had = files.get(fn.name);
+      for (const it of items) {
+        const text = c.text(it), had = c.files.get(it.name);
         if (had && had.text === text) continue;
-        const file = had?.file || fileNameOf(fn.name);
+        const file = had?.file || `${fileSafe(it.name)}${c.suffix}`;
         await writeFile(dir, file, text);
-        files.set(fn.name, { file, text });
+        c.files.set(it.name, { file, text });
         written++;
       }
-      for (const [name, { file }] of [...files]) {
+      for (const [name, { file }] of [...c.files]) {
         if (now.has(name)) continue;
-        files.delete(name);
+        c.files.delete(name);
         if (file) await dir.removeEntry(file).catch(() => {});
       }
     } catch {
@@ -166,37 +193,115 @@ function sync(fns: SavedFunction[]): Promise<number> {
   };
   const next = queue.then(run, run);
   queue = next;
-  return next;
+  return next as Promise<number>;
+}
+
+/** the built-in presets and kits as files, so the folder shows everything SoundFunc comes with; only missing ones are written */
+async function writeFactory(root: DirHandle): Promise<number> {
+  const factory = await root.getDirectoryHandle(DIRS.factory, { create: true });
+  const fnDir = await factory.getDirectoryHandle(DIRS.functions, { create: true });
+  const kitDir = await factory.getDirectoryHandle(DIRS.kits, { create: true });
+  const [haveFn, haveKit] = await Promise.all([names(fnDir), names(kitDir)]);
+  let n = 0;
+  for (const [i, p] of PRESETS.entries()) {
+    const file = `${fileSafe(p.name)}${FUNCTION_FILE_SUFFIX}`;
+    if (haveFn.has(file)) continue;
+    const { id: _id, color: _c, muted: _m, solo: _s, name: _n, ...track } = trackFromPreset(p, i);
+    const fn: SavedFunction = { id: `preset-${p.id}`, name: p.name, description: p.description, savedAt: 0, track };
+    await writeFile(fnDir, file, functions.text(fn));
+    n++;
+  }
+  for (const k of KITS) {
+    const file = `${fileSafe(k.name)}${KIT_FILE_SUFFIX}`;
+    if (haveKit.has(file)) continue;
+    const saved: SavedKit = { id: `kit-${k.id}`, name: k.name, description: k.description, savedAt: 0, song: k.song ?? {}, tracks: k.tracks };
+    await writeFile(kitDir, file, kits.text(saved));
+    n++;
+  }
+  return n;
+}
+
+// ---------- the folder, kept in step with the library ----------
+
+interface FolderState {
+  /** where it is, as far as the browser lets us see: "Documents › SoundFunc Presets" */
+  name: string | null;
+  /** chosen, but the browser needs a click to grant access again (after a reload) */
+  needsAccess: boolean;
+  busy: boolean;
+}
+export const usePresetFolder = create<FolderState>(() => ({ name: null, needsAccess: false, busy: false }));
+
+let unsubscribe: (() => void) | null = null;
+
+/** bring the folder and the library together: the folder's items in, the library's missing ones out */
+async function connect(root: DirHandle, label: string): Promise<{ functions: number; kits: number; written: number; factory: number; skipped: number }> {
+  usePresetFolder.setState({ name: label, needsAccess: false, busy: true });
+  try {
+    functions.dir = await root.getDirectoryHandle(DIRS.functions, { create: true });
+    kits.dir = await root.getDirectoryHandle(DIRS.kits, { create: true });
+    // an older folder kept functions at its top level: read those too (new ones go into Functions)
+    const f = await load(functions, functions.dir, root);
+    const k = await load(kits, kits.dir);
+    const written = (await sync(functions, functions.merge(f.items))) + (await sync(kits, kits.merge(k.items)));
+    const factory = await writeFactory(root).catch(() => 0);
+    unsubscribe?.();
+    unsubscribe = useLibrary.subscribe((s, prev) => {
+      if (s.functions !== prev.functions) void sync(functions, s.functions);
+      if (s.kits !== prev.kits) void sync(kits, s.kits);
+    });
+    return { functions: f.items.length, kits: k.items.length, written, factory, skipped: f.skipped + k.skipped };
+  } finally {
+    usePresetFolder.setState({ busy: false });
+  }
+}
+
+/** is this folder already a SoundFunc presets folder (or an older flat one with functions in it)? */
+async function isPresetsFolder(d: DirHandle): Promise<boolean> {
+  if (d.name === ROOT_NAME) return true;
+  for await (const e of d.values()) {
+    if (e.kind === 'directory' && (e.name === DIRS.functions || e.name === DIRS.kits || e.name === DIRS.factory)) return true;
+    if (e.kind === 'file' && (e.name.endsWith(FUNCTION_FILE_SUFFIX) || e.name.endsWith(KIT_FILE_SUFFIX))) return true;
+  }
+  return false;
+}
+
+interface Kept {
+  root: DirHandle;
+  label: string;
 }
 
 /**
- * Open presets folder…: choose a folder (or, after a reload, grant access to the one chosen
- * before) and keep it in step. Without the File System Access API, `fallback` lets the page
- * read a folder's files once instead (readFolderFiles).
+ * Open presets folder…: choose where it lives (or, after a reload, grant access to the one
+ * chosen before) and keep it in step. Picking any ordinary folder makes "SoundFunc Presets"
+ * inside it. Throws 'no-picker' where the browser can't (use readFolderFiles there).
  */
 export async function openPresetFolder(): Promise<string> {
   const pick = picker();
   if (!pick) throw new Error('no-picker');
-  const st = usePresetFolder.getState();
-  let d: DirHandle | null = null;
-  if (st.needsAccess) {
-    const kept = await idb<DirHandle>('readonly', (s) => s.get(KEY));
-    if (kept && (await kept.requestPermission({ mode: 'readwrite' })) === 'granted') d = kept;
+  let kept: Kept | null = null;
+  if (usePresetFolder.getState().needsAccess) {
+    const k = await idb<Kept>('readonly', (s) => s.get(KEY));
+    if (k?.root && (await k.root.requestPermission({ mode: 'readwrite' })) === 'granted') kept = k;
   }
-  if (!d) {
-    d = await pick({ id: 'soundfunc-presets', mode: 'readwrite' });
-    await idb('readwrite', (s) => s.put(d, KEY));
+  if (!kept) {
+    const chosen = await pick({ id: 'soundfunc-presets', mode: 'readwrite', startIn: 'documents' });
+    const root = (await isPresetsFolder(chosen)) ? chosen : await chosen.getDirectoryHandle(ROOT_NAME, { create: true });
+    kept = { root, label: root === chosen ? chosen.name : `${chosen.name} › ${ROOT_NAME}` };
+    await idb('readwrite', (s) => s.put(kept, KEY));
   }
-  const { loaded, written, skipped } = await connect(d);
-  return `Presets folder “${d.name}”: ${loaded} function${loaded === 1 ? '' : 's'} loaded${written ? `, ${written} written to it` : ''}${skipped ? ` · ${skipped} file${skipped > 1 ? 's weren’t functions' : ' wasn’t a function'}` : ''}. Saving and deleting now keep it in step.`;
+  const r = await connect(kept.root, kept.label);
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+  return `Presets folder: ${kept.label}. ${plural(r.functions, 'function')} and ${plural(r.kits, 'kit')} loaded${r.written ? `, ${r.written} written` : ''}${r.factory ? ` · ${r.factory} factory presets added` : ''}${r.skipped ? ` · ${plural(r.skipped, 'file')} skipped` : ''}. Saving and deleting now keep it in step.`;
 }
 
 /** stop keeping the folder in step (its files stay as they are) */
 export async function forgetPresetFolder() {
   unsubscribe?.();
   unsubscribe = null;
-  dir = null;
-  files = new Map();
+  functions.dir = kits.dir = null;
+  functions.files = new Map();
+  kits.files = new Map();
   await idb('readwrite', (s) => s.delete(KEY));
   usePresetFolder.setState({ name: null, needsAccess: false });
 }
@@ -204,23 +309,44 @@ export async function forgetPresetFolder() {
 /** on start: reconnect to the folder chosen before, if the browser still allows it — else wait for a click */
 export async function restorePresetFolder() {
   if (!picker()) return;
-  const kept = await idb<DirHandle>('readonly', (s) => s.get(KEY));
-  if (!kept) return;
-  if ((await kept.queryPermission({ mode: 'readwrite' }).catch(() => 'denied')) === 'granted') await connect(kept).catch(() => usePresetFolder.setState({ name: kept.name, needsAccess: true }));
-  else usePresetFolder.setState({ name: kept.name, needsAccess: true });
+  const raw = await idb<Kept | DirHandle>('readonly', (s) => s.get(KEY));
+  if (!raw) return;
+  // a folder remembered by an older version: the handle itself
+  const kept: Kept = 'root' in raw ? raw : { root: raw, label: raw.name };
+  if ((await kept.root.queryPermission({ mode: 'readwrite' }).catch(() => 'denied')) === 'granted') await connect(kept.root, kept.label).catch(() => usePresetFolder.setState({ name: kept.label, needsAccess: true }));
+  else usePresetFolder.setState({ name: kept.label, needsAccess: true });
 }
 
-/** browsers without the API: read the functions out of a folder's files (from <input webkitdirectory>) */
-export async function readFolderFiles(list: FileList): Promise<{ fns: SavedFunction[]; skipped: number }> {
-  const fns: SavedFunction[] = [];
+/** put functions from a folder into My functions: the folder's copy wins for a name both have */
+export function mergeFunctions(fns: SavedFunction[]) {
+  functions.merge(fns);
+}
+/** …and kits into My kits */
+export function mergeKits(ks: SavedKit[]) {
+  kits.merge(ks);
+}
+
+/** browsers without the API: read the functions and kits out of a folder's files (from <input webkitdirectory>) */
+export async function readFolderFiles(list: FileList): Promise<{ fns: SavedFunction[]; kits: SavedKit[]; skipped: number }> {
+  const fns: SavedFunction[] = [], ks: SavedKit[] = [];
   let skipped = 0;
   for (const f of Array.from(list)) {
     if (!f.name.toLowerCase().endsWith('.json')) continue;
+    // the factory copies are SoundFunc's own: they're already built in
+    if ((f as File & { webkitRelativePath?: string }).webkitRelativePath?.includes(`${DIRS.factory}/`)) continue;
+    const text = await f.text();
     try {
-      fns.push(...readFunctionFile(await f.text()));
+      fns.push(...readFunctionFile(text));
+      continue;
+    } catch {
+      /* maybe a kit */
+    }
+    try {
+      ks.push(...readKitFile(text));
     } catch {
       skipped++;
     }
   }
-  return { fns, skipped };
+  return { fns, kits: ks, skipped };
 }
+
