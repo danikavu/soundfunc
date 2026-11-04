@@ -1392,7 +1392,7 @@ describe('chords, bass and style kits', () => {
     expect([0, 1, 2, 3, 4, 5, 6, 7].map((b) => harmonyAt(song, b))).toEqual([0, 0, 5, 5, 1, 1, 4, 4]);
   });
   it('style kits plant at one fixed length, and their basses land on the chord roots', () => {
-    for (const id of ['jazz', 'bossa', 'salsa', 'funk', 'disco', 'deephouse', 'clicks', 'pocket', 'lofi', 'gfunk', 'dembow', 'amapiano', 'memphisdrift', 'hauntedmemphis', 'goldteeth', 'velour', 'velvet', 'bluenotehop', 'bristol', 'smokerings', 'afterglow', 'electroswing']) {
+    for (const id of ['jazz', 'bossa', 'salsa', 'funk', 'disco', 'deephouse', 'clicks', 'pocket', 'lofi', 'gfunk', 'dembow', 'amapiano', 'memphisdrift', 'hauntedmemphis', 'goldteeth', 'velour', 'velvet', 'bluenotehop', 'bristol', 'smokerings', 'afterglow', 'electroswing', 'lowrider', 'comptonkeys', 'longbeach', 'talkboxblvd', 'hyphy', 'ratchet']) {
       const kit = KITS.find((k) => k.id === id)!;
       const lens = new Set(kit.tracks.map((t) => (t.steps ?? 16) * (t.stepBeats ?? 0.25) * (t.stretch ?? 1)));
       expect(lens.size, `${id}: every channel the same length`).toBe(1);

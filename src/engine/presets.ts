@@ -122,13 +122,14 @@ export interface Preset {
 }
 
 /** the Function presets list, in this order */
-export type PresetGroup = 'start' | 'math' | 'melodies' | 'harmony' | 'bass' | 'curves' | 'rave' | 'fx';
+export type PresetGroup = 'start' | 'math' | 'melodies' | 'harmony' | 'bass' | 'westcoast' | 'curves' | 'rave' | 'fx';
 export const PRESET_GROUPS: Record<PresetGroup, { label: string; hint: string }> = {
   start: { label: 'Start here', hint: 'the simplest functions' },
   math: { label: 'Math & nature', hint: 'sequences, fractals, chaos and constants' },
   melodies: { label: 'Melodies & leads', hint: 'tunes and lines to play over the harmony' },
   harmony: { label: 'Chords & keys', hint: 'chords, comps and arpeggios on the song’s harmony' },
   bass: { label: 'Bass', hint: 'roots, walks and wobbles under the chords' },
+  westcoast: { label: 'G-funk & West Coast', hint: 'whistles, Moog bass, talkbox and Rhodes ninths' },
   curves: { label: 'Glide curves', hint: 'wild shapes, followed continuously' },
   rave: { label: 'Rave & piecewise', hint: 'kicks, riffs and drops written as one piecewise function' },
   fx: { label: 'Risers & FX', hint: 'builds and swells' },
@@ -156,10 +157,11 @@ export interface Kit {
 }
 
 /** the Rhythm kits list, in this order */
-export type KitGroup = 'mine' | 'hiphop' | 'phonk' | 'soul' | 'triphop' | 'dance' | 'latin' | 'breaks' | 'math';
+export type KitGroup = 'mine' | 'hiphop' | 'westcoast' | 'phonk' | 'soul' | 'triphop' | 'dance' | 'latin' | 'breaks' | 'math';
 export const KIT_GROUPS: Record<KitGroup, string> = {
   mine: 'My kits',
   hiphop: 'Hip-hop & lo-fi',
+  westcoast: 'G-funk & West Coast',
   phonk: 'Trap, phonk & funk trap',
   soul: 'Soul, jazz & funk',
   triphop: 'Trip hop & chill',
@@ -169,7 +171,7 @@ export const KIT_GROUPS: Record<KitGroup, string> = {
   math: 'Math rhythms',
 };
 const KIT_GROUP_OF: Record<string, KitGroup> = {
-  boombap: 'hiphop', clicks: 'hiphop', lofi: 'hiphop', gfunk: 'hiphop',
+  boombap: 'hiphop', clicks: 'hiphop', lofi: 'hiphop', gfunk: 'westcoast',
   trap: 'phonk',
   jazz: 'soul', funk: 'soul', pocket: 'soul',
   royal: 'triphop',
@@ -259,12 +261,46 @@ const PUMP_PAD: Template & { name: string } = {
   ),
 };
 
+// ---------- G-funk & West Coast: the parts the kits share, also plantable alone (32 steps, two bars) ----------
+
+/** the portamento whistle: a high sine sliding between long chord tones, with a slow vibrato */
+const G_WHISTLE = voice('G-funk whistle', 'sine', 'h + pick(floor(n / 8) + 4 * (k % 2), 7, 9, 8, 7, 4, 7, 6, 4)', 'phase(n, 8) < 0.88 ? 0.42 : 0', {}, {
+  playMode: 'glide', quantize: true, glide: 0.14, steps: 32, octave: 5, volume: 0.3, send: 0.55, pan: 0.15, synth: { vibrato: 0.65 },
+});
+/** the Minimoog bass: one voice that slides into its roots, octave pops and a leading tone */
+const MOOG_BASS = voice('Moog bass', 'sawtooth', `${ROOT} + pick(n % 16, 0,0,0,0, 0,0,0,0, 0,0,L,L, 0,0,-1,-1)`, '0.8 * pick(n % 16, 1,1,1,0, 0,0,1,1, 1,0,1,1, 0,0,1,1)', {}, {
+  playMode: 'glide', quantize: true, glide: 0.07, steps: 32, octave: 2, volume: 0.6, release: 0.1, swing: 0.12, send: 0.04,
+  synth: { cutoff: 0.3, resonance: 0.4, sub: 0.35 },
+});
+/** Rhodes ninths, voice-led, answering the snare */
+const G_KEYS = voice('Rhodes ninths', 'keys', voicedPitch(5), '0.42 * bits(pick(floor(n / 16), 0x0808, 0x082A), n)', { chord: 5, inversion: voicedInversion(5), length: 1.8, strum: 0.02 }, {
+  steps: 32, octave: 4, volume: 0.36, send: 0.45, swing: 0.12, synth: { chorus: 0.45, vibrato: 0.15 },
+});
+/** the talkbox: a filtered saw that talks through a two-bar phrase, then rests for the answer */
+const TALKBOX = voice('Talkbox', 'sawtooth', 'h + pick(floor(n / 2), 4, 4, 5, 4, 2, 4, 0, 0, 2, 2, 4, 2, 0, -1, 0, 0)', '(n % 32 < 22) * (phase(n, 2) < 0.8 ? 0.42 : 0)', {}, {
+  playMode: 'glide', quantize: true, glide: 0.05, steps: 32, octave: 4, volume: 0.32, send: 0.3, pan: -0.15,
+  synth: { cutoff: 0.42, resonance: 0.55, vibrato: 0.25, chorus: 0.2 },
+});
+/** chicken-scratch guitar: muted chord chops on the off-sixteenths, an accent before each backbeat */
+const SCRATCH_GUITAR = voice('Chicken scratch', 'pluck', voicedPitch(3), 'every(n, 2, 1) * (0.22 + 0.25 * bits(0x0404, n) + 0.06 * rand(n + 32k, 14))', {
+  chord: 3, inversion: voicedInversion(3), length: 0.15, strum: 0.008,
+}, { steps: 32, octave: 4, volume: 0.36, release: 0.04, swing: 0.1, send: 0.18, pan: 0.3 });
+/** staccato piano triads on the eighths, the voicing rocking up on the second half of each beat pair */
+const PIANO_STABS = voice('Piano stabs', 'keys', voicedPitch(3), 'every(n, 2) * (0.38 + 0.14 * every(n, 4) + 0.05 * rand(n + 32k, 15))', {
+  chord: 3, inversion: `${voicedInversion(3)} + (n % 8 >= 4)`, length: 0.35,
+}, { steps: 32, octave: 4, volume: 0.42, release: 0.08, send: 0.3, synth: { chorus: 0.1 } });
+/** the 2010s LA pluck: a bright minor riff bouncing on a dotted pattern, an octave up */
+const RATCHET_PLUCK = voice('Ratchet pluck', 'pluck', 'h + pick(n % 8, 7, 4, 7, 9, 7, 4, 2, 4)', '0.4 * bits(pick(floor(n / 16), 0xB6B6, 0xB6B4), n)', { length: 0.4 }, {
+  steps: 32, octave: 4, volume: 0.34, release: 0.06, send: 0.3, pan: -0.2, synth: { delay: 0.25, delayTime: 0.375 },
+});
+
 /** a part as a plantable preset */
-const part = (id: string, t: Template & { name: string }, description: string, formula: string): Preset => ({
+const part = (id: string, t: Template & { name: string }, description: string, formula: string, group?: PresetGroup): Preset => ({
   id,
   name: t.name,
   description,
   formula,
+  group,
   track: { pitchMode: 'degree', ...t, waveform: t.waveform ?? 'sine' },
 });
 
@@ -855,6 +891,14 @@ export const PRESETS: Preset[] = [
   part('discostrings', DISCO_STRINGS, 'Disco strings: a voice-led triad held through every bar.', 'chord of 3, held'),
   part('housestabs', HOUSE_STABS, 'Deep house organ stabs: minor ninth chords on a syncopated swing.', 'chord of 5 · bits(0x1224)'),
   part('pumppad', PUMP_PAD, 'A pad held through each bar, pumped on every beat by a pressure Curve — sidechain without a compressor.', 'chord of 4 · pressure = duck(t)'),
+  // ---------- G-funk & West Coast ----------
+  part('gwhistle', G_WHISTLE, 'The G-funk whistle: a high sine gliding between long chord tones with a slow vibrato — two phrases that answer each other.', 'glide · h + 7 9 8 7 / 4 7 6 4', 'westcoast'),
+  part('moogbass', MOOG_BASS, 'Minimoog-style bass: one voice that slides from the root up to the octave and back through the leading tone, filtered and fat.', 'glide · root, L, −1', 'westcoast'),
+  part('gkeys', G_KEYS, 'Rhodes ninth chords on the backbeats, voice-led and chorused — the warm bed under every West Coast record.', 'chord of 5 · bits(0x0808 / 0x082A)', 'westcoast'),
+  part('talkbox', TALKBOX, 'Talkbox lead: a resonant saw that talks through a two-bar phrase on the chord, then leaves space for the answer.', 'glide · h + 4 4 5 4 2 4 0…', 'westcoast'),
+  part('chickenscratch', SCRATCH_GUITAR, 'Funk chicken-scratch guitar: short muted triads on every off-sixteenth, leaning into the backbeat.', 'chord of 3 · every(n, 2, 1)', 'westcoast'),
+  part('pianostabs', PIANO_STABS, 'Staccato piano triads on the eighths, the voicing rocking up and back — the hard, bare West Coast piano.', 'chord of 3 · inversion + (n % 8 ≥ 4)', 'westcoast'),
+  part('ratchetpluck', RATCHET_PLUCK, '2010s LA pluck: a bright riff on the chord bouncing through a dotted rhythm, with a short delay.', 'h + 7 4 7 9 7 4 2 4 · bits(0xB6B6)', 'westcoast'),
 
   // ---------- drawn with Curve nodes: automation as music ----------
   {
@@ -1480,6 +1524,133 @@ export const KITS: Kit[] = [
       voice('Whistle', 'sine', 'h + pick(floor(n / 8) + 4 * (k % 2), 7, 9, 8, 7, 4, 7, 6, 4)', 'phase(n, 8) < 0.8 ? 0.45 : 0', {}, {
         playMode: 'glide', quantize: true, glide: 0.12, steps: 32, octave: 6, volume: 0.32, send: 0.55, synth: { vibrato: 0.6 },
       }),
+    ],
+  },
+  // ---------- G-funk & West Coast ----------
+  {
+    id: 'lowrider',
+    group: 'westcoast',
+    name: 'Lowrider Bounce',
+    description:
+      '92 bpm G-funk in F dorian, i–i–IV–III: a bouncing kick, snare and clap on the backbeat, a tambourine riding the sixteenths, a sliding Moog bass, Rhodes ninths and the high whistle on top. Three wheels, hydraulics up.',
+    song: { bpm: 92, root: 5, scale: 'dorian', harmony: 'pick(bar, 0, 0, 3, 2)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.95 * bits(pick(floor(n / 16), 0x8822, 0x80A4), n)', { swing: 0.12, volume: 0.9, synth: { decay: 1.2 } }),
+      drum('Snare', 'snare', 32, '0.85 * every(n, 8, 4)', { shift: '0.04 * every(n, 8, 4)', volume: 0.68, send: 0.25 }),
+      drum('Clap', 'clap', 32, '0.55 * every(n, 8, 4)', { volume: 0.48, send: 0.3 }),
+      drum('Tambourine', 'hat', 32, '0.16 + 0.22 * every(n, 2, 1) + 0.06 * rand(n + 32k, 6)', { swing: 0.12, volume: 0.36, pan: 0.25, synth: { tone: 0.6, decay: 1.3 } }),
+      drum('Open hat', 'openhat', 32, '0.4 * every(n, 16, 14)', { volume: 0.32, pan: -0.15 }),
+      MOOG_BASS,
+      G_KEYS,
+      G_WHISTLE,
+    ],
+  },
+  {
+    id: 'comptonkeys',
+    group: 'westcoast',
+    name: 'Compton Keys',
+    description:
+      '93 bpm West Coast in A minor, i–i–VI–v: a hard, dry kick, a cracking snare, steady sixteenth hats, bare staccato piano triads on the eighths, a deep sub under the kick and strings holding the chords. Sparse and cold.',
+    song: { bpm: 93, root: 9, scale: 'minor', harmony: 'pick(bar, 0, 0, 5, 4)' },
+    tracks: [
+      drum('Kick', 'kick', 32, 'bits(pick(floor(n / 16), 0x8024, 0x8424), n)', { volume: 0.95, synth: { drive: 0.2, tone: 0.1 } }),
+      drum('Snare', 'snare', 32, '0.9 * every(n, 8, 4)', { volume: 0.72, send: 0.2, synth: { tone: 0.25 } }),
+      drum('Hats', 'hat', 32, '0.26 + 0.2 * every(n, 2) + 0.08 * rand(n + 32k, 4)', { volume: 0.38 }),
+      drum('Crash', 'crash', 32, '0.4 * (n == 0) * (k % 2 == 0)', { volume: 0.3, send: 0.35 }),
+      voice('Sub', 'sine', ROOT, '0.8 * bits(pick(floor(n / 16), 0x8024, 0x8424), n)', { length: 2.5 }, { steps: 32, octave: 2, volume: 0.7, release: 0.2, send: 0 }),
+      PIANO_STABS,
+      voice('Strings', 'pad', voicedPitch(3), '0.32 * every(n, 16)', { chord: 3, inversion: voicedInversion(3), length: 16 }, {
+        steps: 32, octave: 4, volume: 0.28, attack: 0.6, release: 1.4, send: 0.75,
+      }),
+    ],
+  },
+  {
+    id: 'longbeach',
+    group: 'westcoast',
+    name: 'Long Beach Lean',
+    description:
+      '95 bpm laid-back West Coast in D♭, ii–ii–V–V: a soft swung kick, a snare and rim dragged behind the beat, shaker sixteenths, a finger bass that walks to the fifth, clean guitar licks, Rhodes sevenths and a breathy lead gliding over it all.',
+    song: { bpm: 95, root: 1, scale: 'major', harmony: 'pick(bar, 1, 1, 4, 4)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.85 * bits(pick(floor(n / 16), 0x8822, 0x8028), n)', { swing: 0.18, volume: 0.84, synth: { tone: -0.2 } }),
+      drum('Snare', 'snare', 32, '0.75 * every(n, 8, 4)', { shift: '0.08 * every(n, 8, 4)', volume: 0.6, send: 0.3, synth: { tone: -0.2 } }),
+      drum('Rim', 'rim', 32, '0.3 * bits(0x0410, n) * chance(n + 32k, 0.7, 3)', { swing: 0.18, volume: 0.4, send: 0.3, pan: 0.2 }),
+      drum('Shaker', 'hat', 32, '0.16 + 0.16 * every(n, 2, 1) + 0.06 * rand(n + 32k, 8)', { swing: 0.18, volume: 0.34, pan: -0.2, synth: { tone: 0.4 } }),
+      voice('Finger bass', 'triangle', `${ROOT} + pick(n % 16, 0,0,0,0, 0,0,0,0, 0,0,4,0, 0,0,L,0)`, '0.8 * bits(pick(floor(n / 16), 0x8A28, 0x8A2A), n)', { length: 1.2 }, {
+        steps: 32, octave: 2, volume: 0.72, release: 0.1, swing: 0.18, send: 0.06, synth: { cutoff: 0.45 },
+      }),
+      voice('Guitar licks', 'pluck', 'h + pick(n % 16, 4, 4, 6, 6, 7, 7, 9, 9, 7, 7, 6, 6, 4, 4, 2, 2)', '0.38 * every(n, 2) * (n % 32 >= 20) * chance(floor(n / 2) + 16k, 0.75, 19)', { length: 0.8 }, {
+        steps: 32, octave: 4, volume: 0.36, swing: 0.18, send: 0.35, pan: 0.3, synth: { chorus: 0.3 },
+      }),
+      voice('Rhodes', 'keys', voicedPitch(4), '0.42 * bits(pick(floor(n / 16), 0x8208, 0x0820), n)', { chord: 4, inversion: voicedInversion(4), length: 3, strum: 0.03 }, {
+        steps: 32, octave: 4, volume: 0.38, send: 0.5, swing: 0.18, synth: { chorus: 0.4 },
+      }),
+      voice('Vox lead', 'flute', 'h + pick(floor(n / 8) + 4 * (k % 2), 4, 2, 4, 6, 7, 6, 4, 2)', 'phase(n, 8) < 0.8 ? 0.36 : 0', {}, {
+        playMode: 'glide', quantize: true, glide: 0.1, steps: 32, octave: 5, volume: 0.28, send: 0.6, pan: -0.15, synth: { vibrato: 0.4 },
+      }),
+    ],
+  },
+  {
+    id: 'talkboxblvd',
+    group: 'westcoast',
+    name: 'Talkbox Boulevard',
+    description:
+      '100 bpm West Coast funk in G mixolydian, I–I–IV–♭VII: a syncopated funk kick, handclaps, a cowbell on the offbeats, a slapping square bass, chicken-scratch guitar, Rhodes ninths and a talkbox lead that sings the hook.',
+    song: { bpm: 100, root: 7, scale: 'mixolydian', harmony: 'pick(bar, 0, 0, 3, 6)' },
+    tracks: [
+      drum('Kick', 'kick', 32, '0.95 * bits(pick(floor(n / 16), 0x8824, 0x8A21), n)', { volume: 0.9 }),
+      drum('Claps', 'clap', 32, '0.8 * every(n, 8, 4) + 0.3 * (n == 31)', { volume: 0.6, send: 0.3 }),
+      drum('Cowbell', 'tom', 32, '0.3 * every(n, 4, 2)', { tune: '24', volume: 0.3, pan: 0.25, synth: { decay: 0.3, tone: 0.8 } }),
+      drum('Hats', 'hat', 32, '0.24 + 0.2 * every(n, 2) + 0.06 * rand(n + 32k, 9)', { swing: 0.1, volume: 0.38 }),
+      voice('Square bass', 'square', `${ROOT} + pick(n % 8, 0, 0, L, 0, 0, 0, 4, L - 1)`, '0.8 * bits(0xA2A6, n)', { length: 0.7 }, {
+        steps: 32, octave: 2, volume: 0.5, release: 0.06, swing: 0.1, send: 0.04, synth: { cutoff: 0.35, resonance: 0.35, envAmount: 0.45, envDecay: 0.12 },
+      }),
+      SCRATCH_GUITAR,
+      G_KEYS,
+      TALKBOX,
+    ],
+  },
+  {
+    id: 'hyphy',
+    group: 'westcoast',
+    name: 'Ghost Ride',
+    description:
+      '104 bpm Bay Area hyphy in E minor, i–i–VI–VII: a slappy, driven kick, a stacked clap-snare, hats that burst into rolls, a sliding 808, squeaky high synth hits and short supersaw stabs. Go dumb.',
+    song: { bpm: 104, root: 4, scale: 'minor', harmony: 'pick(bar, 0, 0, 5, 6)' },
+    tracks: [
+      drum('Kick', 'kick', 32, 'bits(pick(floor(n / 16), 0x8A20, 0x88A4), n)', { volume: 0.95, synth: { tone: 0.3, drive: 0.45, decay: 0.8 } }),
+      drum('Clap', 'clap', 32, '0.9 * every(n, 8, 4)', { volume: 0.68, send: 0.25, synth: { drive: 0.3 } }),
+      drum('Snare', 'snare', 32, '0.6 * every(n, 8, 4)', { volume: 0.5, synth: { tone: 0.4 } }),
+      drum('Hats', 'hat', 32, '0.3 + 0.25 * every(n, 2) + 0.08 * rand(n + 32k, 13)', {
+        ratchet: 'pick(n, 1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,2,1, 1,1,1,1, 1,1,1,1, 1,1,3,1, 1,1,4,4)', volume: 0.4,
+      }),
+      voice('808', 'sine', `${ROOT} + (n % 32 >= 28) * L`, '0.9 * pick(n % 16, 1,1,1,1, 1,1,0,0, 0,0,1,1, 1,1,0,0)', {}, {
+        playMode: 'glide', quantize: true, glide: 0.08, steps: 32, octave: 1, volume: 0.85, release: 0.2, send: 0, synth: { drive: 0.5, sub: 0.2 },
+      }),
+      voice('Squeaks', 'square', 'h + pick(n % 4, 7, 9, 11, 7)', '0.32 * bits(pick(floor(n / 16), 0x0410, 0x0141), n)', { length: 0.25 }, {
+        steps: 32, octave: 5, volume: 0.24, release: 0.03, send: 0.25, pan: 0.3, synth: { cutoff: 0.7, resonance: 0.5 },
+      }),
+      voice('Stabs', 'supersaw', voicedPitch(3), '0.4 * bits(pick(floor(n / 16), 0x0020, 0x0024), n)', { chord: 3, inversion: voicedInversion(3), length: 0.5 }, {
+        steps: 32, octave: 4, volume: 0.3, release: 0.1, send: 0.35, pan: -0.25,
+      }),
+    ],
+  },
+  {
+    id: 'ratchet',
+    group: 'westcoast',
+    name: 'Ratchet Snap',
+    description:
+      '98 bpm 2010s LA in C♯ minor, i–iv–VI–v: a minimal bouncing kick, claps that skip ahead of the backbeat, finger snaps, straight eighth hats, a short 808 that follows the kick and a bright pluck riff. Club, not cruise.',
+    song: { bpm: 98, root: 1, scale: 'minor', harmony: 'pick(bar, 0, 3, 5, 4)' },
+    tracks: [
+      drum('Kick', 'kick', 32, 'bits(pick(floor(n / 16), 0x8220, 0x8228), n)', { volume: 0.95, synth: { decay: 1.1 } }),
+      drum('Claps', 'clap', 32, '0.85 * bits(0x0808, n) + 0.5 * bits(pick(floor(n / 16), 0x0040, 0x0042), n)', { volume: 0.62, send: 0.22 }),
+      drum('Snaps', 'rim', 32, '0.45 * bits(0x0202, n)', { volume: 0.4, send: 0.3, pan: -0.2, synth: { tone: 0.5 } }),
+      drum('Hats', 'hat', 32, '(0.3 + 0.12 * every(n, 4)) * every(n, 2)', { volume: 0.36, synth: { tone: 0.3 } }),
+      voice('808', 'sine', ROOT, '0.9 * bits(pick(floor(n / 16), 0x8220, 0x8228), n)', { length: 1.6 }, {
+        steps: 32, octave: 2, volume: 0.8, release: 0.15, send: 0, synth: { drive: 0.3 },
+      }),
+      RATCHET_PLUCK,
     ],
   },
   {
