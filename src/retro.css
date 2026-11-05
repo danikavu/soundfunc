@@ -14,7 +14,7 @@
   --card: #e3dcc7;
   --ink: #23211b;
   --ink-2: #4a463a;
-  --ink-3: #777059;
+  --ink-3: #5c5643;
   --line: #9a9177;
   --line-soft: #b6ac90;
   --accent: #c0392b;
@@ -42,7 +42,7 @@
   --card: #3a3830;
   --ink: #e8e1cc;
   --ink-2: #bdb49b;
-  --ink-3: #8a826c;
+  --ink-3: #aaa189;
   --line: #5e5848;
   --line-soft: #4a463a;
   --accent: #e5533f;
@@ -154,7 +154,7 @@ body {
   --card: #e3dcc7;
   --ink: #23211b;
   --ink-2: #4a463a;
-  --ink-3: #777059;
+  --ink-3: #5c5643;
   --line: #9a9177;
   --line-soft: #b6ac90;
 }
@@ -163,7 +163,7 @@ body {
   --card: #3a3830;
   --ink: #e8e1cc;
   --ink-2: #bdb49b;
-  --ink-3: #8a826c;
+  --ink-3: #aaa189;
   --line: #5e5848;
   --line-soft: #4a463a;
   color: var(--ink);
@@ -802,7 +802,7 @@ body,
   box-shadow: inset 1px 1px 0 #f6f1e2;
   --ink: #23211b;
   --ink-2: #4a463a;
-  --ink-3: #6e6752;
+  --ink-3: #575140;
   --accent: #c0392b;
   --accent-soft: rgba(192, 57, 43, 0.14);
 }
@@ -1261,4 +1261,14 @@ body,
 }
 .w-harmony .harmony > :not(.input) {
   flex: none;
+}
+
+/* ---------- small labels that can be read ----------
+   Doto's dots thin out at 11px: the sidebar's field labels (Steps, Stretch, Octave, Pitch means…)
+   and quiet notes are drawn a size up, in the stronger --ink-3. */
+.app aside.panel .field > span,
+.app aside.panel .eyebrow-sub .muted,
+.app aside.panel .fold-empty,
+.app aside.panel .kit-mine-empty {
+  font-size: 12px !important;
 }
