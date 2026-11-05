@@ -384,11 +384,11 @@ export function TopBar() {
         <GardenMenu />
       </div>
       <div className="row" style={{ gap: 2 }}>
-        <button className="icon-btn" onClick={undo} disabled={!past.length} title="Undo (⌘Z)">
-          <Icon name="undo" />
+        <button className="icon-btn undo-redo" onClick={undo} disabled={!past.length} title="Undo (⌘Z)" aria-label="Undo">
+          {'<'}
         </button>
-        <button className="icon-btn" onClick={redo} disabled={!future.length} title="Redo (⇧⌘Z)">
-          <Icon name="redo" />
+        <button className="icon-btn undo-redo" onClick={redo} disabled={!future.length} title="Redo (⇧⌘Z)" aria-label="Redo">
+          {'>'}
         </button>
         <button className="icon-btn" onClick={toggleTheme} title="Day / night">
           <Icon name={theme === 'light' ? 'moon' : 'sun'} />

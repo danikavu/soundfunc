@@ -1272,3 +1272,49 @@ body,
 .app aside.panel .kit-mine-empty {
   font-size: 12px !important;
 }
+
+/* ---------- the node toolbar always shows everything ----------
+   It answers to the width of the Nodes area, not the window: first its buttons drop their words
+   (each keeps its tooltip), then Mutate's Safe / Wild, and if it still doesn't fit it wraps to a
+   second row — nothing is ever hidden off the edge. */
+.nodes {
+  container: nodes / inline-size;
+}
+.nodes > .toolbar {
+  flex-wrap: wrap;
+  overflow: visible;
+  row-gap: 6px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+@container nodes (max-width: 1040px) {
+  .nodes > .toolbar > .btn .tb-label {
+    display: none;
+  }
+  .nodes > .toolbar > .btn {
+    padding: 0 10px;
+  }
+}
+@container nodes (max-width: 760px) {
+  .nodes > .toolbar .chaos > span {
+    display: none;
+  }
+  .nodes > .toolbar .chaos input {
+    width: 64px;
+  }
+}
+
+/* undo / redo: a dot-matrix < and > */
+.topbar .icon-btn.undo-redo {
+  font: 900 21px/1 var(--mono);
+  padding-bottom: 2px;
+  color: var(--ink);
+}
+.topbar .icon-btn.undo-redo:not(:disabled):hover {
+  color: var(--accent);
+}
+.topbar .icon-btn.undo-redo:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+

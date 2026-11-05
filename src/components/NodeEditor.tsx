@@ -487,6 +487,8 @@ export function NodeEditor() {
       <div className="toolbar">
         <button
           className="btn"
+          title="Add a node (or double-click the board)"
+          aria-label="Add node"
           onClick={(e) => {
             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
             const w = wrapRef.current!.getBoundingClientRect();
@@ -496,20 +498,21 @@ export function NodeEditor() {
             });
           }}
         >
-          <Icon name="plus" size={14} /> Add node
+          <Icon name="plus" size={14} /> <span className="tb-label">Add node</span>
         </button>
-        <button className="btn" onClick={() => useStore.getState().setShowFunction(true)} title="See the whole channel as one function — math, SoundFunc, JavaScript, Python (F)">
-          <Icon name="sigma" size={14} /> Function
+        <button className="btn" onClick={() => useStore.getState().setShowFunction(true)} title="See the whole channel as one function — math, SoundFunc, JavaScript, Python (F)" aria-label="Function">
+          <Icon name="sigma" size={14} /> <span className="tb-label">Function</span>
         </button>
         <button
           className="btn"
           title="Add a slider to this channel — a named constant its formulas can use (or Alt+S on a number in a formula)"
+          aria-label="Slider"
           onClick={() => {
             const name = useStore.getState().addSlider(track.id, 0.5);
             toast(`Added slider “${name}” to ${track.name} — type its name in any of its formulas`);
           }}
         >
-          <Icon name="sliders" size={14} /> Slider
+          <Icon name="sliders" size={14} /> <span className="tb-label">Slider</span>
         </button>
         <Mutator />
         <SelectionTools />
