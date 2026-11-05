@@ -87,7 +87,7 @@ export function KitPicker() {
               {naming === null ? (
                 <>
                   <button className="btn small ghost" onClick={() => setNaming(useStore.getState().project.name || 'My kit')} title="Save every channel of this track, with its tempo, key and harmony, as a kit">
-                    <Icon name="save" size={12} /> Save track as kit
+                    <Icon name="save" size={12} /> Save as kit
                   </button>
                   <span className="row" style={{ gap: 2 }}>
                     <button className="icon-btn" onClick={() => fileRef.current?.click()} title="Import kits from a .json file" aria-label="Import kits">

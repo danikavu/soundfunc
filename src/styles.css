@@ -13,10 +13,10 @@
   --moss: #6f8a63;
   --rake: rgba(43, 42, 39, 0.055);
   --shadow: 0 1px 2px rgba(43, 42, 39, 0.06), 0 8px 24px -12px rgba(43, 42, 39, 0.18);
-  /* one family throughout: Ubuntu for text and headings, Ubuntu Mono for numbers and code */
-  --serif: 'Ubuntu', -apple-system, system-ui, sans-serif;
-  --sans: 'Ubuntu', -apple-system, system-ui, sans-serif;
-  --mono: 'Ubuntu Mono', ui-monospace, Menlo, monospace;
+  /* one family throughout: Doto, a dot-matrix face (monospaced, so it serves numbers and code too) */
+  --serif: 'Doto', ui-monospace, Menlo, monospace;
+  --sans: 'Doto', ui-monospace, Menlo, monospace;
+  --mono: 'Doto', ui-monospace, Menlo, monospace;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   color-scheme: light;
 }
@@ -2443,7 +2443,7 @@ button:focus-visible {
   }
 }
 
-/* ---------- Ubuntu, and the garden's name as the title ---------- */
+/* ---------- the garden’s name as the title ---------- */
 .topbar .project-name {
   font: 500 15px/1.2 var(--sans);
   color: var(--ink);
@@ -2465,7 +2465,7 @@ button:focus-visible {
     width: 96px;
   }
 }
-/* large headings in Ubuntu Light keep the page quiet */
+/* large headings ask for a light weight (Doto draws every regular weight the same: see fonts.css) */
 .track-title,
 .viz-legend h2,
 .sheet-track,
@@ -2474,7 +2474,7 @@ button:focus-visible {
 .fn-track h3 {
   font-weight: 300;
 }
-/* Ubuntu Mono is narrower than the old mono; give small code a touch more size */
+/* small code a touch larger, so its dots stay clear */
 .formula,
 .fn-code code,
 .fn-pre,

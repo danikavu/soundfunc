@@ -354,7 +354,7 @@ export function Visualizer() {
       const timeAxis = (bx: (b: number) => number, y: number, left: number, right: number) => {
         const ppb = (right - left) / vw.span;
         g.fillStyle = P.ink3;
-        g.font = '10.5px Ubuntu Mono, monospace';
+        g.font = '10.5px Doto, monospace';
         g.textAlign = 'left';
         const labelEvery = Math.max(1, Math.ceil(36 / (ppb * BEATS_PER_BAR)));
         for (let b = Math.floor(vw.start); b <= vw.start + vw.span + 1e-9; b++) {
@@ -407,7 +407,7 @@ export function Visualizer() {
         {
           const song = project.song;
           let prev = '';
-          g.font = '11px Ubuntu, sans-serif';
+          g.font = '11px Doto, monospace';
           g.textAlign = 'left';
           const first = Math.max(0, Math.floor(vw.start / BEATS_PER_BAR));
           const ppb = (bx(BEATS_PER_BAR) - bx(0)) / BEATS_PER_BAR;
@@ -520,7 +520,7 @@ export function Visualizer() {
           const y0 = drumTop + li * laneH;
           g.globalAlpha = 1;
           g.fillStyle = P.ink3;
-          g.font = '9.5px Ubuntu, sans-serif';
+          g.font = '9.5px Doto, monospace';
           g.textAlign = 'left';
           g.strokeStyle = P.rake;
           g.beginPath();
@@ -574,7 +574,7 @@ export function Visualizer() {
         const vBase = H - padB;
 
         // axes: raw value on the left, the note it becomes on the right, x along the bottom
-        g.font = '11px Ubuntu Mono, monospace';
+        g.font = '11px Doto, monospace';
         let lastNote = '';
         for (let i = 0; i <= 4; i++) {
           const v = lo + ((hi - lo) * i) / 4;

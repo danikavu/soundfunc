@@ -616,8 +616,15 @@ function ChannelTab() {
           options={BEND_RANGES.map((r) => ({ value: r, label: `±${r}` }))}
         />
       </div>
-      <div className="row export-curves" style={{ gap: 8, marginTop: 10, alignItems: 'center' }}>
-        <span className="muted" style={{ fontSize: 11.5, width: 44 }}>Curves</span>
+      <div className="eyebrow-sub row" style={{ gap: 6, marginTop: 14, alignItems: 'center' }}>
+        <span className="muted" style={{ fontSize: 11.5 }}>Curves</span>
+        <Info>
+          For the automation export (Export → MIDI + automation): glides and note bends go out as pitch bend, volume as
+          expression or pressure. Simplified keeps only the points that redraw each curve when a DAW joins them with straight lines — corners stay,
+          straight runs collapse to their two ends (within 3 cents of pitch). Every sample writes all of them, 16 per step.
+        </Info>
+      </div>
+      <div className="row export-curves" style={{ gap: 8, marginTop: 6, alignItems: 'center' }}>
         <Seg<'simple' | 'full'>
           value={project.song.exportCurves ?? 'simple'}
           onChange={(exportCurves) => setSong({ exportCurves })}
@@ -626,11 +633,6 @@ function ChannelTab() {
             { value: 'full', label: 'Every sample' },
           ]}
         />
-        <Info>
-          For the automation export (Export → MIDI + automation): glides and note bends go out as pitch bend, volume as
-          expression or pressure. Simplified keeps only the points that redraw each curve when a DAW joins them with straight lines — corners stay,
-          straight runs collapse to their two ends (within 3 cents of pitch). Every sample writes all of them, 16 per step.
-        </Info>
       </div>
 
       <div className="row" style={{ marginTop: 22, flexWrap: 'wrap' }}>

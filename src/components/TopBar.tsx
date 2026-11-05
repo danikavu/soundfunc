@@ -245,7 +245,7 @@ function AllChannels() {
           }}
           title={allGlide ? 'Every melodic channel glides — click to play notes again' : 'Glide all — every melodic channel follows its curve'}
         >
-          Glide all
+          Glide
         </button>
         {/* both lit only when every glide agrees — a mix of the two shows neither */}
         <Seg<'snap' | 'free' | 'mixed'>
