@@ -316,7 +316,7 @@ export function TopBar() {
             }))}
           />
         </div>
-        <div className="field-inline">
+        <div className="field-inline w-harmony">
           <span title="The chord of each bar, as a function of bar">Harmony</span>
           <div className="harmony">
             <TextField

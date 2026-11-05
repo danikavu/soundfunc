@@ -1230,3 +1230,36 @@ body,
 .mini-score > * {
   filter: brightness(1.35) saturate(1.1);
 }
+
+/* ---------- the top bar always fits ----------
+   Everything keeps its size except the Harmony formula, which takes what room is left (and gives
+   it back first), so Export, undo / redo and day / night never slide off the edge — whatever the
+   window, and whatever controls join the bar later. */
+.topbar > .transport {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.topbar > :not(.transport) {
+  flex: none;
+}
+.transport > * {
+  flex: none;
+}
+.transport > .w-harmony {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 440px;
+}
+.w-harmony > .harmony {
+  display: flex;
+  min-width: 0;
+}
+.app .topbar .w-harmony .harmony .input {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 56px;
+}
+.w-harmony .harmony > :not(.input) {
+  flex: none;
+}
+
