@@ -549,7 +549,7 @@ function ChannelTab() {
             onChange={(playMode) => up({ playMode })}
             options={[
               { value: 'notes', label: 'Notes' },
-              { value: 'glide', label: 'Glide — follow the curve' },
+              { value: 'glide', label: 'Glide' },
             ]}
           />
           {glide && (
