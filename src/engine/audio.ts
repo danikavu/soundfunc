@@ -2,6 +2,7 @@ import { midiToFreq } from './music';
 import { audibleTracks, isDrum, patternBeats, renderTrack, songBeats, songWindows, type Note, type Project, type Track, type TrackRender } from './project';
 import { timbreHarmonics } from './timbre';
 import { cutoffHz, drumOf, synthOf, type OscWave, type SynthParams } from './synth';
+import { AudioTap, MAX_TAKE_SECONDS, Take, type Jam } from './jam';
 
 const LOOKAHEAD_SEC = 0.12;
 const TICK_MS = 25;
@@ -35,6 +36,13 @@ interface GlideVoice {
   lastVel: number;
 }
 
+/** what a jam take is doing, for the record button */
+export type TakeEvent = { kind: 'armed' } | { kind: 'recording' } | { kind: 'ending' } | { kind: 'done'; jam: Jam } | { kind: 'discarded' };
+
+/** takes start and end on a bar line (4 beats from the play start) */
+const BAR = 4;
+const nextBar = (beat: number) => Math.ceil(beat / BAR - 1e-9) * BAR;
+
 const glideKey = (t: Track) => `${t.waveform}|${t.waveform === 'custom' ? t.timbre : ''}|${JSON.stringify(t.synth ?? {})}`;
 
 /** how loud each oscillator is at full level, so voices come out evenly */
@@ -49,6 +57,13 @@ export class AudioEngine {
   private dry!: GainNode;
   private wet!: GainNode;
   private analyser!: AnalyserNode;
+  /** the mix before the master volume: what a jam take records */
+  private mix!: DynamicsCompressorNode;
+  private tap: AudioTap | null = null;
+  private take: Take | null = null;
+  private takeLive = false;
+  /** told when a take is armed, starts, is ending, is done or discarded */
+  onTake: ((e: TakeEvent) => void) | null = null;
   private noise!: AudioBuffer;
   private buses = new Map<string, Bus>();
   private glides = new Map<string, GlideVoice>();
@@ -86,6 +101,7 @@ export class AudioEngine {
     this.dry.connect(comp);
     this.wet.connect(verb).connect(comp);
     comp.connect(this.master).connect(this.analyser).connect(ctx.destination);
+    this.mix = comp;
 
     this.noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = this.noise.getChannelData(0);
@@ -178,6 +194,13 @@ export class AudioEngine {
     }
     this.project = project;
     this.bpm = project.song.bpm;
+    if (this.take && this.ctx) {
+      const t = this.take, now = this.ctx.currentTime;
+      t.tempo(Math.max(t.start, this.beatAt(now)), this.bpm);
+      // the bar lines not reached yet move with the tempo
+      if (now < t.startTime) t.startTime = this.timeAt(t.start);
+      if (Number.isFinite(t.end) && now < t.endTime) t.endTime = this.timeAt(t.end);
+    }
     this.volume = masterLevel(project.song.volume);
     this.renderCache.clear();
     if (this.ctx) {
@@ -204,19 +227,32 @@ export class AudioEngine {
     return Math.max(0, this.beatAt(this.ctx.currentTime - (this.ctx.outputLatency || 0)));
   }
 
-  async play() {
+  /** start playing — and, with `record`, recording a take from the very first beat */
+  async play(record = false) {
     const ctx = this.ensure();
     if (ctx.state !== 'running') await ctx.resume();
+    if (record) await this.connectTap();
     if (this.project) this.setProject(this.project);
     this.originTime = ctx.currentTime + 0.05;
     this.originBeat = 0;
     this.scheduledBeat = 0;
     this.playing = true;
+    if (record) this.beginTake(0);
     this.timer = window.setInterval(() => this.schedule(), TICK_MS);
     this.schedule();
   }
 
   stop() {
+    // a take ends with the music: cut where it stopped (or dropped, if it never began)
+    if (this.take && this.ctx) {
+      const now = this.ctx.currentTime;
+      if (now < this.take.startTime) this.discardTake();
+      else {
+        this.take.end = Math.min(this.take.end, this.beatAt(now));
+        this.take.endTime = Math.min(this.take.endTime, now);
+        void this.finishTake();
+      }
+    }
     this.playing = false;
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
@@ -254,6 +290,7 @@ export class AudioEngine {
     const to = this.beatAt(ctx.currentTime + LOOKAHEAD_SEC);
     if (to <= from) return;
     this.scheduledBeat = to;
+    this.watchTake(ctx.currentTime);
     const secPerBeat = 60 / this.bpm;
     const live = new Set<string>();
     const tracks = audibleTracks(this.project.tracks);
@@ -276,6 +313,7 @@ export class AudioEngine {
           for (const note of render.notes) {
             const beat = k * len + note.beat;
             if (beat < w.from || beat >= w.to) continue;
+            this.take?.note(track, w.base + beat, note);
             const freq = isDrum(track.waveform) ? Math.pow(2, note.tune / 12) : note.freq;
             this.voice(track, bus, this.timeAt(w.base + beat), note.duration * secPerBeat, freq, note.velocity, voiceExpr(note, secPerBeat));
           }
@@ -284,6 +322,80 @@ export class AudioEngine {
     }
     // silence glide voices whose track was muted, removed or switched back to notes
     for (const id of [...this.glides.keys()]) if (!live.has(id)) this.killGlide(id, 0.15);
+  }
+
+  // ---------- jam takes: record what plays ----------
+
+  private async connectTap() {
+    const ctx = this.ensure();
+    this.tap ??= new AudioTap(ctx);
+    await this.tap.connect(this.mix);
+  }
+
+  private beginTake(start: number) {
+    const p = this.project!;
+    this.take = new Take(start, p.name, p.song);
+    this.take.startTime = this.timeAt(start);
+    this.takeLive = false;
+    this.tap?.start();
+    this.onTake?.({ kind: 'armed' });
+    this.watchTake(this.ctx!.currentTime);
+  }
+
+  /** arm a take: it starts on the next bar line not yet played (call while playing) */
+  async record() {
+    if (!this.playing || this.take) return;
+    await this.connectTap();
+    if (!this.playing || this.take) return;
+    this.beginTake(nextBar(this.scheduledBeat));
+  }
+
+  /** end the take on the next bar line (or drop it, if it hasn't started yet) */
+  stopRecording() {
+    const t = this.take;
+    if (!t || !this.ctx || Number.isFinite(t.end)) return;
+    if (this.ctx.currentTime < t.startTime) return this.discardTake();
+    t.end = Math.max(t.start + BAR, nextBar(this.scheduledBeat));
+    t.endTime = this.timeAt(t.end);
+    this.onTake?.({ kind: 'ending' });
+  }
+
+  get recording(): 'off' | 'armed' | 'on' | 'ending' {
+    const t = this.take;
+    if (!t) return 'off';
+    return Number.isFinite(t.end) ? 'ending' : this.takeLive ? 'on' : 'armed';
+  }
+
+  /** seconds into the take (0 until it starts) */
+  takeSeconds(): number {
+    if (!this.take || !this.ctx) return 0;
+    return Math.max(0, Math.min(this.ctx.currentTime, this.take.endTime) - this.take.startTime);
+  }
+
+  private watchTake(now: number) {
+    const t = this.take;
+    if (!t) return;
+    if (!this.takeLive && now >= t.startTime) {
+      this.takeLive = true;
+      this.onTake?.({ kind: 'recording' });
+    }
+    // too long to keep in memory: end it on the next bar
+    if (this.takeLive && !Number.isFinite(t.end) && now - t.startTime > MAX_TAKE_SECONDS) this.stopRecording();
+    if (Number.isFinite(t.end) && now >= t.endTime) void this.finishTake();
+  }
+
+  private discardTake() {
+    this.take = null;
+    void this.tap?.stop(0, 0);
+    this.onTake?.({ kind: 'discarded' });
+  }
+
+  private async finishTake() {
+    const t = this.take;
+    if (!t) return;
+    this.take = null;
+    const audio = this.tap ? await this.tap.stop(t.startTime, t.endTime) : null;
+    this.onTake?.({ kind: 'done', jam: t.finish(t.end, t.endTime - t.startTime, audio) });
   }
 
   // ---------- glide (continuous) voices ----------
@@ -305,6 +417,7 @@ export class AudioEngine {
       if (beat < from || beat >= to) continue;
       const time = this.timeAt(beat);
       const midi = curve.midi[i], vel = curve.velocity[i];
+      this.take?.glide(track, beat, midi, vel);
       if (Math.abs(midi - v.lastMidi) > 0.001) {
         const f = midiToFreq(midi);
         for (const { param, ratio } of v.freqs) {
@@ -478,6 +591,7 @@ export class AudioEngine {
     if (!v || !this.ctx) return;
     this.glides.delete(id);
     const now = this.ctx.currentTime;
+    this.take?.hush(id, this.beatAt(now));
     v.amp.gain.cancelScheduledValues(now);
     v.amp.gain.setTargetAtTime(0, now, fade / 3);
     for (const n of v.nodes) n.stop(now + fade * 3);
