@@ -14,6 +14,7 @@ import { Inspector } from './components/Inspector';
 import { FunctionSheet } from './components/FunctionSheet';
 import { ImportSheet } from './components/ImportSheet';
 import { saveGarden } from './components/GardenMenu';
+import { paintOverlays } from './components/overlays';
 
 const isTyping = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
@@ -28,6 +29,7 @@ export function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    void paintOverlays(theme);
   }, [theme]);
 
   // the engine always plays the latest project — edits are heard live

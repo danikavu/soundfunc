@@ -365,6 +365,46 @@ body {
   cursor: default;
 }
 
+/* ---------- the sketches: faint math ink over the chrome (src/components/overlays.ts) ----------
+   One sheet, pinned to the window (fixed), so the drawing runs on across the plates and panels as
+   if they were cut from the same paper. Never on the screens: the score / function / ripple view
+   and the node board keep their own backgrounds. */
+body,
+.title-plate,
+.topbar,
+.app aside.panel,
+.nodes > .toolbar {
+  background-image: var(--func-overlay-2, none), var(--plate, none);
+  background-size: cover, auto;
+  background-position: center, 0 0;
+  background-repeat: no-repeat, no-repeat;
+  background-attachment: fixed, scroll;
+}
+/* the top of the window — the nameplate, the controls, the node toolbar — gets the other sketch */
+.title-plate,
+.topbar,
+.nodes > .toolbar {
+  background-image: var(--func-overlay-1, none), var(--plate, none);
+}
+/* each surface's own colour under the ink (the toolbar's are its own, set on it) */
+body,
+.app aside.panel {
+  --plate: linear-gradient(var(--paper), var(--paper));
+}
+.title-plate,
+.topbar,
+.nodes > .toolbar {
+  --plate: linear-gradient(var(--card), var(--paper-2));
+}
+/* sheets and the kit picker float: their sketch sits with them (outranking the popovers' !important plain card) */
+.app .sheet,
+.app .kit-pop {
+  background-image: var(--func-overlay-2, none) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+}
+
 /* ---------- LCD value boxes ---------- */
 
 .app .topbar .input,
