@@ -10,7 +10,7 @@ import { compile, tokenize } from './expr';
 import { ctxVars, formatCurve, NODE_DEFS, parseCurve, type GNode, type Graph, type NodeData } from './graph';
 import { chordTones, PROGRESSIONS, SCALES } from './music';
 import { isDrum, renderTrack, type Song, type Track, type TrackRender } from './project';
-import { TIMBRE_VARS } from './timbre';
+import { TIMBRE_VARS, timbreSamples } from './timbre';
 
 // ---------- seeded randomness ----------
 
@@ -491,6 +491,29 @@ export interface MutationResult {
   tried: number;
 }
 
+/**
+ * A new custom wave: the formula mutated until it still makes a sound (not silent, not broken)
+ * and sounds different — its one cycle moves noticeably from the old one. Null if none was found.
+ */
+export function mutateTimbre(src: string, chaos: number, seed = Date.now(), tries = 60): string | null {
+  const rng = mulberry32(seed);
+  const before = timbreSamples(src, 128);
+  for (let i = 0; i < tries; i++) {
+    // at least a little wander, even at Safe: the wave should change when asked
+    const cand = mutateFormula(src, Math.max(0.3, chaos), rng, TIMBRE_VARS);
+    if (cand === src || cand.length > 160) continue;
+    const s = timbreSamples(cand, 128);
+    if (!s || !s.some((v) => v !== 0)) continue;
+    if (before) {
+      let diff = 0;
+      for (let j = 0; j < 128; j++) diff += Math.abs(s[j] - before[j]);
+      if (diff / 128 < 0.04) continue;
+    }
+    return cand;
+  }
+  return null;
+}
+
 export function mutateTrack(track: Track, song: Song, chaos: number, seed = Date.now(), candidates = 40): MutationResult {
   const rng = mulberry32(seed);
   const orig = renderTrack(track, song, 0, false);
@@ -500,7 +523,8 @@ export function mutateTrack(track: Track, song: Song, chaos: number, seed = Date
     let graph = mutateGraph(track.graph, chaos, rng);
     if (chaos > 0.6 && rng() < chaos - 0.4) graph = mutateGraph(graph, chaos, rng);
     const cand: Track = { ...track, graph };
-    if (track.waveform === 'custom' && rng() < 0.2 + chaos * 0.4) cand.timbre = mutateFormula(track.timbre, chaos, rng, TIMBRE_VARS);
+    // the custom wave is locked unless the user unlocked it (the Sound tab's own Mutate wave changes it on its own)
+    if (track.waveform === 'custom' && track.timbreUnlocked && rng() < 0.2 + chaos * 0.4) cand.timbre = mutateFormula(track.timbre, chaos, rng, TIMBRE_VARS);
     const score = musicalScore(renderTrack(cand, song, 0, false), orig, track, song, chaos);
     // a touch of randomness so equal-scoring candidates don't always win in order
     const jitter = rng() * 0.2 * (0.3 + chaos);

@@ -4,12 +4,13 @@ import { CONSTANTS, FUNCTIONS } from '../engine/expr';
 import { PITCH_MODES, midiToName, type PitchMode } from '../engine/music';
 import { CHANNEL_PALETTE, TRACK_COLORS } from '../engine/presets';
 import { DRUMS, STRETCH_MAX, STRETCH_MIN, WAVEFORMS, isDrum, keyLabel, patternBeats, stretchOf, voiceLabel, type PlayMode, type Waveform } from '../engine/project';
-import { useLibrary, voiceOf, wearsVoice } from '../state/library';
+import { readVoiceFile, useLibrary, voiceFile, voiceOf, wearsVoice } from '../state/library';
+import { mutateTimbre } from '../engine/mutate';
 import { DRUM_BASE, PATCHES, VOICE_HINTS as SYNTH_HINTS, cutoffHz, surprise, type DrumParams, type FilterKind, type MelodicVoice, type OscWave, type SynthParams } from '../engine/synth';
 import { toast } from './TopBar';
 import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
-import { Icon, Info, NumberField, Seg, Slider, Stepper, TextField, getRender } from './ui';
+import { Icon, Info, NumberField, Seg, Slider, Stepper, TextField, download, fileSafe, getRender } from './ui';
 import { StepPicker } from './StepPicker';
 import { BEND_RANGES } from '../engine/midi';
 import { FormulaEditor } from './FormulaEditor';
@@ -22,10 +23,38 @@ type Tab = 'channel' | 'sound' | 'notes' | 'guide';
 function TimbreEditor() {
   const track = useSelectedTrack()!;
   const { updateTrack, checkpoint } = useStore();
+  const chaos = useStore((s) => s.chaos);
   const samples = timbreSamples(track.timbre, 128);
   const d = samples ? Array.from(samples, (v, i) => `${i ? 'L' : 'M'}${((i / 127) * 200).toFixed(1)},${(22 - v * 18).toFixed(1)}`).join('') : '';
+  const unlocked = !!track.timbreUnlocked;
   return (
     <div style={{ marginTop: 12 }}>
+      {/* the wave has its own Mutate; the channel's Mutate (R / ⇧R) leaves it alone unless it is unlocked */}
+      <div className="row wave-tools">
+        <button
+          className="btn small"
+          onClick={() => {
+            const timbre = mutateTimbre(track.timbre, chaos);
+            if (!timbre) return toast('No new wave found from this one — try again, or turn Mutate towards Wild');
+            updateTrack(track.id, { timbre });
+            toast('Mutated the wave — ⌘Z to bring the old one back');
+          }}
+          title="Mutate wave: a new f(p) grown from this one (only the wave changes; how far follows Mutate’s Safe ↔ Wild)"
+        >
+          <Icon name="dice" size={12} /> Mutate wave
+        </button>
+        <button
+          className={`btn small ghost wave-lock ${unlocked ? '' : 'on'}`}
+          aria-pressed={!unlocked}
+          onClick={() => {
+            updateTrack(track.id, { timbreUnlocked: !unlocked });
+            toast(unlocked ? 'Wave locked — Mutate leaves it as it is' : 'Wave unlocked — Mutate (R / ⇧R) may change it too');
+          }}
+          title={unlocked ? 'Unlocked: Mutate (R / ⇧R) may change this wave too — click to lock it' : 'Locked: Mutate (R / ⇧R) leaves this wave alone — click to let it change the wave too'}
+        >
+          <Icon name={unlocked ? 'unlock' : 'lock'} size={12} /> {unlocked ? 'Unlocked' : 'Locked'}
+        </button>
+      </div>
       <div className="field">
         <span>
           One cycle of the wave, <code className="mono">f(p)</code> with p = 0 → 1
@@ -314,11 +343,14 @@ function SoundPanel() {
   );
 }
 
-/** Keep the current sound as a named voice. */
+/** Keep the current sound as a named voice — and bring voices in from, or take them out to, a file. */
 function SaveVoice() {
   const track = useSelectedTrack()!;
-  const { voices, saveVoice } = useLibrary();
+  const { voices, saveVoice, importVoices } = useLibrary();
   const [naming, setNaming] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  // a stock voice with nothing changed is already in the Voice menu: nothing to save
+  const savable = track.waveform === 'custom' || Object.keys(track.synth ?? {}).length > 0;
   const suggest = () => {
     const preset = TIMBRE_PRESETS.find((p) => p.formula === track.timbre);
     const base = track.waveform === 'custom' ? (preset?.label ?? 'My wave') : voiceLabel(track.waveform);
@@ -336,10 +368,56 @@ function SaveVoice() {
   };
   if (naming === null)
     return (
-      <div className="row" style={{ marginTop: 8 }}>
-        <button className="btn small ghost" onClick={() => setNaming(suggest())} title="Keep this sound — waveform, custom f(p), attack, release">
-          <Icon name="save" size={13} /> Save voice
-        </button>
+      <div className="row voice-tools">
+        {savable && (
+          <button className="btn small ghost" onClick={() => setNaming(suggest())} title="Keep this sound — waveform, custom f(p), attack, release, and its Shape settings">
+            <Icon name="save" size={13} /> Save voice
+          </button>
+        )}
+        <span className="row voice-files">
+          <button className="icon-btn" onClick={() => fileRef.current?.click()} title="Import voices from a .json file — they join My voices in the Voice menu" aria-label="Import voices">
+            <Icon name="upload" size={13} />
+          </button>
+          <button
+            className="icon-btn"
+            disabled={!voices.length}
+            onClick={() => download('soundfunc-voices.json', JSON.stringify(voiceFile(voices), null, 2), 'application/json')}
+            title={voices.length ? `Export all ${voices.length} of your voices as one file` : 'Save a voice first — then you can export your voices'}
+            aria-label="Export all voices"
+          >
+            <Icon name="download" size={13} />
+          </button>
+          {savable && (
+            <button
+              className="icon-btn"
+              onClick={() => {
+                const name = suggest();
+                download(`${fileSafe(name)}.soundfunc-voice.json`, JSON.stringify(voiceFile([voiceOf(track, name)]), null, 2), 'application/json');
+              }}
+              title="Export this sound as a voice file (without saving it)"
+              aria-label="Export this sound"
+            >
+              <Icon name="send" size={13} />
+            </button>
+          )}
+        </span>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,application/json"
+          hidden
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (!f) return;
+            try {
+              const n = importVoices(readVoiceFile(await f.text()));
+              toast(n ? `Imported ${n} voice${n > 1 ? 's' : ''} — under My voices in the Voice menu` : 'No voices in that file');
+            } catch (err) {
+              toast(err instanceof Error ? err.message : 'Could not read that file');
+            }
+          }}
+        />
       </div>
     );
   return (
@@ -656,7 +734,7 @@ function SoundTab() {
   return (
     <>
       <div className="sound-tab-head">
-        <span className="stone" style={{ background: track.color }} aria-hidden />
+        <span className="kit-swatch" style={{ background: track.color }} aria-hidden />
         <b>{track.name}</b>
       </div>
       <div className="eyebrow">Mix</div>
@@ -668,7 +746,7 @@ function SoundTab() {
       <VoicePicker />
       {track.waveform === 'custom' && <TimbreEditor />}
       <SoundPanel />
-      {(track.waveform === 'custom' || Object.keys(track.synth ?? {}).length > 0) && <SaveVoice />}
+      <SaveVoice />
 
     </>
   );

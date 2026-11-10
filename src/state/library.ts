@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { uid, type Kit } from '../engine/presets';
 import { NOTE_NAMES, SCALES } from '../engine/music';
 import type { Block } from '../engine/graphEdit';
-import { normalizeProject, TRACK_DEFAULTS, type Project, type Slider, type Song, type Track, type Waveform } from '../engine/project';
+import { DRUMS, normalizeProject, TRACK_DEFAULTS, WAVEFORMS, type Project, type Slider, type Song, type Track, type Waveform } from '../engine/project';
 
 /** The sound of a track, without its notes: reusable across tracks and projects. */
 export interface Voice {
@@ -177,6 +177,42 @@ export const wearsVoice = (t: Track, v: Voice) =>
   Math.abs(t.release - v.release) < 1e-6 &&
   JSON.stringify(t.synth ?? {}) === JSON.stringify(v.synth ?? {});
 
+/** the file format for sharing voices (sounds): one voice, or every one */
+export interface VoiceFile {
+  kind: 'soundfunc-voices';
+  version: 1;
+  voices: Voice[];
+}
+
+export const voiceFile = (voices: Voice[]): VoiceFile => ({ kind: 'soundfunc-voices', version: 1, voices });
+
+const isWaveform = (w: unknown): w is Waveform => typeof w === 'string' && (w in WAVEFORMS || w in DRUMS);
+const num = (v: unknown, fallback: number, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback);
+
+/** read a voices file; throws a plain-language error for anything else */
+export function readVoiceFile(text: string): Voice[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error('That file isn’t JSON');
+  }
+  const f = data as Partial<VoiceFile>;
+  if (f.kind !== 'soundfunc-voices' || !Array.isArray(f.voices)) throw new Error('That file isn’t a SoundFunc voices file');
+  return f.voices
+    .filter((v) => v && typeof v.name === 'string' && v.name.trim() && isWaveform(v.waveform))
+    .map((v) => ({
+      id: uid('voice'),
+      name: v.name.trim(),
+      waveform: v.waveform,
+      timbre: typeof v.timbre === 'string' && v.timbre.trim() ? v.timbre : TRACK_DEFAULTS.timbre,
+      attack: num(v.attack, TRACK_DEFAULTS.attack, 0, 10),
+      release: num(v.release, TRACK_DEFAULTS.release, 0, 20),
+      synth: v.synth && typeof v.synth === 'object' && !Array.isArray(v.synth) ? { ...v.synth } : undefined,
+      savedAt: typeof v.savedAt === 'number' ? v.savedAt : Date.now(),
+    }));
+}
+
 interface Library {
   voices: Voice[];
   projects: SavedProject[];
@@ -196,6 +232,8 @@ interface Library {
   deleteBlock: (id: string) => void;
   saveVoice: (voice: Voice) => void;
   deleteVoice: (id: string) => void;
+  /** add voices from a file; names that already exist get a number; returns how many */
+  importVoices: (voices: Voice[]) => number;
   /** save (or overwrite, when `id` is given) a project; returns its id */
   saveProject: (project: Project, id?: string | null) => string;
   deleteProject: (id: string) => void;
@@ -240,6 +278,17 @@ export const useLibrary = create<Library>()(
       deleteBlock: (id) => set((s) => ({ blocks: s.blocks.filter((b) => b.id !== id) })),
       saveVoice: (voice) => set((s) => ({ voices: [...s.voices.filter((v) => v.name !== voice.name), voice] })),
       deleteVoice: (id) => set((s) => ({ voices: s.voices.filter((v) => v.id !== id) })),
+      importVoices: (voices) => {
+        const taken = new Set(get().voices.map((v) => v.name));
+        const added = voices.map((v) => {
+          let name = v.name, i = 2;
+          while (taken.has(name)) name = `${v.name} ${i++}`;
+          taken.add(name);
+          return { ...v, id: uid('voice'), name };
+        });
+        set((s) => ({ voices: [...s.voices, ...added] }));
+        return added.length;
+      },
       saveProject: (project, id) => {
         const existing = id ? get().projects.find((p) => p.id === id) : undefined;
         const entry: SavedProject = { id: existing?.id ?? uid('garden'), name: project.name || 'Untitled', savedAt: Date.now(), project: cleanProject(project) };

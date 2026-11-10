@@ -13,7 +13,7 @@ import { degreeToMidi, SCALES, valueToMidi } from './music';
 import { CHANNEL_PALETTE, KITS, PRESETS, defaultProject, pickColor, trackFromPreset, trackFromTemplate, voicedInversion, voicedPitch } from './presets';
 import { HARMONY_VARS, harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
 import { chordName, chordTones, limitPitch, PROGRESSIONS, spellDegree } from './music';
-import { mulberry32, mutateFormula, mutateOneNode, mutateTrack, musicalScore } from './mutate';
+import { mulberry32, mutateFormula, mutateOneNode, mutateTimbre, mutateTrack, musicalScore } from './mutate';
 import { useStore } from '../state/store';
 import { parsePattern } from './graph';
 import { timbreHarmonics } from './timbre';
@@ -24,7 +24,7 @@ import { auditionGraph, blockFromSelection, collapseNodes, curveToFormula, explo
 import { BLOCKS } from './blocks';
 import { Take, jamMidi, jamWav } from './jam';
 import { applyGrid } from './steps';
-import { asKit, cleanProject, kitFile, kitOf, readKitFile, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
+import { asKit, cleanProject, kitFile, kitOf, readKitFile, readVoiceFile, voiceFile, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
 
 const ev = (s: string, scope = {}) => compile(s).fn(scope);
 
@@ -1653,5 +1653,48 @@ describe('jam takes', () => {
     expect(v.getUint16(22, true)).toBe(2);
     expect(v.getUint32(40, true)).toBe(12);
     expect(v.getInt16(44 + 10, true)).toBe(-3);
+  });
+});
+
+describe('custom waves and voices', () => {
+  const custom = (unlocked?: boolean): Track => ({ ...trackFromPreset(PRESETS[0], 0), waveform: 'custom', timbre: 'sin(tau*p) + 0.3*sin(3*tau*p)', timbreUnlocked: unlocked });
+  const song = defaultProject().song;
+
+  it('Mutate leaves a custom wave alone unless it is unlocked', () => {
+    for (let seed = 1; seed <= 12; seed++) expect(mutateTrack(custom(), song, 1, seed).track.timbre).toBe(custom().timbre);
+    const changed = Array.from({ length: 12 }, (_, i) => mutateTrack(custom(true), song, 1, i + 1).track.timbre).filter((t) => t !== custom().timbre);
+    expect(changed.length).toBeGreaterThan(0);
+  });
+
+  it('Mutate wave gives a new wave that still sounds — and changes nothing else', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const t = mutateTimbre(custom().timbre, 0.4, seed);
+      expect(t, `seed ${seed}`).not.toBeNull();
+      expect(t).not.toBe(custom().timbre);
+      const h = timbreHarmonics(t!);
+      expect(h, t!).not.toBeNull();
+      expect(h!.imag.some((v) => Math.abs(v) > 1e-4) || h!.real.some((v) => Math.abs(v) > 1e-4), t!).toBe(true);
+    }
+  });
+
+  it('voices go out to a file and come back the same; anything else is refused', () => {
+    const v = { id: 'v1', name: 'Glass', waveform: 'custom' as const, timbre: 'sin(tau*p)^3', attack: 0.02, release: 0.6, synth: { cutoff: 0.4, unison: 3 }, savedAt: 5 };
+    const back = readVoiceFile(JSON.stringify(voiceFile([v])));
+    expect(back).toHaveLength(1);
+    expect({ ...back[0], id: 'v1' }).toEqual(v);
+    // unknown waveforms and nameless voices are dropped; numbers are kept in range
+    const odd = readVoiceFile(JSON.stringify({ kind: 'soundfunc-voices', version: 1, voices: [{ name: 'x', waveform: 'banjo' }, { waveform: 'sine' }, { name: 'Soft', waveform: 'pad', attack: -3, release: 99 }] }));
+    expect(odd.map((x) => [x.name, x.attack, x.release])).toEqual([['Soft', 0, 20]]);
+    expect(() => readVoiceFile('{"kind":"soundfunc-kits","kits":[]}')).toThrow(/voices file/);
+    expect(() => readVoiceFile('nope')).toThrow(/JSON/);
+  });
+
+  it('imported voices with a name already taken get a number', () => {
+    useLibrary.setState({ voices: [] });
+    const v = readVoiceFile(JSON.stringify(voiceFile([{ id: 'a', name: 'Glass', waveform: 'sine', timbre: 'sin(tau*p)', attack: 0.01, release: 0.4, savedAt: 1 }])));
+    expect(useLibrary.getState().importVoices(v)).toBe(1);
+    expect(useLibrary.getState().importVoices(v)).toBe(1);
+    expect(useLibrary.getState().voices.map((x) => x.name)).toEqual(['Glass', 'Glass 2']);
+    useLibrary.setState({ voices: [] });
   });
 });

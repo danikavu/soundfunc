@@ -78,6 +78,8 @@ export interface Track {
   waveform: Waveform;
   /** custom waveform: one cycle as f(p), p = 0 → 1 */
   timbre: string;
+  /** Mutate (R / ⇧R) may change the custom wave too — off (locked) unless the user unlocks it */
+  timbreUnlocked?: boolean;
   volume: number;
   pan: number;
   attack: number;

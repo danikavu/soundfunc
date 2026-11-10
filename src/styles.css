@@ -3399,10 +3399,28 @@ button:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sound-tab-head .stone {
+.sound-tab-head .kit-swatch {
   flex: none;
-  width: 12px;
-  height: 12px;
+}
+/* the custom wave's own tools: Mutate wave, and its lock against the channel's Mutate */
+.wave-tools {
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.wave-lock.on {
+  color: var(--ink);
+  border-color: var(--line);
+}
+/* Save voice, and voices in and out as files */
+.voice-tools {
+  margin-top: 8px;
+  gap: 6px;
+  align-items: center;
+}
+.voice-files {
+  margin-left: auto;
+  gap: 2px;
 }
 .all-channels {
   display: flex;
