@@ -24,7 +24,7 @@ import { auditionGraph, blockFromSelection, collapseNodes, curveToFormula, explo
 import { BLOCKS } from './blocks';
 import { Take, jamMidi, jamWav } from './jam';
 import { applyGrid } from './steps';
-import { asKit, cleanProject, kitFile, kitOf, readKitFile, readVoiceFile, voiceFile, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
+import { asKit, cleanProject, kitFile, kitOf, readKitFile, savedKitOf, readVoiceFile, voiceFile, functionFile, functionOf, projectKey, readFunctionFile, useLibrary, voiceOf, wearsVoice } from '../state/library';
 
 const ev = (s: string, scope = {}) => compile(s).fn(scope);
 
@@ -1653,6 +1653,17 @@ describe('jam takes', () => {
     expect(v.getUint16(22, true)).toBe(2);
     expect(v.getUint32(40, true)).toBe(12);
     expect(v.getInt16(44 + 10, true)).toBe(-3);
+  });
+});
+
+describe('exporting one kit', () => {
+  it('writes a built-in kit as a kits file that imports whole', () => {
+    const kit = KITS.find((k) => k.id === 'lowrider') ?? KITS[0];
+    const [back] = readKitFile(JSON.stringify(kitFile([savedKitOf(kit)])));
+    expect(back.name).toBe(kit.name);
+    expect(back.tracks.length).toBe(kit.tracks.length);
+    expect(back.song.bpm).toBe(kit.song?.bpm);
+    expect(back.tracks[0].graph.nodes.length).toBe(kit.tracks[0].graph.nodes.length);
   });
 });
 

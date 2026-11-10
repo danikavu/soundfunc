@@ -137,6 +137,16 @@ export function readKitFile(text: string): SavedKit[] {
 
 export const kitFile = (kits: SavedKit[]): KitFile => ({ kind: 'soundfunc-kits', version: 1, kits });
 
+/** any kit — yours or a built-in one — as it goes into a kits file */
+export const savedKitOf = (k: Kit): SavedKit => ({
+  id: k.id.startsWith('mine:') ? k.id.slice(5) : uid('kit'),
+  name: k.name,
+  description: k.description,
+  savedAt: Date.now(),
+  song: { ...k.song },
+  tracks: structuredClone(k.tracks),
+});
+
 export interface SavedProject {
   id: string;
   name: string;

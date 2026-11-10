@@ -33,6 +33,8 @@
   --lcd-edge: #06110b;
   --glow-ink: 0 0 6px rgba(120, 240, 170, 0.45);
   --radius: 3px;
+  /* the custom wave's preview in the Sound tab: black on paper, orange in the dark */
+  --wave-preview: #000;
 }
 
 :root[data-theme='dark'] {
@@ -54,6 +56,7 @@
   --lcd: #08140e;
   --lcd-2: #0e1e15;
   --lcd-edge: #000;
+  --wave-preview: #ff8a1f;
 }
 
 /* inside a screen, everything takes the screen's colours */

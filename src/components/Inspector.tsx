@@ -68,7 +68,7 @@ function TimbreEditor() {
       </div>
       <svg className="spark" viewBox="0 0 200 44" preserveAspectRatio="none" style={{ height: 44 }}>
         <line x1="0" x2="200" y1="22" y2="22" stroke="var(--line)" strokeDasharray="2 4" />
-        {d && <path d={d} fill="none" stroke={track.color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
+        {d && <path d={d} fill="none" stroke="var(--wave-preview)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
       </svg>
       <div className="seg" style={{ marginTop: 6 }}>
         {TIMBRE_PRESETS.map((t) => (
