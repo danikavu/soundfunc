@@ -4,10 +4,11 @@
  *   SoundFunc Presets/
  *     Functions/        your functions, one file each  (name.soundfunc-function.json)
  *     Rhythm kits/      your kits, one file each       (name.soundfunc-kit.json)
+ *     Voices/           your saved sounds, one file each (name.soundfunc-voice.json)
  *     Factory presets/  every built-in function and kit, to look at, copy and share
  *
- * Once opened, My functions, My kits and the folder stay in step: what's in Functions and
- * Rhythm kits is loaded, and saving, importing or deleting writes or removes its file.
+ * Once opened, My functions, My kits, My voices and the folder stay in step: what's in Functions,
+ * Rhythm kits and Voices is loaded, and saving, importing or deleting writes or removes its file.
  * Factory presets is written for you and never read back.
  *
  * A web page can't open Finder or Explorer by itself, so "opening" means choosing where the
@@ -17,14 +18,15 @@
  * Browsers without the API can still load a folder's files once.
  */
 import { create } from 'zustand';
-import { functionFile, kitFile, readFunctionFile, readKitFile, useLibrary, type SavedFunction, type SavedKit } from './library';
+import { functionFile, kitFile, readFunctionFile, readKitFile, readVoiceFile, useLibrary, voiceFile, type SavedFunction, type SavedKit, type Voice } from './library';
 import { fileSafe } from '../components/ui';
 import { KITS, PRESETS, trackFromPreset } from '../engine/presets';
 
 export const ROOT_NAME = 'SoundFunc Presets';
-const DIRS = { functions: 'Functions', kits: 'Rhythm kits', factory: 'Factory presets' } as const;
+const DIRS = { functions: 'Functions', kits: 'Rhythm kits', voices: 'Voices', factory: 'Factory presets' } as const;
 export const FUNCTION_FILE_SUFFIX = '.soundfunc-function.json';
 export const KIT_FILE_SUFFIX = '.soundfunc-kit.json';
+export const VOICE_FILE_SUFFIX = '.soundfunc-voice.json';
 export const fileNameOf = (name: string) => `${fileSafe(name)}${FUNCTION_FILE_SUFFIX}`;
 
 // what the File System Access API gives (not in every TypeScript DOM library yet)
@@ -137,6 +139,20 @@ const kits: Collection<SavedKit> = {
   files: new Map(),
 };
 
+const voices: Collection<Voice> = {
+  suffix: VOICE_FILE_SUFFIX,
+  read: readVoiceFile,
+  text: (v) => JSON.stringify(voiceFile([v]), null, 2),
+  list: () => useLibrary.getState().voices,
+  merge: (items) => {
+    const merged = mergeByName(useLibrary.getState().voices, items);
+    useLibrary.setState({ voices: merged });
+    return merged;
+  },
+  dir: null,
+  files: new Map(),
+};
+
 /** read every item in a folder (and, for functions, in an older flat folder's top level) */
 async function load<T extends { name: string }>(c: Collection<T>, ...dirs: DirHandle[]): Promise<{ items: T[]; skipped: number }> {
   const items: T[] = [];
@@ -235,22 +251,25 @@ export const usePresetFolder = create<FolderState>(() => ({ name: null, needsAcc
 let unsubscribe: (() => void) | null = null;
 
 /** bring the folder and the library together: the folder's items in, the library's missing ones out */
-async function connect(root: DirHandle, label: string): Promise<{ functions: number; kits: number; written: number; factory: number; skipped: number }> {
+async function connect(root: DirHandle, label: string): Promise<{ functions: number; kits: number; voices: number; written: number; factory: number; skipped: number }> {
   usePresetFolder.setState({ name: label, needsAccess: false, busy: true });
   try {
     functions.dir = await root.getDirectoryHandle(DIRS.functions, { create: true });
     kits.dir = await root.getDirectoryHandle(DIRS.kits, { create: true });
+    voices.dir = await root.getDirectoryHandle(DIRS.voices, { create: true });
     // an older folder kept functions at its top level: read those too (new ones go into Functions)
     const f = await load(functions, functions.dir, root);
     const k = await load(kits, kits.dir);
-    const written = (await sync(functions, functions.merge(f.items))) + (await sync(kits, kits.merge(k.items)));
+    const v = await load(voices, voices.dir);
+    const written = (await sync(functions, functions.merge(f.items))) + (await sync(kits, kits.merge(k.items))) + (await sync(voices, voices.merge(v.items)));
     const factory = await writeFactory(root).catch(() => 0);
     unsubscribe?.();
     unsubscribe = useLibrary.subscribe((s, prev) => {
       if (s.functions !== prev.functions) void sync(functions, s.functions);
       if (s.kits !== prev.kits) void sync(kits, s.kits);
+      if (s.voices !== prev.voices) void sync(voices, s.voices);
     });
-    return { functions: f.items.length, kits: k.items.length, written, factory, skipped: f.skipped + k.skipped };
+    return { functions: f.items.length, kits: k.items.length, voices: v.items.length, written, factory, skipped: f.skipped + k.skipped + v.skipped };
   } finally {
     usePresetFolder.setState({ busy: false });
   }
@@ -260,8 +279,8 @@ async function connect(root: DirHandle, label: string): Promise<{ functions: num
 async function isPresetsFolder(d: DirHandle): Promise<boolean> {
   if (d.name === ROOT_NAME) return true;
   for await (const e of d.values()) {
-    if (e.kind === 'directory' && (e.name === DIRS.functions || e.name === DIRS.kits || e.name === DIRS.factory)) return true;
-    if (e.kind === 'file' && (e.name.endsWith(FUNCTION_FILE_SUFFIX) || e.name.endsWith(KIT_FILE_SUFFIX))) return true;
+    if (e.kind === 'directory' && (e.name === DIRS.functions || e.name === DIRS.kits || e.name === DIRS.voices || e.name === DIRS.factory)) return true;
+    if (e.kind === 'file' && (e.name.endsWith(FUNCTION_FILE_SUFFIX) || e.name.endsWith(KIT_FILE_SUFFIX) || e.name.endsWith(VOICE_FILE_SUFFIX))) return true;
   }
   return false;
 }
@@ -292,16 +311,17 @@ export async function openPresetFolder(): Promise<string> {
   }
   const r = await connect(kept.root, kept.label);
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
-  return `Presets folder: ${kept.label}. ${plural(r.functions, 'function')} and ${plural(r.kits, 'kit')} loaded${r.written ? `, ${r.written} written` : ''}${r.factory ? ` · ${r.factory} factory presets added` : ''}${r.skipped ? ` · ${plural(r.skipped, 'file')} skipped` : ''}. Saving and deleting now keep it in step.`;
+  return `Presets folder: ${kept.label}. ${plural(r.functions, 'function')}, ${plural(r.kits, 'kit')} and ${plural(r.voices, 'voice')} loaded${r.written ? `, ${r.written} written` : ''}${r.factory ? ` · ${r.factory} factory presets added` : ''}${r.skipped ? ` · ${plural(r.skipped, 'file')} skipped` : ''}. Saving and deleting now keep it in step.`;
 }
 
 /** stop keeping the folder in step (its files stay as they are) */
 export async function forgetPresetFolder() {
   unsubscribe?.();
   unsubscribe = null;
-  functions.dir = kits.dir = null;
+  functions.dir = kits.dir = voices.dir = null;
   functions.files = new Map();
   kits.files = new Map();
+  voices.files = new Map();
   await idb('readwrite', (s) => s.delete(KEY));
   usePresetFolder.setState({ name: null, needsAccess: false });
 }
@@ -326,9 +346,14 @@ export function mergeKits(ks: SavedKit[]) {
   kits.merge(ks);
 }
 
-/** browsers without the API: read the functions and kits out of a folder's files (from <input webkitdirectory>) */
-export async function readFolderFiles(list: FileList): Promise<{ fns: SavedFunction[]; kits: SavedKit[]; skipped: number }> {
-  const fns: SavedFunction[] = [], ks: SavedKit[] = [];
+/** …and voices into My voices */
+export function mergeVoices(vs: Voice[]) {
+  voices.merge(vs);
+}
+
+/** browsers without the API: read the functions, kits and voices out of a folder's files (from <input webkitdirectory>) */
+export async function readFolderFiles(list: FileList): Promise<{ fns: SavedFunction[]; kits: SavedKit[]; voices: Voice[]; skipped: number }> {
+  const fns: SavedFunction[] = [], ks: SavedKit[] = [], vs: Voice[] = [];
   let skipped = 0;
   for (const f of Array.from(list)) {
     if (!f.name.toLowerCase().endsWith('.json')) continue;
@@ -343,10 +368,16 @@ export async function readFolderFiles(list: FileList): Promise<{ fns: SavedFunct
     }
     try {
       ks.push(...readKitFile(text));
+      continue;
+    } catch {
+      /* maybe a voice */
+    }
+    try {
+      vs.push(...readVoiceFile(text));
     } catch {
       skipped++;
     }
   }
-  return { fns, kits: ks, skipped };
+  return { fns, kits: ks, voices: vs, skipped };
 }
 

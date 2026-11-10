@@ -14,7 +14,7 @@
   --card: #e3dcc7;
   --ink: #23211b;
   --ink-2: #4a463a;
-  --ink-3: #777059;
+  --ink-3: #5c5643;
   --line: #9a9177;
   --line-soft: #b6ac90;
   --accent: #c0392b;
@@ -33,6 +33,8 @@
   --lcd-edge: #06110b;
   --glow-ink: 0 0 6px rgba(120, 240, 170, 0.45);
   --radius: 3px;
+  /* the custom wave's preview in the Sound tab: black on paper, orange in the dark */
+  --wave-preview: #000;
 }
 
 :root[data-theme='dark'] {
@@ -42,7 +44,7 @@
   --card: #3a3830;
   --ink: #e8e1cc;
   --ink-2: #bdb49b;
-  --ink-3: #8a826c;
+  --ink-3: #aaa189;
   --line: #5e5848;
   --line-soft: #4a463a;
   --accent: #e5533f;
@@ -54,6 +56,7 @@
   --lcd: #08140e;
   --lcd-2: #0e1e15;
   --lcd-edge: #000;
+  --wave-preview: #ff8a1f;
 }
 
 /* inside a screen, everything takes the screen's colours */
@@ -154,7 +157,7 @@ body {
   --card: #e3dcc7;
   --ink: #23211b;
   --ink-2: #4a463a;
-  --ink-3: #777059;
+  --ink-3: #5c5643;
   --line: #9a9177;
   --line-soft: #b6ac90;
 }
@@ -163,7 +166,7 @@ body {
   --card: #3a3830;
   --ink: #e8e1cc;
   --ink-2: #bdb49b;
-  --ink-3: #8a826c;
+  --ink-3: #aaa189;
   --line: #5e5848;
   --line-soft: #4a463a;
   color: var(--ink);
@@ -363,6 +366,46 @@ body {
 .menu-pop button:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* ---------- the sketches: faint math ink over the chrome (src/components/overlays.ts) ----------
+   One sheet, pinned to the window (fixed), so the drawing runs on across the plates and panels as
+   if they were cut from the same paper. Never on the screens: the score / function / ripple view
+   and the node board keep their own backgrounds. */
+body,
+.title-plate,
+.topbar,
+.app aside.panel,
+.nodes > .toolbar {
+  background-image: var(--func-overlay-2, none), var(--plate, none);
+  background-size: cover, auto;
+  background-position: center, 0 0;
+  background-repeat: no-repeat, no-repeat;
+  background-attachment: fixed, scroll;
+}
+/* the top of the window — the nameplate, the controls, the node toolbar — gets the other sketch */
+.title-plate,
+.topbar,
+.nodes > .toolbar {
+  background-image: var(--func-overlay-1, none), var(--plate, none);
+}
+/* each surface's own colour under the ink (the toolbar's are its own, set on it) */
+body,
+.app aside.panel {
+  --plate: linear-gradient(var(--paper), var(--paper));
+}
+.title-plate,
+.topbar,
+.nodes > .toolbar {
+  --plate: linear-gradient(var(--card), var(--paper-2));
+}
+/* sheets and the kit picker float: their sketch sits with them (outranking the popovers' !important plain card) */
+.app .sheet,
+.app .kit-pop {
+  background-image: var(--func-overlay-2, none) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
 }
 
 /* ---------- LCD value boxes ---------- */
@@ -762,7 +805,7 @@ body {
   box-shadow: inset 1px 1px 0 #f6f1e2;
   --ink: #23211b;
   --ink-2: #4a463a;
-  --ink-3: #6e6752;
+  --ink-3: #575140;
   --accent: #c0392b;
   --accent-soft: rgba(192, 57, 43, 0.14);
 }
@@ -1190,3 +1233,91 @@ body {
 .mini-score > * {
   filter: brightness(1.35) saturate(1.1);
 }
+
+/* ---------- the top bar always fits ----------
+   Everything keeps its size except the Harmony formula, which takes what room is left (and gives
+   it back first), so Export, undo / redo and day / night never slide off the edge — whatever the
+   window, and whatever controls join the bar later. */
+.topbar > .transport {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.topbar > :not(.transport) {
+  flex: none;
+}
+.transport > * {
+  flex: none;
+}
+.transport > .w-harmony {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 440px;
+}
+.w-harmony > .harmony {
+  display: flex;
+  min-width: 0;
+}
+.app .topbar .w-harmony .harmony .input {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 56px;
+}
+.w-harmony .harmony > :not(.input) {
+  flex: none;
+}
+
+/* ---------- small labels that can be read ----------
+   Doto's dots thin out at 11px: the sidebar's field labels (Steps, Stretch, Octave, Pitch means…)
+   and quiet notes are drawn a size up, in the stronger --ink-3. */
+.app aside.panel .field > span,
+.app aside.panel .eyebrow-sub .muted,
+.app aside.panel .fold-empty,
+.app aside.panel .kit-mine-empty {
+  font-size: 12px !important;
+}
+
+/* ---------- the node toolbar always shows everything ----------
+   It answers to the width of the Nodes area, not the window: first its buttons drop their words
+   (each keeps its tooltip), then Mutate's Safe / Wild, and if it still doesn't fit it wraps to a
+   second row — nothing is ever hidden off the edge. */
+.nodes {
+  container: nodes / inline-size;
+}
+.nodes > .toolbar {
+  flex-wrap: wrap;
+  overflow: visible;
+  row-gap: 6px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+@container nodes (max-width: 1040px) {
+  .nodes > .toolbar > .btn .tb-label {
+    display: none;
+  }
+  .nodes > .toolbar > .btn {
+    padding: 0 10px;
+  }
+}
+@container nodes (max-width: 760px) {
+  .nodes > .toolbar .chaos > span {
+    display: none;
+  }
+  .nodes > .toolbar .chaos input {
+    width: 64px;
+  }
+}
+
+/* undo / redo: a dot-matrix < and > */
+.topbar .icon-btn.undo-redo {
+  font: 900 21px/1 var(--mono);
+  padding-bottom: 2px;
+  color: var(--ink);
+}
+.topbar .icon-btn.undo-redo:not(:disabled):hover {
+  color: var(--accent);
+}
+.topbar .icon-btn.undo-redo:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+

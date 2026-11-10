@@ -245,7 +245,7 @@ function AllChannels() {
           }}
           title={allGlide ? 'Every melodic channel glides — click to play notes again' : 'Glide all — every melodic channel follows its curve'}
         >
-          Glide all
+          Glide
         </button>
         {/* both lit only when every glide agrees — a mix of the two shows neither */}
         <Seg<'snap' | 'free' | 'mixed'>
@@ -316,7 +316,7 @@ export function TopBar() {
             }))}
           />
         </div>
-        <div className="field-inline">
+        <div className="field-inline w-harmony">
           <span title="The chord of each bar, as a function of bar">Harmony</span>
           <div className="harmony">
             <TextField
@@ -384,11 +384,11 @@ export function TopBar() {
         <GardenMenu />
       </div>
       <div className="row" style={{ gap: 2 }}>
-        <button className="icon-btn" onClick={undo} disabled={!past.length} title="Undo (⌘Z)">
-          <Icon name="undo" />
+        <button className="icon-btn undo-redo" onClick={undo} disabled={!past.length} title="Undo (⌘Z)" aria-label="Undo">
+          {'<'}
         </button>
-        <button className="icon-btn" onClick={redo} disabled={!future.length} title="Redo (⇧⌘Z)">
-          <Icon name="redo" />
+        <button className="icon-btn undo-redo" onClick={redo} disabled={!future.length} title="Redo (⇧⌘Z)" aria-label="Redo">
+          {'>'}
         </button>
         <button className="icon-btn" onClick={toggleTheme} title="Day / night">
           <Icon name={theme === 'light' ? 'moon' : 'sun'} />

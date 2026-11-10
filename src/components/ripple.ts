@@ -121,7 +121,7 @@ function pond(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P:
   backdrop(g, cx, cy, R, P, f.now, 5);
   // the circle of notes: C at the top, a semitone every 30°
   g.save();
-  g.font = '10.5px Ubuntu Mono, monospace';
+  g.font = '10.5px Doto, monospace';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillStyle = P.ink3;

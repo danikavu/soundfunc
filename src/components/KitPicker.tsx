@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NOTE_NAMES, SCALES } from '../engine/music';
 import { KIT_GROUPS, KITS, TRACK_COLORS, kitGroupOf, type KitGroup } from '../engine/presets';
 import { isDrum, voiceLabel, type Waveform } from '../engine/project';
-import { asKit, kitFile, kitOf, readKitFile, useLibrary } from '../state/library';
+import { asKit, kitFile, kitOf, readKitFile, savedKitOf, useLibrary } from '../state/library';
 import { useStore } from '../state/store';
 import { toast } from './TopBar';
 import { Icon, download, fileSafe } from './ui';
@@ -87,7 +87,7 @@ export function KitPicker() {
               {naming === null ? (
                 <>
                   <button className="btn small ghost" onClick={() => setNaming(useStore.getState().project.name || 'My kit')} title="Save every channel of this track, with its tempo, key and harmony, as a kit">
-                    <Icon name="save" size={12} /> Save track as kit
+                    <Icon name="save" size={12} /> Save as kit
                   </button>
                   <span className="row" style={{ gap: 2 }}>
                     <button className="icon-btn" onClick={() => fileRef.current?.click()} title="Import kits from a .json file" aria-label="Import kits">
@@ -175,11 +175,11 @@ export function KitPicker() {
 
           <div className="kit-detail">
             <h3 className="serif">{kit.name}</h3>
-            {saved && (
-              <div className="row kit-mine-actions">
-                <button className="btn small ghost" onClick={() => exportKits([saved], `${fileSafe(saved.name)}.soundfunc-kit.json`)} title={`Download “${saved.name}”`}>
-                  <Icon name="download" size={12} /> Download
-                </button>
+            <div className="row kit-mine-actions">
+              <button className="btn small ghost" onClick={() => exportKits([saved ?? savedKitOf(kit)], `${fileSafe(kit.name)}.soundfunc-kit.json`)} title={`Export “${kit.name}” as a kit file — import it under My kits anywhere`}>
+                <Icon name="download" size={12} /> Export kit
+              </button>
+              {saved && (
                 <button
                   className="btn small ghost"
                   onClick={() => {
@@ -191,8 +191,8 @@ export function KitPicker() {
                 >
                   <Icon name="trash" size={12} /> Delete
                 </button>
-              </div>
-            )}
+              )}
+            </div>
             <p className="muted">{kit.description}</p>
             {kit.song && (
               <p className="kit-meta">
