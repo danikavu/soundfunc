@@ -14,7 +14,10 @@ const RIPPLE_BOTTOM = 46;
 const RIPPLE_KEY = 'sf-ripple';
 function loadRipple(): RippleOptions {
   try {
-    return { ...RIPPLE_DEFAULTS, ...JSON.parse(localStorage.getItem(RIPPLE_KEY) ?? '{}') };
+    const saved = { ...RIPPLE_DEFAULTS, ...JSON.parse(localStorage.getItem(RIPPLE_KEY) ?? '{}') };
+    // a style that has since been retired falls back to Pond
+    if (!RIPPLE_STYLES.some((r) => r.value === saved.style)) saved.style = RIPPLE_DEFAULTS.style;
+    return saved;
   } catch {
     return RIPPLE_DEFAULTS;
   }
@@ -319,7 +322,6 @@ export function Visualizer() {
   useEffect(() => {
     let raf = 0;
     const wave = new Float32Array(2048);
-    const spec = new Uint8Array(1024);
     const draw = () => {
       raf = requestAnimationFrame(draw);
       const pos = engine.position();
@@ -731,7 +733,6 @@ export function Visualizer() {
       } else if (mode === 'ripple') {
         placedRef.current = [];
         const live = engine.waveform(wave);
-        if (live) engine.spectrum(spec);
         const heard = drawRipple(
           g,
           W,
@@ -741,8 +742,6 @@ export function Visualizer() {
           P,
           {
             wave: live ? wave : null,
-            spectrum: live ? spec : null,
-            sampleRate: engine.sampleRate,
             playBeat: pos === null ? null : pos % score.total,
             secPerBeat,
             score,
@@ -905,17 +904,6 @@ export function Visualizer() {
             >
               Colours
             </button>
-            {ripple.style === 'mandala' && (
-              <span className="ripple-sym" title="How many times the wave is folded round">
-                <button className="icon-btn" onClick={() => setRipple({ symmetry: Math.max(2, ripple.symmetry - 1) })} aria-label="Fewer folds">
-                  <Icon name="minus" size={11} />
-                </button>
-                <span className="mono">×{ripple.symmetry}</span>
-                <button className="icon-btn" onClick={() => setRipple({ symmetry: Math.min(16, ripple.symmetry + 1) })} aria-label="More folds">
-                  <Icon name="plus" size={11} />
-                </button>
-              </span>
-            )}
           </span>
         </div>
       )}

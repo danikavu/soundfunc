@@ -3722,10 +3722,3 @@ aside.panel:last-of-type .info-pop {
 .ripple-opts .btn.on {
   color: var(--accent);
 }
-.ripple-sym {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 11px;
-  color: var(--ink-2);
-}
