@@ -174,6 +174,8 @@ export interface Slider {
   value: number;
   min: number;
   max: number;
+  /** the value it was made with — a double-click on it goes back there */
+  initial?: number;
 }
 
 export const sliderNames = (track: Track) => (track.sliders ?? []).map((s) => s.name);

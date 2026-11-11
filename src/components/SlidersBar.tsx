@@ -26,6 +26,9 @@ function SliderChip({ s, trackId }: { s: Slider; trackId: string }) {
     if (!renameSlider(trackId, s.name, to)) toast(`“${to}” can’t be a slider name — it is taken, reserved, or not a plain word`);
   };
   const step = (s.max - s.min) / 200 || 0.01;
+  // where a double-click puts it: the value it was made with, or (for older sliders) the one it showed when it appeared here
+  const seen = useRef(s.value);
+  const home = Math.min(s.max, Math.max(s.min, s.initial ?? seen.current));
 
   return (
     <div className="slider-chip" ref={ref}>
@@ -56,6 +59,8 @@ function SliderChip({ s, trackId }: { s: Slider; trackId: string }) {
         value={s.value}
         onPointerDown={checkpoint}
         onChange={(e) => updateSlider(trackId, s.name, { value: Number(e.target.value) })}
+        onDoubleClick={() => updateSlider(trackId, s.name, { value: home })}
+        title={`Double-click to reset to ${fmt(home)}`}
         aria-label={`${s.name} value`}
       />
       <output>{fmt(s.value)}</output>

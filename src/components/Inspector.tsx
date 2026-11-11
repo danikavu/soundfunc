@@ -3,7 +3,7 @@ import { engine } from '../engine/audio';
 import { CONSTANTS, FUNCTIONS } from '../engine/expr';
 import { PITCH_MODES, midiToName, type PitchMode } from '../engine/music';
 import { CHANNEL_PALETTE, TRACK_COLORS } from '../engine/presets';
-import { DRUMS, STRETCH_MAX, STRETCH_MIN, WAVEFORMS, isDrum, keyLabel, patternBeats, stretchOf, voiceLabel, type PlayMode, type Waveform } from '../engine/project';
+import { DRUMS, SONG_DEFAULTS, STRETCH_MAX, STRETCH_MIN, TRACK_DEFAULTS, WAVEFORMS, isDrum, keyLabel, patternBeats, stretchOf, voiceLabel, type PlayMode, type Waveform } from '../engine/project';
 import { readVoiceFile, useLibrary, voiceFile, voiceOf, wearsVoice } from '../state/library';
 import { mutateTimbre } from '../engine/mutate';
 import { DRUM_BASE, PATCHES, VOICE_HINTS as SYNTH_HINTS, cutoffHz, surprise, type DrumParams, type FilterKind, type MelodicVoice, type OscWave, type SynthParams } from '../engine/synth';
@@ -186,9 +186,14 @@ function SoundPanel() {
   const changed = Object.keys(changes).length > 0;
   const set = (patch: Partial<SynthParams & DrumParams>, record = false) => updateTrack(track.id, { synth: { ...changes, ...patch } }, record);
   const reset = () => updateTrack(track.id, { synth: undefined });
+  // one knob back to the voice's own setting
+  const unset = (key: keyof (SynthParams & DrumParams)) => {
+    const { [key]: _gone, ...rest } = changes;
+    updateTrack(track.id, { synth: Object.keys(rest).length ? rest : undefined }, false);
+  };
   const knob = (label: string, key: keyof (SynthParams & DrumParams), min: number, max: number, value: number, format: (v: number) => string = pct, step = 0.01) => (
     <div onPointerDown={checkpoint}>
-      <Slider label={label} value={value} min={min} max={max} step={step} format={format} onChange={(v) => set({ [key]: v })} />
+      <Slider label={label} value={value} min={min} max={max} step={step} format={format} onChange={(v) => set({ [key]: v })} reset={() => unset(key)} />
     </div>
   );
 
@@ -308,12 +313,12 @@ function SoundPanel() {
         {tab === 'amp' && (
           <>
             <div onPointerDown={checkpoint}>
-              <Slider label="Attack" value={track.attack} min={0.003} max={1.5} format={secs} onChange={(attack) => updateTrack(track.id, { attack }, false)} />
+              <Slider label="Attack" value={track.attack} min={0.003} max={1.5} format={secs} onChange={(attack) => updateTrack(track.id, { attack }, false)} reset={TRACK_DEFAULTS.attack} />
             </div>
             {knob('Decay', 'decay', 0.02, 3, p.decay, secs)}
             {knob('Sustain', 'sustain', 0, 1, p.sustain)}
             <div onPointerDown={checkpoint}>
-              <Slider label="Release" value={track.release} min={0.02} max={3} format={secs} onChange={(release) => updateTrack(track.id, { release }, false)} />
+              <Slider label="Release" value={track.release} min={0.02} max={3} format={secs} onChange={(release) => updateTrack(track.id, { release }, false)} reset={TRACK_DEFAULTS.release} />
             </div>
           </>
         )}
@@ -648,14 +653,14 @@ function ChannelTab() {
                   ]}
                 />
               </div>
-              <Slider label="Portamento" value={track.glide} min={0} max={0.5} format={(v) => `${Math.round(v * 1000)}ms`} onChange={(g) => up({ glide: g })} />
+              <Slider label="Portamento" value={track.glide} min={0} max={0.5} format={(v) => `${Math.round(v * 1000)}ms`} onChange={(g) => up({ glide: g })} reset={TRACK_DEFAULTS.glide} />
             </>
           )}
         </>
       )}
 
       <div className="eyebrow">Feel</div>
-      {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} />}
+      {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} reset={TRACK_DEFAULTS.swing} />}
       {drum ? (
         <p className="muted row" style={{ fontSize: 11, gap: 6 }}>
           Drum channel
@@ -683,7 +688,7 @@ function ChannelTab() {
       )}
 
       <div className="eyebrow">Export</div>
-      <Slider label="Loops" value={project.song.exportLoops} min={1} max={32} step={1} format={(v) => `×${v}`} onChange={(exportLoops) => setSong({ exportLoops })} />
+      <Slider label="Loops" value={project.song.exportLoops} min={1} max={32} step={1} format={(v) => `×${v}`} onChange={(exportLoops) => setSong({ exportLoops })} reset={SONG_DEFAULTS.exportLoops} />
       <div className="eyebrow-sub row" style={{ gap: 6, marginTop: 14, alignItems: 'center' }}>
         <span className="muted" style={{ fontSize: 11.5 }}>Pitch-bend range</span>
         <Info>
@@ -744,9 +749,9 @@ function SoundTab() {
         <b>{track.name}</b>
       </div>
       <div className="eyebrow">Mix</div>
-      <Slider label="Volume" value={track.volume} min={0} max={1} onChange={(volume) => up({ volume })} />
-      <Slider label="Pan" value={track.pan} min={-1} max={1} format={(v) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `L${Math.round(-v * 100)}` : `R${Math.round(v * 100)}`)} onChange={(pan) => up({ pan })} />
-      <Slider label="Reverb" value={track.send} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(send) => up({ send })} />
+      <Slider label="Volume" value={track.volume} min={0} max={1} onChange={(volume) => up({ volume })} reset={TRACK_DEFAULTS.volume} />
+      <Slider label="Pan" value={track.pan} min={-1} max={1} format={(v) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `L${Math.round(-v * 100)}` : `R${Math.round(v * 100)}`)} onChange={(pan) => up({ pan })} reset={TRACK_DEFAULTS.pan} />
+      <Slider label="Reverb" value={track.send} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(send) => up({ send })} reset={TRACK_DEFAULTS.send} />
 
       <div className="eyebrow">Voice</div>
       <VoicePicker />

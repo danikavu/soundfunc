@@ -19,7 +19,7 @@ import { blockFromSelection, collapseNodes, explodeFormula, freeSpot, insertBloc
 import { BLOCKS } from '../engine/blocks';
 import { useLibrary } from '../state/library';
 import { nodeHeight, uid } from '../engine/presets';
-import { useSelectedTrack, useStore } from '../state/store';
+import { DEFAULT_CHAOS, useSelectedTrack, useStore } from '../state/store';
 import { FuncNode, GraphContext, CATEGORY_COLORS } from './FuncNode';
 import { Icon, Info, Seg, getRender } from './ui';
 import { toast } from './TopBar';
@@ -148,7 +148,7 @@ function Mutator() {
       </button>
       <label className="chaos" title="How far the randomizer may wander">
         <span>Safe</span>
-        <input type="range" min={0} max={1} step={0.01} value={chaos} onChange={(e) => setChaos(Number(e.target.value))} aria-label="Harmonious to experimental" />
+        <input type="range" min={0} max={1} step={0.01} value={chaos} onChange={(e) => setChaos(Number(e.target.value))} onDoubleClick={() => setChaos(DEFAULT_CHAOS)} aria-label="Harmonious to experimental" />
         <span>Wild</span>
       </label>
       <Seg<'track' | 'garden'>

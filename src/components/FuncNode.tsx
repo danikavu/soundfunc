@@ -293,6 +293,8 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
             value={Number(d.value ?? 0)}
             onPointerDown={checkpoint}
             onChange={(e) => onChange({ value: Number(e.target.value) })}
+            onDoubleClick={() => onChange({ value: Math.min(Number(d.max ?? 12), Math.max(Number(d.min ?? -12), Number(NODE_DEFS.number.defaults.value))) })}
+            title="Double-click to reset"
           />
         )}
         {type === 'sections' && <Timeline data={d} />}

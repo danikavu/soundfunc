@@ -74,16 +74,31 @@ export function Slider(props: {
   step?: number;
   format?: (v: number) => string;
   onChange: (v: number) => void;
+  /** double-click the knob to go back to this value — or call this to reset */
+  reset?: number | (() => void);
 }) {
-  const { label, value, min, max, step = 0.01, format = (v) => v.toFixed(2), onChange } = props;
+  const { label, value, min, max, step = 0.01, format = (v) => v.toFixed(2), onChange, reset } = props;
   return (
     <label className="slider">
       <span>{label}</span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        onDoubleClick={resetOnDoubleClick(reset, onChange)}
+        title={reset === undefined ? undefined : 'Double-click to reset'}
+      />
       <output>{format(value)}</output>
     </label>
   );
 }
+
+/** a range input's double-click: back to its default value */
+export const resetOnDoubleClick = (reset: number | (() => void) | undefined, onChange: (v: number) => void) =>
+  reset === undefined ? undefined : () => (typeof reset === 'number' ? onChange(reset) : reset());
 
 export function Seg<T extends string | number | boolean>(props: {
   value: T;
