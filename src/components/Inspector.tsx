@@ -23,38 +23,10 @@ type Tab = 'channel' | 'sound' | 'notes' | 'guide';
 function TimbreEditor() {
   const track = useSelectedTrack()!;
   const { updateTrack, checkpoint } = useStore();
-  const chaos = useStore((s) => s.chaos);
   const samples = timbreSamples(track.timbre, 128);
   const d = samples ? Array.from(samples, (v, i) => `${i ? 'L' : 'M'}${((i / 127) * 200).toFixed(1)},${(22 - v * 18).toFixed(1)}`).join('') : '';
-  const unlocked = !!track.timbreUnlocked;
   return (
-    <div style={{ marginTop: 12 }}>
-      {/* the wave has its own Mutate; the channel's Mutate (R / ⇧R) leaves it alone unless it is unlocked */}
-      <div className="row wave-tools">
-        <button
-          className="btn small"
-          onClick={() => {
-            const timbre = mutateTimbre(track.timbre, chaos);
-            if (!timbre) return toast('No new wave found from this one — try again, or turn Mutate towards Wild');
-            updateTrack(track.id, { timbre });
-            toast('Mutated the wave — ⌘Z to bring the old one back');
-          }}
-          title="Mutate wave: a new f(p) grown from this one (only the wave changes; how far follows Mutate’s Safe ↔ Wild)"
-        >
-          <Icon name="dice" size={12} /> Mutate wave
-        </button>
-        <button
-          className={`btn small ghost wave-lock ${unlocked ? '' : 'on'}`}
-          aria-pressed={!unlocked}
-          onClick={() => {
-            updateTrack(track.id, { timbreUnlocked: !unlocked });
-            toast(unlocked ? 'Wave locked — Mutate leaves it as it is' : 'Wave unlocked — Mutate (R / ⇧R) may change it too');
-          }}
-          title={unlocked ? 'Unlocked: Mutate (R / ⇧R) may change this wave too — click to lock it' : 'Locked: Mutate (R / ⇧R) leaves this wave alone — click to let it change the wave too'}
-        >
-          <Icon name={unlocked ? 'unlock' : 'lock'} size={12} /> {unlocked ? 'Unlocked' : 'Locked'}
-        </button>
-      </div>
+    <div style={{ marginTop: 10 }}>
       <div className="field">
         <span>
           One cycle of the wave, <code className="mono">f(p)</code> with p = 0 → 1
@@ -374,8 +346,15 @@ function SoundPanel() {
 }
 
 /** Keep the current sound as a named voice — and bring voices in from, or take them out to, a file. */
-function SaveVoice() {
+/**
+ * The voice's tools, icons only, under the Voice menu: for a custom wave its own Mutate and the
+ * lock against the channel's Mutate; then save, import, export all, export this sound. Save lights
+ * up (and flashes on every change) while the sound differs from any voice you have or preset.
+ */
+function VoiceTools() {
   const track = useSelectedTrack()!;
+  const updateTrack = useStore((s) => s.updateTrack);
+  const chaos = useStore((s) => s.chaos);
   const { voices, saveVoice, importVoices } = useLibrary();
   const [naming, setNaming] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -383,6 +362,11 @@ function SaveVoice() {
   const savable = track.waveform === 'custom' || Object.keys(track.synth ?? {}).length > 0;
   // the saved voice this channel sounds like, if any — its name is the one you gave it
   const worn = voices.find((v) => wearsVoice(track, v));
+  // changed from every preset and saved voice: worth saving
+  const dirty = savable && !worn && !waveVoiceOf(track);
+  const sound = JSON.stringify([track.waveform, track.timbre, track.attack, track.release, track.synth]);
+  const custom = track.waveform === 'custom';
+  const unlocked = !!track.timbreUnlocked;
   const fresh = () => {
     const preset = WAVE_VOICES.find((v) => v.timbre === track.timbre);
     return track.waveform === 'custom' ? (preset?.name ?? (track.name.trim() || 'My wave')) : voiceLabel(track.waveform);
@@ -405,14 +389,50 @@ function SaveVoice() {
   if (naming === null)
     return (
       <div className="row voice-tools">
-        {savable && (
-          <button className="btn small ghost" onClick={() => setNaming(suggest())} title="Keep this sound — waveform, custom f(p), attack, release, and its Shape settings">
-            <Icon name="save" size={13} /> Save voice
-          </button>
+        {custom && (
+          <span className="row voice-tool-group">
+            <button
+              className="icon-btn"
+              onClick={() => {
+                const timbre = mutateTimbre(track.timbre, chaos);
+                if (!timbre) return toast('No new wave found from this one — try again, or turn Mutate towards Wild');
+                updateTrack(track.id, { timbre });
+                toast('Mutated the wave — ⌘Z to bring the old one back');
+              }}
+              title="Mutate wave: a new f(p) grown from this one (only the wave changes; how far follows Mutate’s Safe ↔ Wild)"
+              aria-label="Mutate wave"
+            >
+              <Icon name="dice" size={14} />
+            </button>
+            <button
+              className={`icon-btn wave-lock ${unlocked ? '' : 'on'}`}
+              aria-pressed={!unlocked}
+              onClick={() => {
+                updateTrack(track.id, { timbreUnlocked: !unlocked });
+                toast(unlocked ? 'Wave locked — Mutate leaves it as it is' : 'Wave unlocked — Mutate (R / ⇧R) may change it too');
+              }}
+              title={unlocked ? 'Unlocked: Mutate (R / ⇧R) may change this wave too — click to lock it' : 'Locked: Mutate (R / ⇧R) leaves this wave alone — click to let it change the wave too'}
+              aria-label={unlocked ? 'Wave unlocked' : 'Wave locked'}
+            >
+              <Icon name={unlocked ? 'unlock' : 'lock'} size={14} />
+            </button>
+          </span>
         )}
-        <span className="row voice-files">
+        <span className="row voice-tool-group">
+          {savable && (
+            <button
+              // a new key on every change while unsaved restarts the flash
+              key={dirty ? sound : 'saved'}
+              className={`icon-btn voice-save ${dirty ? 'dirty' : ''}`}
+              onClick={() => setNaming(suggest())}
+              title={dirty ? 'Changed — save this sound as a voice (waveform, f(p), attack, release and its Shape)' : 'Save this sound as a voice (waveform, f(p), attack, release and its Shape)'}
+              aria-label={dirty ? 'Save voice (changed)' : 'Save voice'}
+            >
+              <Icon name="save" size={14} />
+            </button>
+          )}
           <button className="icon-btn" onClick={() => fileRef.current?.click()} title="Import voices from a .json file — they join My voices in the Voice menu" aria-label="Import voices">
-            <Icon name="upload" size={13} />
+            <Icon name="upload" size={14} />
           </button>
           <button
             className="icon-btn"
@@ -421,7 +441,7 @@ function SaveVoice() {
             title={voices.length ? `Export all ${voices.length} of your voices as one file` : 'Save a voice first — then you can export your voices'}
             aria-label="Export all voices"
           >
-            <Icon name="download" size={13} />
+            <Icon name="download" size={14} />
           </button>
           {savable && (
             <button
@@ -433,7 +453,7 @@ function SaveVoice() {
               title={worn ? `Export “${worn.name}” as a voice file` : 'Export this sound as a voice file (without saving it)'}
               aria-label="Export this sound"
             >
-              <Icon name="send" size={13} />
+              <Icon name="send" size={14} />
             </button>
           )}
         </span>
@@ -780,9 +800,9 @@ function SoundTab() {
 
       <div className="eyebrow">Voice</div>
       <VoicePicker />
+      <VoiceTools />
       {track.waveform === 'custom' && <TimbreEditor />}
       <SoundPanel />
-      <SaveVoice />
 
     </>
   );

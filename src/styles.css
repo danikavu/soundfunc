@@ -3403,14 +3403,49 @@ button:focus-visible {
   flex: none;
 }
 /* the custom wave's own tools: Mutate wave, and its lock against the channel's Mutate */
-.wave-tools {
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
 .wave-lock.on {
   color: var(--ink);
-  border-color: var(--line);
+}
+/* the voice's tools: icons in two small groups */
+.voice-tool-group {
+  gap: 2px;
+}
+.voice-tool-group + .voice-tool-group {
+  padding-left: 8px;
+  border-left: 1px solid var(--line-soft);
+}
+/* changed and unsaved: Save takes the accent, keeps a dot, and flashes on each change */
+.voice-save {
+  position: relative;
+}
+.voice-save.dirty {
+  color: var(--accent);
+  animation: save-flash 0.9s ease-out;
+}
+.voice-save.dirty::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+@keyframes save-flash {
+  0% {
+    background: var(--accent);
+    color: var(--paper);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-save.dirty {
+    animation: none;
+  }
 }
 /* the Sonic Menagerie under the custom wave: a wave glyph over a short name */
 .wave-voices {
@@ -3457,10 +3492,6 @@ button:focus-visible {
   margin-top: 8px;
   gap: 6px;
   align-items: center;
-}
-.voice-files {
-  margin-left: auto;
-  gap: 2px;
 }
 .all-channels {
   display: flex;
