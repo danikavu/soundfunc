@@ -351,9 +351,15 @@ function SaveVoice() {
   const fileRef = useRef<HTMLInputElement>(null);
   // a stock voice with nothing changed is already in the Voice menu: nothing to save
   const savable = track.waveform === 'custom' || Object.keys(track.synth ?? {}).length > 0;
-  const suggest = () => {
+  // the saved voice this channel sounds like, if any — its name is the one you gave it
+  const worn = voices.find((v) => wearsVoice(track, v));
+  const fresh = () => {
     const preset = TIMBRE_PRESETS.find((p) => p.formula === track.timbre);
-    const base = track.waveform === 'custom' ? (preset?.label ?? 'My wave') : voiceLabel(track.waveform);
+    return track.waveform === 'custom' ? (preset?.label ?? (track.name.trim() || 'My wave')) : voiceLabel(track.waveform);
+  };
+  const suggest = () => {
+    if (worn) return worn.name;
+    const base = fresh();
     let name = base, i = 2;
     while (voices.some((v) => v.name === name)) name = `${base} ${i++}`;
     return name;
@@ -391,10 +397,10 @@ function SaveVoice() {
             <button
               className="icon-btn"
               onClick={() => {
-                const name = suggest();
-                download(`${fileSafe(name)}.soundfunc-voice.json`, JSON.stringify(voiceFile([voiceOf(track, name)]), null, 2), 'application/json');
+                const voice = worn ?? voiceOf(track, fresh());
+                download(`${fileSafe(voice.name)}.soundfunc-voice.json`, JSON.stringify(voiceFile([voice]), null, 2), 'application/json');
               }}
-              title="Export this sound as a voice file (without saving it)"
+              title={worn ? `Export “${worn.name}” as a voice file` : 'Export this sound as a voice file (without saving it)'}
               aria-label="Export this sound"
             >
               <Icon name="send" size={13} />
