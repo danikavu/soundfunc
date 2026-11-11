@@ -3412,6 +3412,46 @@ button:focus-visible {
   color: var(--ink);
   border-color: var(--line);
 }
+/* the Sonic Menagerie under the custom wave: a wave glyph over a short name */
+.wave-voices {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 6px;
+}
+.wave-voices button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 5px 2px 4px;
+  font: inherit;
+  font-size: 10.5px;
+  letter-spacing: -0.06em;
+  cursor: pointer;
+  border-radius: var(--radius);
+  border: 1px solid var(--edge);
+  background: linear-gradient(var(--card), var(--paper-2));
+  color: var(--ink);
+  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
+}
+.wave-voices button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wave-voices button:hover {
+  background: var(--card);
+}
+.wave-voices button.on {
+  background: var(--lcd);
+  color: var(--lcd-ink);
+  border-color: var(--lcd-edge);
+  text-shadow: var(--glow-ink);
+  box-shadow: inset 1px 1px 0 #000, inset -1px -1px 0 #24402f;
+}
 /* Save voice, and voices in and out as files */
 .voice-tools {
   margin-top: 8px;

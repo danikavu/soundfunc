@@ -8,7 +8,7 @@ import { readVoiceFile, useLibrary, voiceFile, voiceOf, wearsVoice } from '../st
 import { mutateTimbre } from '../engine/mutate';
 import { DRUM_BASE, PATCHES, VOICE_HINTS as SYNTH_HINTS, cutoffHz, surprise, type DrumParams, type FilterKind, type MelodicVoice, type OscWave, type SynthParams } from '../engine/synth';
 import { toast } from './TopBar';
-import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
+import { WAVE_VOICES, timbreSamples, waveVoiceOf, type WaveVoice } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Info, NumberField, Seg, Slider, Stepper, TextField, download, fileSafe, getRender } from './ui';
 import { StepPicker } from './StepPicker';
@@ -70,16 +70,29 @@ function TimbreEditor() {
         <line x1="0" x2="200" y1="22" y2="22" stroke="var(--line)" strokeDasharray="2 4" />
         {d && <path d={d} fill="none" stroke="var(--wave-preview)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
       </svg>
-      <div className="seg" style={{ marginTop: 6 }}>
-        {TIMBRE_PRESETS.map((t) => (
-          <button key={t.label} className={t.formula === track.timbre ? 'on' : ''} onClick={() => updateTrack(track.id, { timbre: t.formula })}>
-            {t.label}
+      {/* the Sonic Menagerie: each a whole voice — wave, envelope and Shape */}
+      <div className="wave-voices">
+        {WAVE_VOICES.map((v) => (
+          <button
+            key={v.id}
+            className={v.timbre === track.timbre ? 'on' : ''}
+            onClick={() => {
+              updateTrack(track.id, wearWaveVoice(v));
+              toast(`${v.name} — ${v.hint.split(' — ')[0]}. ⌘Z to go back`);
+            }}
+            title={`${v.name}: ${v.hint}`}
+          >
+            <WaveGlyph formula={v.timbre} color="currentColor" />
+            <span>{v.label}</span>
           </button>
         ))}
       </div>
     </div>
   );
 }
+
+/** everything a wave voice sets on a channel */
+const wearWaveVoice = (v: WaveVoice) => ({ waveform: 'custom' as Waveform, timbre: v.timbre, attack: v.attack, release: v.release, synth: { ...v.synth } });
 
 function WaveGlyph({ formula, color }: { formula: string; color: string }) {
   const s = timbreSamples(formula, 48);
@@ -114,14 +127,15 @@ function VoicePicker() {
   const glyph = (w: Waveform, timbre?: string) =>
     w === 'custom' && timbre ? <WaveGlyph formula={timbre} color="currentColor" /> : GLYPH_FORMULA[w] ? <WaveGlyph formula={GLYPH_FORMULA[w]!} color="currentColor" /> : <span className={`voice-dot ${isDrum(w) ? 'drum' : ''}`} />;
   const mine = voices.find((v) => wearsVoice(track, v));
+  const menagerie = mine ? undefined : waveVoiceOf(track);
   return (
     <Dropdown
       label="Voice"
       value={
         <>
           <span className="dropdown-glyph">{glyph(track.waveform, track.timbre)}</span>
-          <b>{mine ? mine.name : voiceLabel(track.waveform)}</b>
-          <small>{mine ? `my voice · ${voiceLabel(track.waveform)}` : VOICE_HINTS[track.waveform]}</small>
+          <b>{mine ? mine.name : menagerie ? menagerie.name : voiceLabel(track.waveform)}</b>
+          <small>{mine ? `my voice · ${voiceLabel(track.waveform)}` : menagerie ? menagerie.hint.split(' — ')[0] : VOICE_HINTS[track.waveform]}</small>
         </>
       }
       groups={[
@@ -138,13 +152,24 @@ function VoicePicker() {
           })),
         },
         {
+          title: 'Sonic Menagerie',
+          items: WAVE_VOICES.map((v) => ({
+            key: `menagerie:${v.id}`,
+            label: v.name,
+            hint: v.hint,
+            glyph: glyph('custom', v.timbre),
+            selected: menagerie?.id === v.id,
+            onSelect: () => up(wearWaveVoice(v)),
+          })),
+        },
+        {
           title: 'Melodic',
           items: (Object.keys(WAVEFORMS) as Waveform[]).map((w) => ({
             key: w,
             label: WAVEFORMS[w as keyof typeof WAVEFORMS],
             hint: VOICE_HINTS[w],
             glyph: glyph(w, w === 'custom' ? track.timbre : undefined),
-            selected: !mine && track.waveform === w,
+            selected: !mine && !menagerie && track.waveform === w,
             // a new voice starts from its own patch — the channel's changes were for the old one
             onSelect: () => up({ waveform: w, synth: undefined }),
           })),
@@ -359,8 +384,8 @@ function SaveVoice() {
   // the saved voice this channel sounds like, if any — its name is the one you gave it
   const worn = voices.find((v) => wearsVoice(track, v));
   const fresh = () => {
-    const preset = TIMBRE_PRESETS.find((p) => p.formula === track.timbre);
-    return track.waveform === 'custom' ? (preset?.label ?? (track.name.trim() || 'My wave')) : voiceLabel(track.waveform);
+    const preset = WAVE_VOICES.find((v) => v.timbre === track.timbre);
+    return track.waveform === 'custom' ? (preset?.name ?? (track.name.trim() || 'My wave')) : voiceLabel(track.waveform);
   };
   const suggest = () => {
     if (worn) return worn.name;
