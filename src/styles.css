@@ -1903,13 +1903,30 @@ button:focus-visible {
 .track-tools {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 2px;
-  margin: -4px -8px 8px;
+  margin: -4px -4px 8px;
 }
-.track-tools .btn {
-  font-size: 11px;
-  padding: 3px 8px;
-  color: var(--ink-2);
+.track-tools .icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* the presets folder: lit while linked, a dot while it needs reconnecting */
+.track-tools .mine-folder {
+  position: relative;
+}
+.track-tools .mine-folder.on {
+  color: var(--accent);
+}
+.track-tools .mine-folder.needs::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--accent);
 }
 
 /* ---------- dropdowns (voice, step length) ---------- */
@@ -2865,29 +2882,6 @@ button:focus-visible {
   color: var(--ink-3);
   margin: 10px 0 4px;
 }
-/* My functions: Export all and the presets folder, above the list */
-.mine-tools {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: 0 0 6px;
-  min-width: 0;
-}
-.mine-tools .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  white-space: nowrap;
-}
-.mine-tools .btn svg {
-  flex: none;
-}
-/* a long folder name ends in … rather than pushing the row wider */
-.mine-tools .btn .mine-folder-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .mine-row {
   position: relative;
 }
@@ -3413,6 +3407,15 @@ button:focus-visible {
 .voice-tool-group + .voice-tool-group {
   padding-left: 8px;
   border-left: 1px solid var(--line-soft);
+}
+/* ‹ › through the voices: the top bar's undo / redo glyphs, a size down */
+.icon-btn.voice-step {
+  font: 900 17px/1 var(--mono);
+  padding-bottom: 2px;
+  color: var(--ink);
+}
+.icon-btn.voice-step:hover {
+  color: var(--accent);
 }
 /* changed and unsaved: Save takes the accent, keeps a dot, and flashes on each change */
 .voice-save {

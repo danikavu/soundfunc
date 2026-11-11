@@ -43,20 +43,63 @@ function MyFunctions() {
   return (
     <>
       <div className="track-tools">
-        <button className="btn small ghost" disabled={!track} onClick={() => track && setNaming(track.name)} title="Save the selected channel — all its nodes, values, sound and grid — as a function">
-          <Icon name="save" size={13} /> Save Channel
+        <button className="icon-btn" disabled={!track} onClick={() => track && setNaming(track.name)} title="Save Channel — the selected channel, all its nodes, values, sound and grid, as a function" aria-label="Save channel as a function">
+          <Icon name="save" size={14} />
         </button>
-        <button className="btn small ghost" onClick={() => fileRef.current?.click()} title="Add functions from a .json file">
-          <Icon name="upload" size={13} /> Import
+        <button className="icon-btn" onClick={() => fileRef.current?.click()} title="Import functions from a .json file" aria-label="Import functions">
+          <Icon name="upload" size={14} />
         </button>
         <button
-          className="btn small ghost"
+          className="icon-btn"
           disabled={!functions.length}
           onClick={() => exportFns(functions, 'soundfunc-functions.json')}
-          title={functions.length ? 'Download all your functions as one file' : 'Save a channel first — then export your functions as one file'}
+          title={functions.length ? `Export all ${functions.length} functions as one file — Import reads it back` : 'Save a channel first — then export your functions as one file'}
+          aria-label="Export all functions"
         >
-          <Icon name="download" size={13} /> Export
+          <Icon name="download" size={14} />
         </button>
+        <button
+          className={`icon-btn mine-folder ${folder.name && !folder.needsAccess ? 'on' : ''} ${folder.needsAccess ? 'needs' : ''}`}
+          disabled={folder.busy}
+          onClick={openFolder}
+          aria-label={folder.name ? (folder.needsAccess ? `Reconnect ${folder.name}` : `Presets folder: ${folder.name}`) : 'Open presets folder'}
+          title={
+            !canLinkFolder()
+              ? 'Load every function file in a folder (this browser can read a folder, not keep it in step — Chrome and Edge can)'
+              : folder.name
+                ? folder.needsAccess
+                  ? `Reconnect “${folder.name}” — the browser asks for access again after a reload`
+                  : `Your presets folder: ${folder.name} — Functions, Rhythm kits and Factory presets, kept in step as you save and delete. Click to choose another.`
+                : 'Choose where your presets live (Documents is a good place): SoundFunc makes a “SoundFunc Presets” folder there with Functions, Rhythm kits, Voices and Factory presets, and keeps it in step as you save and delete'
+          }
+        >
+          <Icon name="folder" size={14} />
+        </button>
+        {folder.name && (
+          <button className="icon-btn" title={`Stop keeping “${folder.name}” in step (its files stay)`} aria-label="Forget presets folder" onClick={() => void forgetPresetFolder()}>
+            <Icon name="close" size={11} />
+          </button>
+        )}
+        <input
+          ref={folderRef}
+          type="file"
+          hidden
+          {...({ webkitdirectory: '' } as Record<string, string>)}
+          onChange={async (e) => {
+            const list = e.target.files;
+            if (!list?.length) return;
+            const { fns, kits, voices, skipped } = await readFolderFiles(list);
+            e.target.value = '';
+            mergeFunctions(fns);
+            mergeKits(kits);
+            mergeVoices(voices);
+            toast(
+              fns.length || kits.length || voices.length
+                ? `Loaded ${fns.length} function${fns.length === 1 ? '' : 's'}, ${kits.length} kit${kits.length === 1 ? '' : 's'} and ${voices.length} voice${voices.length === 1 ? '' : 's'} from the folder${skipped ? ` · ${skipped} file${skipped > 1 ? 's' : ''} skipped` : ''}`
+                : 'No SoundFunc files in that folder',
+            );
+          }}
+        />
         <input
           ref={fileRef}
           type="file"
@@ -99,57 +142,6 @@ function MyFunctions() {
         </div>
       )}
       <Fold id="my-functions" title="My functions" count={functions.length} defaultOpen>
-        <div className="mine-tools">
-          <button
-            className="btn small ghost"
-            disabled={!functions.length}
-            onClick={() => exportFns(functions, 'soundfunc-functions.json')}
-            title={functions.length ? `Export all ${functions.length} functions as one file — Import reads it back` : 'Nothing to export yet'}
-          >
-            <Icon name="download" size={13} /> Export all
-          </button>
-          <button
-            className={`btn small ghost ${folder.name && !folder.needsAccess ? 'on' : ''}`}
-            disabled={folder.busy}
-            onClick={openFolder}
-            title={
-              !canLinkFolder()
-                ? 'Load every function file in a folder (this browser can read a folder, not keep it in step — Chrome and Edge can)'
-                : folder.name
-                  ? folder.needsAccess
-                    ? `Reconnect “${folder.name}” — the browser asks for access again after a reload`
-                    : `Your presets folder: ${folder.name} — Functions, Rhythm kits and Factory presets, kept in step as you save and delete. Click to choose another.`
-                  : 'Choose where your presets live (Documents is a good place): SoundFunc makes a “SoundFunc Presets” folder there with Functions, Rhythm kits, Voices and Factory presets, and keeps it in step as you save and delete'
-            }
-          >
-            <Icon name="folder" size={13} /> <span className="mine-folder-name">{folder.name ? (folder.needsAccess ? `Reconnect ${folder.name}` : folder.name) : 'Open presets folder'}</span>
-          </button>
-          {folder.name && (
-            <button className="icon-btn" title={`Stop keeping “${folder.name}” in step (its files stay)`} aria-label="Forget presets folder" onClick={() => void forgetPresetFolder()}>
-              <Icon name="close" size={11} />
-            </button>
-          )}
-          <input
-            ref={folderRef}
-            type="file"
-            hidden
-            {...({ webkitdirectory: '' } as Record<string, string>)}
-            onChange={async (e) => {
-              const list = e.target.files;
-              if (!list?.length) return;
-              const { fns, kits, voices, skipped } = await readFolderFiles(list);
-              e.target.value = '';
-              mergeFunctions(fns);
-              mergeKits(kits);
-              mergeVoices(voices);
-              toast(
-                fns.length || kits.length || voices.length
-                  ? `Loaded ${fns.length} function${fns.length === 1 ? '' : 's'}, ${kits.length} kit${kits.length === 1 ? '' : 's'} and ${voices.length} voice${voices.length === 1 ? '' : 's'} from the folder${skipped ? ` · ${skipped} file${skipped > 1 ? 's' : ''} skipped` : ''}`
-                  : 'No SoundFunc files in that folder',
-              );
-            }}
-          />
-        </div>
         {functions.length === 0 && <p className="muted fold-empty">Nothing saved yet.</p>}
         {functions.map((fn, i) => (
         <div key={fn.id} className="mine-row">

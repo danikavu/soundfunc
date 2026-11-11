@@ -110,7 +110,7 @@ export const WAVE_VOICES: WaveVoice[] = [
     timbre: '0.56*sin(tau*p + 2.8*sin(4*tau*p)) + 0.27*sin(9*tau*p + 1.7*sin(3*tau*p)) + 0.17*sin(17*tau*p)',
     attack: 0.001,
     release: 0.11,
-    synth: { unison: 2, detune: 12.5, width: 0.62, sub: 0.12, filter: 'lowpass', cutoff: 0.94, resonance: 0.36, envAmount: 0.44, envDecay: 0.08, keyTrack: 0.6, decay: 0.16, sustain: 0.4, drive: 0.69, chorus: 0.05, delay: 0.38, delayTime: 0.375, sauce: 0.86, gain: 1.2 },
+    synth: { unison: 2, detune: 12.5, width: 0.62, sub: 0.12, filter: 'lowpass', cutoff: 0.94, resonance: 0.36, envAmount: 0.44, envDecay: 0.08, keyTrack: 0.6, decay: 0.16, sustain: 0.4, drive: 0.69, chorus: 0.05, delay: 0.38, delayTime: 0.5, sauce: 0.86, gain: 1.2 },
   },
   {
     id: 'undertow',

@@ -3,8 +3,8 @@ import { engine } from '../engine/audio';
 import { CONSTANTS, FUNCTIONS } from '../engine/expr';
 import { PITCH_MODES, midiToName, type PitchMode } from '../engine/music';
 import { CHANNEL_PALETTE, TRACK_COLORS } from '../engine/presets';
-import { DRUMS, SONG_DEFAULTS, STRETCH_MAX, STRETCH_MIN, TRACK_DEFAULTS, WAVEFORMS, isDrum, keyLabel, patternBeats, stretchOf, voiceLabel, type PlayMode, type Waveform } from '../engine/project';
-import { readVoiceFile, useLibrary, voiceFile, voiceOf, wearsVoice } from '../state/library';
+import { DRUMS, SONG_DEFAULTS, STRETCH_MAX, STRETCH_MIN, TRACK_DEFAULTS, WAVEFORMS, isDrum, keyLabel, patternBeats, stretchOf, voiceLabel, type PlayMode, type Track, type Waveform } from '../engine/project';
+import { readVoiceFile, useLibrary, voiceFile, voiceOf, wearsVoice, type Voice } from '../state/library';
 import { mutateTimbre } from '../engine/mutate';
 import { DRUM_BASE, PATCHES, VOICE_HINTS as SYNTH_HINTS, cutoffHz, surprise, type DrumParams, type FilterKind, type MelodicVoice, type OscWave, type SynthParams } from '../engine/synth';
 import { toast } from './TopBar';
@@ -89,6 +89,27 @@ const VOICE_HINTS: Record<string, string> = {
   crash: 'metal and noise, long',
 };
 const GLYPH_FORMULA: Partial<Record<Waveform, string>> = { sine: 'sin(tau*p)', triangle: 'tri(p)', square: 'sqr(p)', sawtooth: 'saw(p)' };
+
+type TrackPatch = Parameters<ReturnType<typeof useStore.getState>['updateTrack']>[1];
+/**
+ * Every voice a channel can step through with ‹ ›, in the Voice menu's order: a drum channel
+ * through the drums; a melodic one through your voices, the Sonic Menagerie, then the stock voices.
+ */
+function voiceSteps(track: Track, voices: Voice[]): { key: string; label: string; patch: TrackPatch }[] {
+  if (isDrum(track.waveform)) return (Object.keys(DRUMS) as Waveform[]).map((w) => ({ key: w, label: voiceLabel(w), patch: { waveform: w, synth: undefined } }));
+  return [
+    ...voices.filter((v) => !isDrum(v.waveform)).map((v) => ({ key: `mine:${v.id}`, label: v.name, patch: { waveform: v.waveform, timbre: v.timbre, attack: v.attack, release: v.release, synth: v.synth ? { ...v.synth } : undefined } })),
+    ...WAVE_VOICES.map((v) => ({ key: `menagerie:${v.id}`, label: v.name, patch: wearWaveVoice(v) })),
+    ...(Object.keys(WAVEFORMS) as Waveform[]).map((w) => ({ key: w, label: voiceLabel(w), patch: { waveform: w, synth: undefined } })),
+  ];
+}
+/** where the channel is in that list: the voice it wears, else its plain voice */
+function voiceStepAt(track: Track, voices: Voice[]): string {
+  const mine = voices.find((v) => wearsVoice(track, v));
+  if (mine) return `mine:${mine.id}`;
+  const m = waveVoiceOf(track);
+  return m ? `menagerie:${m.id}` : track.waveform;
+}
 
 /** One dropdown for the sound: melodic voices, drums, and voices you saved. */
 function VoicePicker() {
@@ -253,12 +274,14 @@ function SoundPanel() {
       <div className="sound-tab">
         {tab === 'osc' && (
           <>
-            {p.wave !== 'custom' && (
+            {track.waveform !== 'custom' && (
               <div className="row sound-wave">
                 <Seg<OscWave>
                   value={p.wave}
                   onChange={(wave) => (checkpoint(), set({ wave }))}
                   options={[
+                    // a voice with its own wave (Koto, Mist Pad…) can go back to it
+                    ...(PATCHES[track.waveform as MelodicVoice]?.shape ? [{ value: 'custom' as OscWave, label: 'Own' }] : []),
                     { value: 'sine', label: 'Sine' },
                     { value: 'triangle', label: 'Tri' },
                     { value: 'sawtooth', label: 'Saw' },
@@ -338,6 +361,7 @@ function SoundPanel() {
               />
             </div>
             {knob('Vibrato', 'vibrato', 0, 1, p.vibrato)}
+            {knob('Wow', 'wow', 0, 1, p.wow)}
           </>
         )}
       </div>
@@ -389,6 +413,25 @@ function VoiceTools() {
   if (naming === null)
     return (
       <div className="row voice-tools">
+        <span className="row voice-tool-group">
+          {([-1, 1] as const).map((dir) => (
+            <button
+              key={dir}
+              className="icon-btn voice-step"
+              onClick={() => {
+                const list = voiceSteps(track, voices);
+                const at = list.findIndex((x) => x.key === voiceStepAt(track, voices));
+                const next = list[(Math.max(0, at) + dir + list.length) % list.length];
+                updateTrack(track.id, next.patch);
+                toast(next.label);
+              }}
+              title={dir < 0 ? 'Previous voice' : 'Next voice'}
+              aria-label={dir < 0 ? 'Previous voice' : 'Next voice'}
+            >
+              {dir < 0 ? '<' : '>'}
+            </button>
+          ))}
+        </span>
         {custom && (
           <span className="row voice-tool-group">
             <button
