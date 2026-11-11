@@ -110,7 +110,7 @@ function Palette({ state, hasOutput, onPick, onClose }: { state: PaletteState; h
                   <button
                     className="icon-btn palette-del"
                     title={`Delete block “${item.block.name}”`}
-                    onClick={() => confirm(`Delete the block “${item.block.name}”?`) && deleteBlock(item.block.id)}
+                    onClick={() => (deleteBlock(item.block.id), toast(`Deleted the block “${item.block.name}”`))}
                   >
                     <Icon name="trash" size={12} />
                   </button>

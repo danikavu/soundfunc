@@ -76,7 +76,7 @@ export function JamRecorder() {
             <button
               className="btn small ghost"
               onClick={() => {
-                if (confirm('Discard this take?')) discard();
+                discard();
               }}
             >
               <Icon name="trash" size={12} /> Discard

@@ -122,8 +122,8 @@ export function GardenMenu() {
                 className="icon-btn"
                 title={`Delete “${sp.name}”`}
                 onClick={() => {
-                  if (!confirm(`Delete the saved track “${sp.name}”? This can’t be undone.`)) return;
                   deleteProject(sp.id);
+                  toast(`Deleted the saved track “${sp.name}”`);
                   if (sp.id === currentProjectId) useStore.getState().setCurrentProjectId(null);
                 }}
               >

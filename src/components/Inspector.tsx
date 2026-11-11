@@ -141,7 +141,7 @@ function VoicePicker() {
             glyph: glyph(v.waveform, v.timbre),
             selected: mine?.id === v.id,
             onSelect: () => up({ waveform: v.waveform, timbre: v.timbre, attack: v.attack, release: v.release, synth: v.synth ? { ...v.synth } : undefined }),
-            onDelete: () => confirm(`Delete the voice “${v.name}”? Channels using it keep their sound.`) && deleteVoice(v.id),
+            onDelete: () => (deleteVoice(v.id), toast(`Deleted the voice “${v.name}” — channels using it keep their sound`)),
           })),
         },
         {

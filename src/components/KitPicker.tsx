@@ -183,8 +183,8 @@ export function KitPicker() {
                 <button
                   className="btn small ghost"
                   onClick={() => {
-                    if (!confirm(`Delete the kit “${saved.name}”?`)) return;
                     deleteKit(saved.id);
+                    toast(`Deleted the kit “${saved.name}”`);
                     setKitId(KITS[0].id);
                   }}
                   title={`Delete “${saved.name}”`}

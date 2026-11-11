@@ -163,7 +163,7 @@ function MyFunctions() {
             <button
               className="icon-btn"
               title={`Delete “${fn.name}”`}
-              onClick={() => confirm(`Delete the function “${fn.name}”?${folder.name && !folder.needsAccess ? ` Its file in “${folder.name}” goes too.` : ''}`) && deleteFunction(fn.id)}
+              onClick={() => (deleteFunction(fn.id), toast(`Deleted the function “${fn.name}”${folder.name && !folder.needsAccess ? `, and its file in “${folder.name}”` : ''}`))}
             >
               <Icon name="close" size={11} />
             </button>
