@@ -182,6 +182,12 @@ PRESETS.forEach((p, i) => {
   PRESETS_BY_GROUP.set(g, [...(PRESETS_BY_GROUP.get(g) ?? []), { p, i }]);
 });
 
+/** a built-in preset as a function file, the same kind My functions exports — its own description kept */
+function exportPreset(p: (typeof PRESETS)[number], i: number) {
+  const fn = { ...functionOf(trackFromPreset(p, i), p.name), description: p.description };
+  download(`${fileSafe(p.name)}.soundfunc-function.json`, JSON.stringify(functionFile([fn]), null, 2), 'application/json');
+}
+
 /** One group of Function presets: a small header that folds, remembering whether you left it open. */
 function PresetGroupList({ group, onPlant }: { group: PresetGroup; onPlant: (id: string) => void }) {
   const items = PRESETS_BY_GROUP.get(group) ?? [];
@@ -216,13 +222,20 @@ function PresetGroupList({ group, onPlant }: { group: PresetGroup; onPlant: (id:
       </button>
       {open &&
         items.map(({ p, i }) => (
-          <button key={p.id} className="preset reveal" onClick={() => onPlant(p.id)} title={p.description}>
-            <span className="preset-line">
-              <b>{p.name}</b>
-              <MiniScore id={`preset:${p.id}`} make={() => trackFromPreset(p, i)} color={TRACK_COLORS[i % TRACK_COLORS.length]} />
+          <div key={p.id} className="mine-row">
+            <button className="preset reveal" onClick={() => onPlant(p.id)} title={p.description}>
+              <span className="preset-line">
+                <b>{p.name}</b>
+                <MiniScore id={`preset:${p.id}`} make={() => trackFromPreset(p, i)} color={TRACK_COLORS[i % TRACK_COLORS.length]} />
+              </span>
+              <code>{p.formula}</code>
+            </button>
+            <span className="mine-actions">
+              <button className="icon-btn" title={`Export “${p.name}” as a function file — Import puts it under My functions`} aria-label={`Export ${p.name}`} onClick={() => exportPreset(p, i)}>
+                <Icon name="download" size={12} />
+              </button>
             </span>
-            <code>{p.formula}</code>
-          </button>
+          </div>
         ))}
     </div>
   );
