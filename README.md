@@ -1,6 +1,8 @@
 # SoundFunc
 
-Sonification -> make melodies from mathematical functions with a node editor, hear them live, and export to MIDI.
+Explore making music with math, and export to midi with automations
+
+TODO: MPE support
 
 ```sh
 npm install
