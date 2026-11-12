@@ -26,7 +26,6 @@ export function KitPicker() {
   // your own kits first, then the built-in ones
   const allKits = [...mine.map(asKit), ...KITS];
   const kit = allKits.find((k) => k.id === kitId) ?? KITS[0];
-  const saved = kit.id.startsWith('mine:') ? mine.find((k) => `mine:${k.id}` === kit.id) : undefined;
 
   const saveCurrent = () => {
     const name = (naming ?? '').trim();
@@ -41,6 +40,40 @@ export function KitPicker() {
     toast(`${replacing ? 'Updated' : 'Saved'} the kit “${name}” — ${k.tracks.length} channels, under My kits`);
   };
   const exportKits = (ks: typeof mine, file: string) => download(file, JSON.stringify(kitFile(ks), null, 2), 'application/json');
+  // one kit in the list, with export (and delete, for your own) on hover
+  const kitRow = (k: (typeof allKits)[number]) => {
+    const own = k.id.startsWith('mine:') ? mine.find((m) => `mine:${m.id}` === k.id) : undefined;
+    return (
+      <li key={k.id} className="kit-row">
+        <button className={k.id === kitId ? 'on' : ''} onMouseEnter={() => setKitId(k.id)} onFocus={() => setKitId(k.id)} onClick={() => setKitId(k.id)}>
+          <span className="serif">{k.name}</span>
+          <small>
+            {k.song?.bpm ? `${k.song.bpm} bpm · ` : ''}
+            {k.tracks.length} channels
+          </small>
+        </button>
+        <span className="kit-row-actions">
+          <button className="icon-btn" onClick={() => exportKits([own ?? savedKitOf(k)], `${fileSafe(k.name)}.soundfunc-kit.json`)} title={`Export “${k.name}” as a kit file — import it under My kits anywhere`} aria-label={`Export ${k.name}`}>
+            <Icon name="download" size={12} />
+          </button>
+          {own && (
+            <button
+              className="icon-btn"
+              onClick={() => {
+                deleteKit(own.id);
+                toast(`Deleted the kit “${own.name}”`);
+                if (kitId === k.id) setKitId(KITS[0].id);
+              }}
+              title={`Delete “${own.name}”`}
+              aria-label={`Delete ${own.name}`}
+            >
+              <Icon name="trash" size={12} />
+            </button>
+          )}
+        </span>
+      </li>
+    );
+  };
   const drums = kit.tracks.map((t, i) => (isDrum(t.waveform as Waveform) ? i : -1)).filter((i) => i >= 0);
 
   useLayoutEffect(() => {
@@ -86,17 +119,15 @@ export function KitPicker() {
             <li className="kit-mine-tools">
               {naming === null ? (
                 <>
-                  <button className="btn small ghost" onClick={() => setNaming(useStore.getState().project.name || 'My kit')} title="Save every channel of this track, with its tempo, key and harmony, as a kit">
-                    <Icon name="save" size={12} /> Save as kit
+                  <button className="icon-btn" onClick={() => setNaming(useStore.getState().project.name || 'My kit')} title="Save every channel of this track, with its tempo, key and harmony, as a kit" aria-label="Save as kit">
+                    <Icon name="save" size={12} />
                   </button>
-                  <span className="row" style={{ gap: 2 }}>
-                    <button className="icon-btn" onClick={() => fileRef.current?.click()} title="Import kits from a .json file" aria-label="Import kits">
-                      <Icon name="upload" size={12} />
-                    </button>
-                    <button className="icon-btn" disabled={!mine.length} onClick={() => exportKits(mine, 'soundfunc-kits.json')} title="Export all your kits as one file" aria-label="Export all kits">
-                      <Icon name="download" size={12} />
-                    </button>
-                  </span>
+                  <button className="icon-btn" onClick={() => fileRef.current?.click()} title="Import kits from a .json file" aria-label="Import kits">
+                    <Icon name="upload" size={12} />
+                  </button>
+                  <button className="icon-btn" disabled={!mine.length} onClick={() => exportKits(mine, 'soundfunc-kits.json')} title="Export all your kits as one file" aria-label="Export all kits">
+                    <Icon name="download" size={12} />
+                  </button>
                 </>
               ) : (
                 <span className="save-voice">
@@ -140,34 +171,13 @@ export function KitPicker() {
             {(Object.keys(KIT_GROUPS) as KitGroup[]).flatMap((g) => {
               const kits = allKits.filter((k) => kitGroupOf(k) === g);
               // My kits' header is above, with its tools
-              if (g === 'mine')
-                return kits.map((k) => (
-                  <li key={k.id}>
-                    <button className={k.id === kitId ? 'on' : ''} onMouseEnter={() => setKitId(k.id)} onFocus={() => setKitId(k.id)} onClick={() => setKitId(k.id)}>
-                      <span className="serif">{k.name}</span>
-                      <small>
-                        {k.song?.bpm ? `${k.song.bpm} bpm · ` : ''}
-                        {k.tracks.length} channels
-                      </small>
-                    </button>
-                  </li>
-                ));
+              if (g === 'mine') return kits.map(kitRow);
               return kits.length
                 ? [
                     <li key={`group-${g}`} className="kit-group-head">
                       {KIT_GROUPS[g]}
                     </li>,
-                    ...kits.map((k) => (
-                      <li key={k.id}>
-                        <button className={k.id === kitId ? 'on' : ''} onMouseEnter={() => setKitId(k.id)} onFocus={() => setKitId(k.id)} onClick={() => setKitId(k.id)}>
-                          <span className="serif">{k.name}</span>
-                          <small>
-                            {k.song?.bpm ? `${k.song.bpm} bpm · ` : ''}
-                            {k.tracks.length} channels
-                          </small>
-                        </button>
-                      </li>
-                    )),
+                    ...kits.map(kitRow),
                   ]
                 : [];
             })}
@@ -175,24 +185,6 @@ export function KitPicker() {
 
           <div className="kit-detail">
             <h3 className="serif">{kit.name}</h3>
-            <div className="row kit-mine-actions">
-              <button className="btn small ghost" onClick={() => exportKits([saved ?? savedKitOf(kit)], `${fileSafe(kit.name)}.soundfunc-kit.json`)} title={`Export “${kit.name}” as a kit file — import it under My kits anywhere`}>
-                <Icon name="download" size={12} /> Export kit
-              </button>
-              {saved && (
-                <button
-                  className="btn small ghost"
-                  onClick={() => {
-                    deleteKit(saved.id);
-                    toast(`Deleted the kit “${saved.name}”`);
-                    setKitId(KITS[0].id);
-                  }}
-                  title={`Delete “${saved.name}”`}
-                >
-                  <Icon name="trash" size={12} /> Delete
-                </button>
-              )}
-            </div>
             <p className="muted">{kit.description}</p>
             {kit.song && (
               <p className="kit-meta">
