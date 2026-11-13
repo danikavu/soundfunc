@@ -3839,21 +3839,14 @@ aside.panel:last-of-type .info-pop {
 }
 
 /* ---------- the Score's functions, under the score ---------- */
-/* the frame stacks: the score above, the functions below it, nothing on top of the notes */
-.viz.with-math {
-  display: flex;
-  flex-direction: column;
-}
-.viz.with-math canvas {
-  position: relative;
-  inset: auto;
-  flex: 1 1 0;
-  min-height: 0;
+/* the strip takes its own row between the score and the nodes: the score keeps its full size */
+.center:has(> .score-math) {
+  grid-template-rows: minmax(180px, 40%) auto minmax(0, 1fr);
 }
 .score-math {
   position: relative;
-  flex: 0 0 auto;
-  max-height: 42%;
+  min-height: 0;
+  max-height: 30vh;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -3862,7 +3855,7 @@ aside.panel:last-of-type .info-pop {
   align-items: flex-start;
   gap: 6px 22px;
   padding: 8px 14px 10px;
-  border-top: 1px solid var(--line-soft);
+  border: 1px solid var(--line-soft);
   background: var(--paper);
   color: var(--ink);
   animation: rise 0.18s var(--ease);
