@@ -91,10 +91,10 @@ const quiet = (w: Float32Array | null) => {
   return m < 1e-3;
 };
 
-function backdrop(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P: Palette, now: number, rings = 7) {
+function backdrop(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P: Palette, now: number, rings = 7, width = 1) {
   g.save();
   g.strokeStyle = P.rake;
-  g.lineWidth = 1;
+  g.lineWidth = width;
   // raked sand: rings that breathe very slightly
   for (let i = 1; i <= rings; i++) {
     const r = R * (0.18 + (i / rings) * 0.95) + Math.sin(now * 0.6 + i * 0.8) * 1.2;
@@ -109,7 +109,7 @@ function backdrop(g: CanvasRenderingContext2D, cx: number, cy: number, R: number
 // ---------- pond: notes as stones ----------
 
 function pond(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P: Palette, f: RippleFrame, opts: RippleOptions) {
-  backdrop(g, cx, cy, R, P, f.now, 5);
+  backdrop(g, cx, cy, R, P, f.now, 5, 0.5);
   // the circle of notes: C at the top, a semitone every 30°
   g.save();
   g.font = '10.5px Doto, monospace';
@@ -125,6 +125,7 @@ function pond(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P:
     g.moveTo(cx + Math.cos(a) * R * 0.2, cy + Math.sin(a) * R * 0.2);
     g.lineTo(cx + Math.cos(a) * R * 1.05, cy + Math.sin(a) * R * 1.05);
     g.strokeStyle = P.rake;
+    g.lineWidth = 0.5;
     g.stroke();
   }
   g.restore();
@@ -157,7 +158,7 @@ function pond(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P:
       if (tt <= 0 || tt >= 1) continue;
       g.globalAlpha = (1 - tt) * (1 - lag) * 0.75 * weight;
       g.strokeStyle = colour;
-      g.lineWidth = 1.2 + (1 - tt) * 1.2;
+      g.lineWidth = 0.45 + (1 - tt) * 0.35; // hairlines: the rings stay fine as they spread
       g.beginPath();
       g.arc(x, y, 3 + tt * size, 0, TAU);
       g.stroke();
@@ -184,7 +185,7 @@ function pond(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P:
         const p = place(m);
         if (prev) {
           g.globalAlpha = (1 - age / (opts.trails ? 1.6 : 0.6)) * 0.9;
-          g.lineWidth = 1 + 2.5 * (1 - age / 1.6);
+          g.lineWidth = 0.5 + 0.7 * (1 - age / 1.6);
           g.beginPath();
           g.moveTo(prev[0], prev[1]);
           g.lineTo(p[0], p[1]);
@@ -259,13 +260,6 @@ function halo(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P:
     waveRing(g, w, 0, cx, cy, R * (0.72 + i * 0.045), R * 0.45, -Math.PI / 2, TAU - Math.PI / 2, true, 512);
     g.stroke();
   });
-  // the still stone in the middle
-  g.globalAlpha = 1;
-  g.shadowBlur = 0;
-  g.fillStyle = P.ink;
-  g.beginPath();
-  g.ellipse(cx, cy, R * 0.14, R * 0.11, -0.3, 0, TAU);
-  g.fill();
   g.restore();
 }
 

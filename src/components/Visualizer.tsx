@@ -5,6 +5,7 @@ import { BEATS_PER_BAR, audibleTracks, harmonyAt, isDrum, patternBeats, renderTr
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Seg, getRender } from './ui';
 import { RangeControl } from './RangeControl';
+import { ScoreMath, useScoreMath } from './ScoreMath';
 import { RIPPLE_DEFAULTS, RIPPLE_STYLES, RippleMemory, drawRipple, type RippleOptions, type RippleStyle } from './ripple';
 
 /** the header's height: Ripple centres its figure in the space below it */
@@ -125,6 +126,7 @@ export function Visualizer() {
   const selectTrack = useStore((s) => s.selectTrack);
   const selected = useSelectedTrack();
   const [mode, setMode] = useState<Mode>('score');
+  const [math, setMath] = useScoreMath();
   const [tip, setTip] = useState<{ x: number; y: number; text: string[] } | null>(null);
   /** Ripple's look, remembered between visits */
   const [ripple, setRippleState] = useState<RippleOptions>(loadRipple);
@@ -871,12 +873,24 @@ export function Visualizer() {
         </span>
       </div>
       {mode !== 'ripple' && <RangeControl />}
+      {mode === 'score' && math.open && <ScoreMath detail={math.detail} onDetail={(detail) => setMath({ detail })} />}
       {mode !== 'ripple' && (
         <div className="viz-zoom">
           {view().zoomed && (
             <span className="muted">
               bars {Math.floor((offset + view().start) / BEATS_PER_BAR) + 1}–{Math.ceil((offset + view().start + view().span) / BEATS_PER_BAR)}
             </span>
+          )}
+          {mode === 'score' && (
+            <button
+              className={`icon-btn ${math.open ? 'on' : ''}`}
+              aria-pressed={math.open}
+              onClick={() => setMath({ open: !math.open })}
+              title={math.open ? 'Hide the functions' : 'Show the function of every channel you can hear, as math, over the score'}
+              aria-label="Functions"
+            >
+              <span className="fx-glyph">ƒ</span>
+            </button>
           )}
           <button className="icon-btn" onClick={() => zoomAt(1 / 1.6)} title="Zoom in (⌘/Ctrl + scroll, or pinch)">
             <Icon name="plus" size={13} />

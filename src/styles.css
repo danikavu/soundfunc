@@ -3837,3 +3837,60 @@ aside.panel:last-of-type .info-pop {
 .ripple-opts .btn.on {
   color: var(--accent);
 }
+
+/* ---------- the Score's functions, in place over the score ---------- */
+.score-math {
+  position: absolute;
+  top: 40px;
+  left: 12px;
+  z-index: 3;
+  max-width: min(60%, 640px);
+  max-height: calc(100% - 70px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 8px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--paper) 86%, transparent);
+  backdrop-filter: blur(2px);
+  color: var(--ink);
+  animation: rise 0.18s var(--ease);
+}
+.score-math .muted {
+  margin: 0;
+  font-size: 11px;
+}
+.score-math-all {
+  float: right;
+  margin: -2px -4px 0 12px;
+}
+.score-math-ch + .score-math-ch {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-soft);
+}
+.score-math-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 11px/1.2 var(--mono);
+  color: var(--ink-2);
+  margin-bottom: 3px;
+}
+.score-math-name i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.score-math-tex {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.score-math-tex .katex {
+  font-size: 1em;
+}
+.viz-zoom .icon-btn.on {
+  color: var(--accent);
+}
