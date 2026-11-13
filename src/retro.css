@@ -1562,3 +1562,33 @@ body,
 .app .toolbar .mutator > .btn {
   height: var(--h-md);
 }
+
+/* scrolled down into the presets: a key that floats at the panel's foot and takes you back to the channels */
+.to-channels {
+  position: sticky;
+  bottom: 10px;
+  height: 0;
+  display: flex;
+  justify-content: center;
+  z-index: 5;
+  pointer-events: none;
+}
+.to-channels .btn {
+  transform: translateY(-100%);
+  gap: 6px;
+  pointer-events: auto;
+  box-shadow: var(--key-rise), 0 6px 16px -6px rgba(0, 0, 0, 0.45);
+  animation: rise 0.18s var(--ease);
+}
+.to-channels .btn:active {
+  transform: translateY(calc(-100% + 1px));
+}
+.to-channels-dots {
+  display: inline-flex;
+  gap: 2px;
+}
+.to-channels-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+}

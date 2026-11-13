@@ -4,7 +4,7 @@ import { KitPicker } from './KitPicker';
 import { audibleTracks, stretchOf, voiceLabel } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, download, fileSafe } from './ui';
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { functionFile, functionOf, readFunctionFile, useLibrary, type SavedFunction } from '../state/library';
 import { toast } from './TopBar';
 import { canLinkFolder, forgetPresetFolder, mergeFunctions, mergeKits, mergeVoices, openPresetFolder, readFolderFiles, usePresetFolder } from '../state/presetFolder';
@@ -283,9 +283,20 @@ export function Sidebar() {
   const allLocked = project.tracks.length > 0 && project.tracks.every((t) => t.locked);
   const selected = useSelectedTrack();
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
+  // scrolled down past the channels (into the presets): offer a way straight back up
+  const panelRef = useRef<HTMLElement>(null);
+  const channelsEnd = useRef<HTMLDivElement>(null);
+  const [pastChannels, setPastChannels] = useState(false);
+  useEffect(() => {
+    const root = panelRef.current, end = channelsEnd.current;
+    if (!root || !end) return;
+    const io = new IntersectionObserver(([e]) => setPastChannels(!e.isIntersecting && e.boundingClientRect.top < (e.rootBounds?.top ?? 0)), { root });
+    io.observe(end);
+    return () => io.disconnect();
+  }, []);
 
   return (
-    <aside className="panel">
+    <aside className="panel" ref={panelRef}>
       <div className="eyebrow">Channels</div>
       <div className="tracks-head">
         {project.tracks.length > 0 && (
@@ -383,6 +394,7 @@ export function Sidebar() {
         </div>
       ))}
       {project.tracks.length === 0 && <p className="muted serif">An empty track. Plant something below.</p>}
+      <div ref={channelsEnd} aria-hidden />
 
       <KitPicker />
 
@@ -393,6 +405,25 @@ export function Sidebar() {
           <PresetGroupList key={g} group={g} onPlant={addTrack} />
         ))}
       </Fold>
+      {pastChannels && (
+        <div className="to-channels">
+          <button
+            className="btn small"
+            onClick={() => panelRef.current?.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })}
+            title="Back up to the channels"
+          >
+            <Icon name="upload" size={11} /> Channels
+            <span className="to-channels-dots" aria-hidden>
+              {project.tracks
+                .filter((t) => audible.has(t.id))
+                .slice(0, 9)
+                .map((t) => (
+                  <i key={t.id} style={{ background: t.color }} />
+                ))}
+            </span>
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
