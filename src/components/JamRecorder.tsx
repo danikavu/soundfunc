@@ -79,7 +79,7 @@ export function JamRecorder() {
                 discard();
               }}
             >
-              <Icon name="trash" size={12} /> Discard
+              <Icon name="close" size={12} /> Discard
             </button>
           </div>
         </div>

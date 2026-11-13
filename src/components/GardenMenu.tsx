@@ -127,7 +127,7 @@ export function GardenMenu() {
                   if (sp.id === currentProjectId) useStore.getState().setCurrentProjectId(null);
                 }}
               >
-                <Icon name="trash" size={13} />
+                <Icon name="close" size={13} />
               </button>
             </div>
           ))}

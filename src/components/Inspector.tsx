@@ -818,7 +818,7 @@ function ChannelTab() {
           <Icon name="copy" size={12} /> Duplicate
         </button>
         <button className="btn small ghost" onClick={() => removeTrack(track.id)}>
-          <Icon name="trash" size={12} /> Remove
+          <Icon name="close" size={12} /> Remove
         </button>
       </div>
     </>

@@ -80,7 +80,7 @@ export function KitPicker() {
               title={`Delete “${own.name}”`}
               aria-label={`Delete ${own.name}`}
             >
-              <Icon name="trash" size={12} />
+              <Icon name="close" size={12} />
             </button>
           )}
         </span>

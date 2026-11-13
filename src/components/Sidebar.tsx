@@ -334,7 +334,7 @@ export function Sidebar() {
               title="Clear — remove every channel (⌘Z to undo)"
               aria-label="Clear all channels"
             >
-              <Icon name="trash" size={17} />
+              <Icon name="close" size={17} />
             </button>
           )}
         </div>
