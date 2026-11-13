@@ -4,77 +4,120 @@
  * Loaded after styles.css; it restyles, it doesn't rearrange.
  */
 
-/* ---------- palette ---------- */
+/* ---------- palette ----------
+   A desk calculator: a warm-grey case, keys a shade lighter, dark keys for what is on,
+   one orange function key, and screens like a vacuum-fluorescent display (VFD).
+   Every colour below is a token; the rest of the skin only uses tokens. */
 
 :root {
-  /* chrome: the instrument's beige case */
-  --paper: #d6ceb6;
-  --paper-2: #cbc2a7;
-  --paper-3: #c0b698;
-  --card: #e3dcc7;
-  --ink: #23211b;
-  --ink-2: #4a463a;
-  --ink-3: #5c5643;
-  --line: #9a9177;
-  --line-soft: #b6ac90;
-  --accent: #c0392b;
-  --accent-soft: rgba(192, 57, 43, 0.14);
-  --rake: rgba(35, 33, 27, 0.06);
+  /* the case */
+  --case-paper: #d0cdc8;
+  --case-paper-2: #c6c4be;
+  --case-paper-3: #bdbab5;
+  --case-card: #dad7d2;
+  --case-ink: #23211d;
+  --case-ink-2: #4a4743;
+  --case-ink-3: #65635e;
+  --case-line: #888681;
+  --case-line-soft: #a19e99;
+  /* keys: light face, dark legend; a key that is on is a dark key with a light legend */
+  --key: #e7e4df;
+  --key-2: #d3d0cb;
+  --key-ink: #23211d;
+  --key-ink-2: #4a4743;
+  --key-ink-3: #65635e;
+  --key-on: #302e29;
+  --key-on-ink: #f8f5ef;
+  /* the one function colour */
+  --accent: #e36927;
+  --accent-hover: #f17730;
+  --accent-edge: #983e1b;
+  --accent-ink: #fff8f0;
+  --accent-soft: rgba(227, 105, 39, 0.16);
+  /* lamps */
+  --rec: #e4573f;
+  --led: #4fdc8a;
+  /* bevels: light from the top */
+  --hi: #f8f5ef;
+  --lo: #a19e99;
+  --edge: #4a4743;
+  --radius: 4px;
   --shadow: none;
-  /* bevels: light from the top left */
-  --hi: #f6f1e2;
-  --lo: #8c836b;
-  --edge: #5c5543;
-  /* screens and LCDs */
-  --lcd: #0e1f17;
-  --lcd-2: #142a1f;
-  --lcd-ink: #a8f5c4;
-  --lcd-ink-2: #62c48c;
-  --lcd-edge: #06110b;
-  --glow-ink: 0 0 6px rgba(120, 240, 170, 0.45);
-  --radius: 3px;
-  /* the custom wave's preview in the Sound tab: black on paper, orange in the dark */
+  /* screens and displays: VFD teal on near-black */
+  --lcd: #0c1615;
+  --lcd-2: #131d1b;
+  --lcd-3: #1e2927;
+  --lcd-ink: #8bf4e7;
+  --lcd-ink-2: #68c4b8;
+  --lcd-ink-3: #458880;
+  --lcd-line: #27403c;
+  --lcd-line-soft: #1a2e2b;
+  --lcd-edge: #060f0e;
+  --glow-ink: 0 0 6px rgba(120, 240, 225, 0.4);
+  /* the custom wave's preview in the Sound tab: black on the case, orange in the dark */
   --wave-preview: #000;
+
+  --paper: var(--case-paper);
+  --paper-2: var(--case-paper-2);
+  --paper-3: var(--case-paper-3);
+  --card: var(--case-card);
+  --ink: var(--case-ink);
+  --ink-2: var(--case-ink-2);
+  --ink-3: var(--case-ink-3);
+  --line: var(--case-line);
+  --line-soft: var(--case-line-soft);
+  --rake: rgba(35, 33, 29, 0.06);
 }
 
+/* night: a charcoal calculator with light keys for what is on */
 :root[data-theme='dark'] {
-  --paper: #2c2b25;
-  --paper-2: #35332c;
-  --paper-3: #403d34;
-  --card: #3a3830;
-  --ink: #e8e1cc;
-  --ink-2: #bdb49b;
-  --ink-3: #aaa189;
-  --line: #5e5848;
-  --line-soft: #4a463a;
-  --accent: #e5533f;
-  --accent-soft: rgba(229, 83, 63, 0.18);
-  --rake: rgba(232, 225, 204, 0.05);
-  --hi: #4d4a3f;
-  --lo: #1c1b17;
-  --edge: #12110e;
-  --lcd: #08140e;
-  --lcd-2: #0e1e15;
+  --case-paper: #23211d;
+  --case-paper-2: #2b2925;
+  --case-paper-3: #34322d;
+  --case-card: #2e2c28;
+  --case-ink: #ece9e3;
+  --case-ink-2: #bdbab5;
+  --case-ink-3: #a19e99;
+  --case-line: #5a5752;
+  --case-line-soft: #3e3c37;
+  --key: #3d3a35;
+  --key-2: #2f2d29;
+  --key-ink: #ece9e3;
+  --key-ink-2: #bdbab5;
+  --key-ink-3: #a19e99;
+  --key-on: #e7e4df;
+  --key-on-ink: #1c1a16;
+  --accent: #f07a35;
+  --accent-hover: #f8894a;
+  --accent-edge: #8f3a14;
+  --accent-soft: rgba(240, 122, 53, 0.18);
+  --hi: #514e48;
+  --lo: #141310;
+  --edge: #0d0b08;
+  --lcd: #070e0d;
+  --lcd-2: #0e1716;
+  --lcd-3: #172220;
   --lcd-edge: #000;
   --wave-preview: #ff8a1f;
+  --rake: rgba(236, 233, 227, 0.05);
 }
 
 /* inside a screen, everything takes the screen's colours */
 .viz,
 .score-math,
-.nodes-canvas {
-  --paper: #0d1c15;
-  --paper-2: #12261b;
-  --paper-3: #183223;
-  --card: #10231a;
-  --ink: #a8f5c4;
-  --ink-2: #6fca95;
-  --ink-3: #4c8d68;
-  --line: #2c4c39;
-  --line-soft: #1e382a;
-  --rake: rgba(120, 230, 160, 0.075);
-  --accent: #ff6a55;
-  --accent-soft: rgba(255, 106, 85, 0.16);
+.nodes-canvas,
+.import-plot-box {
+  --paper: var(--lcd);
+  --paper-2: var(--lcd-2);
+  --paper-3: var(--lcd-3);
+  --card: var(--lcd-2);
+  --ink: var(--lcd-ink);
+  --ink-2: var(--lcd-ink-2);
+  --ink-3: var(--lcd-ink-3);
+  --line: var(--lcd-line);
+  --line-soft: var(--lcd-line-soft);
+  --rake: rgba(130, 240, 225, 0.07);
+  --accent: var(--accent-hover);
   --viz-glow: 1;
   --viz-note-round: 0.12;
   color: var(--ink);
@@ -86,18 +129,33 @@
 .title-plate,
 .topbar,
 .app aside.panel,
-.toolbar,
+.toolbar {
+  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
+}
+
+/* keys: every key has the same face, the same edge and the same travel */
 .fold-trigger,
 .kit-trigger,
 .btn,
 .seg button,
 .play,
+.rec,
 .stepper-arrows button,
 .stretch-btn,
 .ms,
-.tracks-head-tools .icon-btn,
-.mutator {
-  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
+.tracks-head-tools .icon-btn {
+  box-shadow: inset 0 1px 0 var(--hi), 0 1px 0 var(--lo);
+}
+.fold-trigger:active,
+.kit-trigger:active,
+.btn:not(.ghost):active,
+.seg button:active,
+.play:active,
+.rec:active,
+.ms:active,
+.tracks-head-tools .icon-btn:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* sunken: a screen or a display set into the case */
@@ -152,28 +210,18 @@ body {
   background: var(--paper);
 }
 .nodes > .toolbar {
-  background: linear-gradient(var(--card), var(--paper-2));
-  color: #23211b;
+  background: var(--card);
+  color: var(--ink);
   border: none;
   border-bottom: 1px solid var(--edge);
-  /* the toolbar is chrome, not screen */
-  --paper: #d6ceb6;
-  --card: #e3dcc7;
-  --ink: #23211b;
-  --ink-2: #4a463a;
-  --ink-3: #5c5643;
-  --line: #9a9177;
-  --line-soft: #b6ac90;
-}
-:root[data-theme='dark'] .nodes > .toolbar {
-  --paper: #2c2b25;
-  --card: #3a3830;
-  --ink: #e8e1cc;
-  --ink-2: #bdb49b;
-  --ink-3: #aaa189;
-  --line: #5e5848;
-  --line-soft: #4a463a;
-  color: var(--ink);
+  /* the toolbar is case, not screen */
+  --paper: var(--case-paper);
+  --card: var(--case-card);
+  --ink: var(--case-ink);
+  --ink-2: var(--case-ink-2);
+  --ink-3: var(--case-ink-3);
+  --line: var(--case-line);
+  --line-soft: var(--case-line-soft);
 }
 .nodes-canvas {
   border: none;
@@ -194,7 +242,7 @@ body {
   align-items: center;
   gap: 12px;
   padding: 0 14px;
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: var(--card);
   border: 1px solid var(--edge);
   border-radius: var(--radius);
   white-space: nowrap;
@@ -220,7 +268,7 @@ body {
 
 .topbar {
   margin-top: 6px;
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: var(--card);
   border: 1px solid var(--edge);
   border-radius: var(--radius);
   padding: 0 14px;
@@ -238,14 +286,14 @@ body {
   height: 40px;
   border-radius: var(--radius);
   border: 1px solid var(--edge);
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: linear-gradient(var(--key), var(--key-2));
   color: var(--ink);
 }
 .play:hover {
   background: var(--card);
 }
 .play.on {
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: linear-gradient(var(--key), var(--key-2));
   border-color: var(--edge);
   color: var(--accent);
   box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi);
@@ -266,7 +314,7 @@ body {
   place-items: center;
   border-radius: var(--radius);
   border: 1px solid var(--edge);
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: linear-gradient(var(--key), var(--key-2));
   box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
   cursor: pointer;
 }
@@ -277,7 +325,7 @@ body {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #8c3a2c;
+  background: color-mix(in srgb, var(--rec) 45%, var(--lo));
   opacity: 0.55;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
 }
@@ -287,9 +335,9 @@ body {
 .rec.on .rec-dot,
 .rec.ending .rec-dot,
 .rec.armed .rec-dot {
-  background: #e5402a;
+  background: var(--rec);
   opacity: 1;
-  box-shadow: 0 0 8px rgba(229, 64, 42, 0.7);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--rec) 70%, transparent);
 }
 .rec.armed .rec-dot,
 .rec.ending .rec-dot {
@@ -322,7 +370,7 @@ body {
   white-space: nowrap;
 }
 .rec-clock.on {
-  color: #e5402a;
+  color: var(--rec);
 }
 .rec-take {
   cursor: pointer;
@@ -401,7 +449,7 @@ body,
 .title-plate,
 .topbar,
 .nodes > .toolbar {
-  --plate: linear-gradient(var(--card), var(--paper-2));
+  --plate: linear-gradient(var(--card), var(--card));
 }
 /* sheets and the kit picker float: their sketch sits with them (outranking the popovers' !important plain card) */
 .app .sheet,
@@ -467,7 +515,7 @@ body,
   border-top-color: var(--lcd-edge);
 }
 .app .stepper-arrows button:hover:not(:disabled) {
-  background: #1d3a2b;
+  background: var(--lcd-3);
   color: var(--lcd-ink);
 }
 .app .stretch-btn {
@@ -477,7 +525,7 @@ body,
   box-shadow: none;
 }
 .app .stretch-btn:hover:not(:disabled) {
-  background: #1d3a2b;
+  background: var(--lcd-3);
   color: var(--lcd-ink);
 }
 .app .stretch-x {
@@ -519,7 +567,7 @@ body,
 .seg button {
   border-radius: var(--radius);
   border: 1px solid var(--edge);
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: linear-gradient(var(--key), var(--key-2));
   color: var(--ink);
 }
 .btn:hover,
@@ -542,20 +590,19 @@ body,
 }
 .btn.primary {
   background: var(--accent);
-  color: #fff6ea;
-  border-color: #7a1f16;
+  color: var(--accent-ink);
+  border-color: var(--accent-edge);
 }
 .btn.primary:hover {
-  background: #d24434;
+  background: var(--accent-hover);
 }
 /* the chosen segment is lit: a dark display with green type */
 .seg button.on,
 .seg button[aria-pressed='true'] {
-  background: var(--lcd);
-  color: var(--lcd-ink);
-  border-color: var(--lcd-edge);
-  text-shadow: var(--glow-ink);
-  box-shadow: inset 1px 1px 0 #000, inset -1px -1px 0 #24402f;
+  background: var(--key-on);
+  color: var(--key-on-ink);
+  border-color: var(--edge);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 .icon-btn {
   border-radius: var(--radius);
@@ -570,14 +617,14 @@ body,
   border-radius: var(--radius) !important;
 }
 .toolbar .lock-status .dropdown.compact .dropdown-field {
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: linear-gradient(var(--key), var(--key-2));
   color: var(--ink);
   border: 1px solid var(--edge);
   text-shadow: none;
   font-family: var(--sans);
 }
 .toolbar .mutator {
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: var(--paper-2);
   border: 1px solid var(--edge);
 }
 .toolbar .mutator .btn {
@@ -586,44 +633,37 @@ body,
   box-shadow: none;
 }
 
-/* ---------- section plates with rivets ---------- */
+/* ---------- section labels: printed on the case, with a rule ---------- */
 
 .app aside.panel .eyebrow {
   position: relative;
-  margin: 18px -8px 10px;
-  padding: 7px 26px;
-  background: linear-gradient(var(--card), var(--paper-2));
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
-  color: var(--ink);
-  font: 700 11px/1 var(--sans);
-  letter-spacing: 0.16em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 8px;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--ink-2);
+  font: 700 10.5px/1 var(--sans);
+  letter-spacing: 0.18em;
 }
 .app aside.panel .eyebrow:first-child {
   margin-top: 0;
 }
-.app aside.panel .eyebrow::after {
+.app aside.panel .eyebrow::before {
   display: none;
 }
-.app aside.panel .eyebrow::before {
+.app aside.panel .eyebrow::after {
   content: '';
-  position: absolute;
-  left: 9px;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin-top: -3.5px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, var(--hi), var(--lo) 70%);
-  box-shadow: 0 0 0 1px var(--edge), 0 0 0 1px var(--edge), calc(100% + 0px) 0 0 0 transparent;
-}
-/* a second rivet on the right */
-.app aside.panel .eyebrow {
-  background-image: radial-gradient(circle at calc(100% - 12.5px) 50%, var(--lo) 0 2.6px, var(--edge) 2.6px 3.6px, transparent 3.6px), linear-gradient(var(--card), var(--paper-2));
+  display: block;
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
 }
 .app aside.panel .eyebrow .info {
-  margin-left: 4px;
+  margin-left: 0;
 }
 
 /* ---------- channels ---------- */
@@ -659,29 +699,29 @@ body,
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #4a3a2a;
+  background: color-mix(in srgb, var(--led) 18%, var(--edge));
   box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--edge);
 }
 .led.on {
-  background: radial-gradient(circle at 35% 35%, #c9ffd9, #2fdc73 60%);
-  box-shadow: 0 0 6px #2fdc73, 0 0 0 1px var(--edge);
+  background: radial-gradient(circle at 35% 35%, #e6fff0, var(--led) 60%);
+  box-shadow: 0 0 6px var(--led), 0 0 0 1px var(--edge);
 }
 .ms-col .ms,
 .tracks-head .ms {
   border-radius: 2px;
   border: 1px solid var(--edge);
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: linear-gradient(var(--key), var(--key-2));
   color: var(--ink-2);
   font-size: 10px;
 }
 .ms.on {
-  background: var(--ink);
-  color: var(--paper);
-  box-shadow: inset 1px 1px 0 #000;
+  background: var(--key-on);
+  color: var(--key-on-ink);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 .ms.on.solo {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 .ms.remove {
   border: none;
@@ -693,7 +733,7 @@ body,
 }
 .tracks-head-tools .icon-btn {
   border: 1px solid var(--edge);
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: linear-gradient(var(--key), var(--key-2));
   color: var(--ink);
   width: 30px;
   height: 30px;
@@ -705,7 +745,7 @@ body,
 .kit-trigger {
   border-radius: var(--radius);
   border: 1px solid var(--edge);
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: linear-gradient(var(--key), var(--key-2));
   color: var(--ink);
 }
 .fold-trigger:hover,
@@ -767,9 +807,9 @@ body,
   border-radius: var(--radius);
 }
 .viz .seg button {
-  background: linear-gradient(#e3dcc7, #cbc2a7);
-  color: #23211b;
-  border-color: #000;
+  background: linear-gradient(var(--key), var(--key-2));
+  color: var(--key-ink);
+  border-color: var(--edge);
 }
 .viz .seg button.on {
   background: var(--lcd-2);
@@ -784,40 +824,39 @@ body,
 
 .react-flow {
   --xy-background-color: var(--paper);
-  --xy-edge-stroke: #5fd394;
-  --xy-edge-stroke-selected: #ff6a55;
+  --xy-edge-stroke: var(--lcd-ink-2);
+  --xy-edge-stroke-selected: var(--accent-hover);
 }
 .react-flow__edge-path {
-  filter: drop-shadow(0 0 2px rgba(95, 211, 148, 0.6));
+  filter: drop-shadow(0 0 2px rgba(110, 230, 215, 0.5));
 }
 .react-flow__controls-button {
-  background: #1a3326;
+  background: var(--lcd-2);
   color: var(--ink);
-  border-color: #000;
+  border-color: var(--lcd-edge);
 }
 .fnode {
   border-radius: var(--radius);
-  border: 1px solid #b6ac90;
+  border: 1px solid var(--lo);
   background: var(--card);
-  box-shadow: 0 0 0 1px #000, 2px 3px 0 rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px var(--lcd-edge), 2px 3px 0 rgba(0, 0, 0, 0.45);
 }
 /* the node's name sits on a beige plate, like a module's faceplate */
 .fnode-head {
-  background: linear-gradient(#e3dcc7, #cbc2a7);
-  color: #23211b;
-  border-bottom: 1px solid #000;
-  box-shadow: inset 1px 1px 0 #f6f1e2;
-  --ink: #23211b;
-  --ink-2: #4a463a;
-  --ink-3: #575140;
-  --accent: #c0392b;
-  --accent-soft: rgba(192, 57, 43, 0.14);
+  background: linear-gradient(var(--key), var(--key-2));
+  color: var(--key-ink);
+  border-bottom: 1px solid var(--edge);
+  box-shadow: inset 0 1px 0 var(--hi);
+  --ink: var(--key-ink);
+  --ink-2: var(--key-ink-2);
+  --ink-3: var(--key-ink-3);
+  --accent: var(--accent-edge);
 }
 .fnode-head .val {
-  color: #4a463a;
+  color: var(--key-ink-2);
 }
 .fnode.locked {
-  border-color: #ff6a55;
+  border-color: var(--accent-hover);
 }
 .fnode .react-flow__handle {
   background: var(--paper);
@@ -894,28 +933,28 @@ body,
 /* the paste sheet's plot is a little screen */
 .import-plot-box,
 .import-read {
-  --paper: #0d1c15;
-  --ink: #a8f5c4;
-  --line: #2c4c39;
-  --line-soft: #1e382a;
+  --paper: var(--lcd);
+  --ink: var(--lcd-ink);
+  --line: var(--lcd-line);
+  --line-soft: var(--lcd-line-soft);
 }
 .import-plot-box .import-plot {
-  border-color: #000;
+  border-color: var(--lcd-edge);
   border-radius: var(--radius);
   box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi);
 }
 .import-plot-box path {
-  filter: drop-shadow(0 0 2px rgba(120, 240, 170, 0.7));
+  filter: drop-shadow(0 0 2px rgba(120, 240, 225, 0.6));
 }
 .import-read {
   --ink: inherit;
 }
 .import-plot-box .import-out {
-  stroke: #ffb347;
-  filter: drop-shadow(0 0 2px rgba(255, 170, 60, 0.7));
+  stroke: var(--accent-hover);
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--accent-hover) 70%, transparent));
 }
 .import-plot-box .import-edge {
-  stroke: #ffb347;
+  stroke: var(--accent-hover);
 }
 .import-plot-box .import-note {
   color: var(--lcd-ink-2);
@@ -923,7 +962,7 @@ body,
 
 /* the toolbar's Copy-to is a key, not a display */
 .app .toolbar .lock-status .dropdown.compact .dropdown-field {
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: linear-gradient(var(--key), var(--key-2));
   color: var(--ink);
   border: 1px solid var(--edge);
   text-shadow: none;
@@ -976,21 +1015,21 @@ body,
 
 /* the buttons on a node's faceplate: darker, always readable */
 .fnode-head .lock {
-  color: #2a271f;
+  color: var(--key-ink);
   opacity: 0.85;
 }
 .fnode:hover .fnode-head .lock {
   opacity: 1;
 }
 .fnode-head .lock:hover {
-  background: rgba(35, 33, 27, 0.12);
-  color: #000;
+  background: color-mix(in srgb, var(--key-ink) 12%, transparent);
+  color: var(--key-ink);
 }
 .fnode-head .lock:disabled {
   opacity: 0.35;
 }
 .fnode-head .lock.on {
-  color: #a8281c;
+  color: var(--accent-edge);
 }
 
 /* the "+" swatch and the full palette */
@@ -1180,7 +1219,7 @@ body,
   padding: 8px 10px;
   border: 1px solid var(--edge);
   border-radius: var(--radius);
-  background: linear-gradient(var(--card), var(--paper-2));
+  background: linear-gradient(var(--key), var(--key-2));
   box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
 }
 .sauce-row > div:first-child {
