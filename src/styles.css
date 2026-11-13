@@ -289,19 +289,22 @@ input[type='range'] {
   background: transparent;
   cursor: pointer;
 }
+/* the groove: mixed from the text colour, so it shows on a light key, a dark key and a screen alike */
 input[type='range']::-webkit-slider-runnable-track {
-  height: 1px;
-  background: var(--line);
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
 }
 input[type='range']::-moz-range-track {
-  height: 1px;
-  background: var(--line);
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
 }
 input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 11px;
   height: 11px;
-  margin-top: -5px;
+  margin-top: -4px;
   border-radius: 50%;
   background: var(--paper);
   border: 1.5px solid var(--ink);
@@ -3093,9 +3096,21 @@ button:focus-visible {
 .sound-tab-head .kit-swatch {
   flex: none;
 }
-/* the custom wave's own tools: Mutate wave, and its lock against the channel's Mutate */
+/* the custom wave's own tools: Mutate wave, and its lock against the channel's Mutate —
+   red while locked (Mutate leaves the wave alone), green while unlocked (Mutate may change it) */
+.wave-lock {
+  color: var(--go);
+}
 .wave-lock.on {
-  color: var(--ink);
+  color: var(--rec);
+}
+.wave-lock:hover {
+  color: var(--go);
+  background: color-mix(in srgb, var(--go) 14%, transparent);
+}
+.wave-lock.on:hover {
+  color: var(--rec);
+  background: color-mix(in srgb, var(--rec) 14%, transparent);
 }
 /* the voice's tools: icons in two small groups */
 .voice-tool-group {
@@ -3502,6 +3517,48 @@ aside.panel:last-of-type .info-pop {
   position: relative;
   min-height: 0;
   max-height: 30vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--ink);
+  animation: rise 0.18s var(--ease);
+}
+.score-math-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 6px 3px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.score-math-title {
+  font: 700 var(--fs-xs)/1 var(--sans);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.score-math-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.score-math-zoom {
+  min-width: 40px;
+  text-align: center;
+  font: var(--fs-sm)/1 var(--mono);
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+}
+.score-math-tools .icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.score-math-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
   display: flex;
@@ -3509,16 +3566,10 @@ aside.panel:last-of-type .info-pop {
   align-items: flex-start;
   gap: 6px 22px;
   padding: 8px 14px 10px;
-  animation: rise 0.18s var(--ease);
 }
-.score-math .muted {
+.score-math-body .muted {
   margin: 0;
   font-size: var(--fs-sm);
-}
-.score-math-all {
-  order: 99;
-  margin-left: auto;
-  align-self: flex-start;
 }
 .score-math-ch {
   min-width: 0;
@@ -3527,7 +3578,7 @@ aside.panel:last-of-type .info-pop {
   display: flex;
   align-items: center;
   gap: 6px;
-  font: var(--fs-sm)/1.2 var(--mono);
+  font: calc(var(--fs-sm) * max(1, var(--math-zoom, 1) * 0.85))/1.2 var(--mono);
   color: var(--ink-2);
   margin-bottom: 2px;
 }
@@ -3537,7 +3588,7 @@ aside.panel:last-of-type .info-pop {
   border-radius: 2px;
 }
 .score-math-tex {
-  font-size: var(--fs-md);
+  font-size: calc(var(--fs-md) * var(--math-zoom, 1));
   line-height: 1.5;
   white-space: nowrap;
 }

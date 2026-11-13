@@ -38,6 +38,8 @@
   /* lamps */
   --rec: #e4573f;
   --led: #4fdc8a;
+  /* go: a green that reads on the case (unlocked, allowed) */
+  --go: #2f9e5b;
   /* bevels: light from the top */
   --hi: #f8f5ef;
   --lo: #a19e99;
@@ -124,6 +126,7 @@
   --lcd-edge: #000;
   --wave-preview: #ff8a1f;
   --rake: rgba(236, 233, 227, 0.05);
+  --go: #4fdc8a;
   --sketch-ink: #a19e99;
   --sketch-strength: 0.07;
 }
@@ -222,8 +225,13 @@ body {
   gap: 6px;
 }
 .viz,
-.score-math,
 .nodes {
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+/* the functions strip is a screen too; its body scrolls, so it holds every channel you can hear */
+.score-math {
   border: 1px solid var(--edge);
   border-radius: var(--radius);
   overflow: hidden;
