@@ -42,7 +42,22 @@
   --lo: #a19e99;
   --edge: #4a4743;
   --radius: 4px;
+  --radius-sm: 2px;
   --shadow: none;
+  /* sizes: four control heights, five type sizes, a 4px spacing step */
+  --h-xs: 20px;
+  --h-sm: 24px;
+  --h-md: 28px;
+  --h-lg: 40px;
+  --fs-xs: 10px;
+  --fs-sm: 11px;
+  --fs-md: 12.5px;
+  --fs-lg: 14px;
+  --fs-xl: 18px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
   /* screens and displays: VFD teal on near-black */
   --lcd: #0c1615;
   --lcd-2: #131d1b;
@@ -258,11 +273,11 @@ body {
   flex: 1;
 }
 .title-main b {
-  font: 700 16px/1 var(--sans);
+  font: 700 var(--fs-lg)/1 var(--sans);
   letter-spacing: 0.04em;
 }
 .title-clock {
-  font: 400 13px/1 var(--mono);
+  font: 400 var(--fs-md)/1 var(--mono);
   letter-spacing: 0.08em;
 }
 .title-clock b {
@@ -363,7 +378,7 @@ body {
 .rec-clock,
 .rec-take {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-md);
   min-width: 44px;
   padding: 3px 6px;
   text-align: center;
@@ -402,7 +417,7 @@ body {
 }
 .jam-card p {
   margin: 4px 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-md);
 }
 .jam-files {
   display: flex;
@@ -415,7 +430,7 @@ body {
 }
 .menu-pop .menu-title {
   padding: 4px 10px 2px;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -651,7 +666,7 @@ body,
   border: none;
   box-shadow: none;
   color: var(--ink-2);
-  font: 700 10.5px/1 var(--sans);
+  font: 700 var(--fs-xs)/1 var(--sans);
   letter-spacing: 0.18em;
 }
 .app aside.panel .eyebrow:first-child {
@@ -696,7 +711,7 @@ body,
   height: 22px;
   border-radius: 2px;
   color: #fff;
-  font: 700 12px/1 var(--mono);
+  font: 700 var(--fs-md)/1 var(--mono);
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
   box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(0, 0, 0, 0.35);
 }
@@ -717,7 +732,7 @@ body,
   border: 1px solid var(--edge);
   background: linear-gradient(var(--key), var(--key-2));
   color: var(--ink-2);
-  font-size: 10px;
+  font-size: var(--fs-xs);
 }
 .ms.on {
   background: var(--key-on);
@@ -798,7 +813,7 @@ body,
 /* ---------- screens: the score view ---------- */
 
 .viz-legend h2 {
-  font: 700 15px/1 var(--sans);
+  font: 700 var(--fs-lg)/1 var(--sans);
   letter-spacing: 0.08em;
   color: var(--ink);
   text-shadow: var(--glow-ink);
@@ -990,7 +1005,7 @@ body,
 .app aside.panel button.stone[aria-label^='color'] {
   width: 14px !important;
   height: 14px !important;
-  border-radius: 1px !important;
+  border-radius: var(--radius-sm) !important;
   border: 1px solid var(--edge) !important;
   box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(0, 0, 0, 0.3);
   outline-offset: 2px !important;
@@ -1093,7 +1108,7 @@ body,
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--line-soft);
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   color: var(--ink-2);
 }
 .color-custom input[type='color'] {
@@ -1183,7 +1198,7 @@ body,
 }
 .seg-tight .seg button {
   padding: 4px 6px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 
 /* the paste sheet: how long the channel will be, and what to do when it isn't the song's length */
@@ -1191,7 +1206,7 @@ body,
   position: absolute;
   right: 8px;
   bottom: 6px;
-  font: 400 11px/1 var(--mono);
+  font: 400 var(--fs-sm)/1 var(--mono);
   color: var(--lcd-ink-2);
   pointer-events: none;
 }
@@ -1204,10 +1219,10 @@ body,
   border-radius: var(--radius);
   background: var(--card);
   box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
-  font-size: 12px;
+  font-size: var(--fs-md);
 }
 .import-fit small {
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 
 /* ---------- the Sound section ---------- */
@@ -1246,7 +1261,7 @@ body,
 }
 .sound-panel .seg button {
   padding: 4px 7px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 
 .sauce-row {
@@ -1321,7 +1336,7 @@ body,
 .app aside.panel .eyebrow-sub .muted,
 .app aside.panel .fold-empty,
 .app aside.panel .kit-mine-empty {
-  font-size: 12px !important;
+  font-size: var(--fs-md) !important;
 }
 
 /* ---------- the node toolbar always shows everything ----------
@@ -1369,3 +1384,92 @@ body,
   cursor: default;
 }
 
+
+/* ---------- sizes: every control sits on one of four heights ----------
+   h-lg (40) the big keys · h-md (28) fields, keys, tabs · h-sm (24) small keys and icon keys ·
+   h-xs (20) the tiny keys (M / S / lock, info). The node board keeps its own, smaller scale. */
+
+.app .play,
+.app .rec,
+.app .fold-trigger,
+.app .kit-trigger {
+  height: var(--h-lg);
+  min-height: var(--h-lg);
+}
+.app .play,
+.app .rec {
+  width: var(--h-lg);
+}
+.app .fold-trigger,
+.app .kit-trigger {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.app .btn,
+.app .seg button,
+.app .dropdown-field,
+.app .stepper,
+.app .stretch-ctl,
+.app .stretch-btn,
+.app aside.panel .input,
+.app aside.panel .select,
+.app .tracks-head-tools .icon-btn {
+  height: var(--h-md);
+  min-height: var(--h-md);
+}
+.app .btn,
+.app .seg button,
+.app .dropdown-field {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.app .seg button {
+  display: inline-flex;
+  align-items: center;
+}
+.app .tracks-head-tools .icon-btn {
+  width: var(--h-md);
+}
+
+.app .btn.small,
+.app .seg.small button,
+.app .viz .seg button,
+.app .icon-btn {
+  height: var(--h-sm);
+  min-height: var(--h-sm);
+}
+.app .icon-btn {
+  width: var(--h-sm);
+}
+
+.app .ms-col .ms,
+.app .tracks-head .ms,
+.app .info-btn {
+  height: var(--h-xs);
+  min-height: var(--h-xs);
+}
+.app .ms-col .ms,
+.app .tracks-head .ms {
+  width: var(--h-xs);
+  border-radius: var(--radius-sm);
+}
+.app .info-btn {
+  width: var(--h-xs);
+}
+
+/* the node board: its own scale, kept inside the nodes */
+.react-flow .btn,
+.react-flow .icon-btn,
+.react-flow .seg button {
+  height: auto;
+  min-height: 0;
+  width: auto;
+}
+/* M · S · lock sit on one line */
+.app .ms-col {
+  align-items: center;
+}
+.app .ms-col .ms {
+  vertical-align: middle;
+}
