@@ -56,6 +56,9 @@
   --glow-ink: 0 0 6px rgba(120, 240, 225, 0.4);
   /* the custom wave's preview in the Sound tab: black on the case, orange in the dark */
   --wave-preview: #000;
+  /* the math sketches over the case: printed in a case grey, faint (overlays.ts reads these) */
+  --sketch-ink: #65635e;
+  --sketch-strength: 0.11;
 
   --paper: var(--case-paper);
   --paper-2: var(--case-paper-2);
@@ -100,6 +103,8 @@
   --lcd-edge: #000;
   --wave-preview: #ff8a1f;
   --rake: rgba(236, 233, 227, 0.05);
+  --sketch-ink: #a19e99;
+  --sketch-strength: 0.07;
 }
 
 /* inside a screen, everything takes the screen's colours */

@@ -2,13 +2,14 @@
  * The math sketches laid faintly over the chrome — title, top bar, side panels, toolbar, sheets —
  * never over the screens (the score / function / ripple view and the node board).
  *
- * The drawings are black ink on transparent. For each theme they are re-inked here in the theme's
- * own --ink at a low opacity, once, and handed to CSS as --func-overlay-1 / --func-overlay-2.
+ * The drawings are black ink on transparent. For each theme they are re-inked here in the case's
+ * --sketch-ink at --sketch-strength (both in retro.css, beside the palette), once, and handed to CSS
+ * as --func-overlay-1 / --func-overlay-2 — faint print on the calculator's body.
  */
 import sketch1 from '../assets/overlays/funcbg1.png';
 import sketch2 from '../assets/overlays/funcbg2.png';
 
-/** how strongly the ink shows, per theme: enough to notice, never enough to read over */
+/** if the stylesheet doesn't say: how strongly the ink shows — enough to notice, never enough to read over */
 const STRENGTH = { light: 0.075, dark: 0.06 };
 
 const urls: string[] = [];
@@ -36,9 +37,11 @@ async function inked(src: string, ink: string, alpha: number): Promise<string> {
 /** re-ink both sketches for the theme now showing (call after data-theme is set) */
 export async function paintOverlays(theme: 'light' | 'dark') {
   const run = ++painting;
-  const ink = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || (theme === 'dark' ? '#ebe5d8' : '#2b2a27');
+  const css = getComputedStyle(document.documentElement);
+  const ink = css.getPropertyValue('--sketch-ink').trim() || css.getPropertyValue('--ink').trim() || (theme === 'dark' ? '#ebe5d8' : '#2b2a27');
+  const strength = Number(css.getPropertyValue('--sketch-strength')) || STRENGTH[theme];
   try {
-    const next = await Promise.all([sketch1, sketch2].map((s) => inked(s, ink, STRENGTH[theme])));
+    const next = await Promise.all([sketch1, sketch2].map((s) => inked(s, ink, strength)));
     // a newer theme switch won: drop these
     if (run !== painting) return next.forEach((u) => u.startsWith('blob:') && URL.revokeObjectURL(u));
     const root = document.documentElement.style;
