@@ -1,18 +1,5 @@
 :root {
-  --paper: #f3efe6;
-  --paper-2: #ece6da;
-  --paper-3: #e3dccd;
-  --card: #f8f5ee;
-  --ink: #2b2a27;
-  --ink-2: #5d5a53;
-  --ink-3: #948e82;
-  --line: #d8d0bf;
-  --line-soft: #e4ddcf;
-  --accent: #c4583d;
-  --accent-soft: rgba(196, 88, 61, 0.12);
   --moss: #6f8a63;
-  --rake: rgba(43, 42, 39, 0.055);
-  --shadow: 0 1px 2px rgba(43, 42, 39, 0.06), 0 8px 24px -12px rgba(43, 42, 39, 0.18);
   /* one family throughout: Doto, a dot-matrix face (monospaced, so it serves numbers and code too) */
   --serif: 'Doto', ui-monospace, Menlo, monospace;
   --sans: 'Doto', ui-monospace, Menlo, monospace;
@@ -31,10 +18,7 @@
   --ink-3: #7c766b;
   --line: #3a3732;
   --line-soft: #2f2d29;
-  --accent: #dc7553;
-  --accent-soft: rgba(220, 117, 83, 0.14);
   --moss: #8fab82;
-  --rake: rgba(235, 229, 216, 0.04);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -12px rgba(0, 0, 0, 0.6);
   color-scheme: dark;
 }
@@ -51,7 +35,6 @@ body,
 }
 
 body {
-  background: var(--paper);
   color: var(--ink);
   font: var(--fs-md)/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -75,7 +58,6 @@ textarea {
 
 .app {
   display: grid;
-  grid-template-rows: 60px 1fr;
   height: 100%;
 }
 
@@ -91,8 +73,6 @@ textarea {
   grid-template-rows: minmax(180px, 40%) minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
-  border-left: 1px solid var(--line-soft);
-  border-right: 1px solid var(--line-soft);
 }
 
 .panel {
@@ -155,9 +135,6 @@ textarea {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 22px;
-  padding: 0 20px;
-  border-bottom: 1px solid var(--line-soft);
 }
 
 .brand {
@@ -179,7 +156,6 @@ textarea {
   border: none;
   border-bottom: 1px solid transparent;
   font: 400 var(--fs-lg)/1.2 var(--serif);
-  width: 150px;
   padding: 3px 0;
   color: var(--ink-2);
   transition: border-color 0.3s var(--ease);
@@ -192,8 +168,6 @@ textarea {
 
 .transport {
   display: flex;
-  align-items: center;
-  gap: 16px;
   margin-left: auto;
 }
 
@@ -202,12 +176,6 @@ textarea {
 }
 
 .play {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: var(--paper);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -215,10 +183,6 @@ textarea {
 }
 .play:hover {
   transform: scale(1.06);
-}
-.play.on {
-  background: var(--accent);
-  border-color: var(--accent);
 }
 
 .field-inline {
@@ -228,9 +192,7 @@ textarea {
 }
 .field-inline > span {
   font: 500 var(--fs-xs)/1 var(--sans);
-  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--ink-3);
 }
 
 /* ---------- controls ---------- */
@@ -274,31 +236,13 @@ textarea {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: transparent;
   cursor: pointer;
   white-space: nowrap;
   font-size: var(--fs-md);
   transition: border-color 0.25s var(--ease), background 0.25s var(--ease), color 0.25s;
 }
-.btn:hover {
-  border-color: var(--ink-2);
-}
-.btn.primary {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
-}
 .btn.primary:hover {
-  background: var(--accent);
   border-color: var(--accent);
-}
-.btn.ghost {
-  border-color: transparent;
-}
-.btn.ghost:hover {
-  background: var(--paper-2);
 }
 .btn.small {
   padding: 3px 9px;
@@ -307,7 +251,6 @@ textarea {
 .icon-btn {
   width: 26px;
   height: 26px;
-  border-radius: 50%;
   border: none;
   background: transparent;
   display: grid;
@@ -317,7 +260,6 @@ textarea {
   transition: background 0.2s, color 0.2s;
 }
 .icon-btn:hover {
-  background: var(--paper-3);
   color: var(--ink);
 }
 .icon-btn.active {
@@ -405,43 +347,24 @@ input[type='range']:hover::-webkit-slider-thumb {
   gap: 4px;
 }
 .seg button {
-  border: 1px solid var(--line-soft);
-  background: transparent;
   padding: 4px 9px;
-  border-radius: 999px;
   font-size: var(--fs-sm);
   cursor: pointer;
-  color: var(--ink-2);
   transition: all 0.25s var(--ease);
 }
 .seg button:hover {
-  border-color: var(--line);
   color: var(--ink);
-}
-.seg button.on {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
 }
 
 /* ---------- sidebar ---------- */
 
 .track {
   display: grid;
-  grid-template-columns: 14px 1fr auto;
   align-items: center;
-  gap: 10px;
   padding: 9px 10px;
   margin: 0 -6px 2px;
-  border-radius: 10px;
   cursor: pointer;
   transition: background 0.25s var(--ease);
-}
-.track:hover {
-  background: var(--paper-2);
-}
-.track.selected {
-  background: var(--paper-3);
 }
 .track.dim {
   opacity: 0.45;
@@ -482,13 +405,6 @@ input[type='range']:hover::-webkit-slider-thumb {
 .ms:hover {
   background: var(--paper);
 }
-.ms.on {
-  background: var(--ink);
-  color: var(--paper);
-}
-.ms.on.solo {
-  background: var(--accent);
-}
 /* remove: takes no room until the row is hovered, then slides in beside M/S */
 .ms.remove {
   display: inline-grid;
@@ -519,7 +435,6 @@ input[type='range']:hover::-webkit-slider-thumb {
   padding: 8px 10px;
   margin: 0 -6px;
   width: calc(100% + 12px);
-  border-radius: 10px;
   cursor: pointer;
   transition: background 0.25s var(--ease);
 }
@@ -586,9 +501,6 @@ input[type='range']:hover::-webkit-slider-thumb {
   width: 76px;
   height: 20px;
 }
-.mini-score.loading {
-  opacity: 0;
-}
 .preset code {
   font: var(--fs-xs)/1.4 var(--mono);
   color: var(--ink-3);
@@ -599,8 +511,6 @@ input[type='range']:hover::-webkit-slider-thumb {
 .viz {
   position: relative;
   min-height: 0;
-  border-bottom: 1px solid var(--line-soft);
-  overflow: hidden;
 }
 .viz canvas {
   position: absolute;
@@ -619,7 +529,6 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 .viz-legend h2 {
   margin: 0;
-  font: 400 var(--fs-xl)/1 var(--serif);
 }
 .viz-tabs {
   position: absolute;
@@ -644,7 +553,6 @@ input[type='range']:hover::-webkit-slider-thumb {
 .nodes {
   position: relative;
   min-height: 0;
-  display: grid;
   grid-template-rows: auto minmax(0, 1fr);
 }
 .nodes-canvas {
@@ -652,9 +560,6 @@ input[type='range']:hover::-webkit-slider-thumb {
   min-height: 0;
 }
 .react-flow {
-  --xy-background-color: var(--paper);
-  --xy-edge-stroke: var(--ink-3);
-  --xy-edge-stroke-selected: var(--accent);
   --xy-edge-stroke-width: 1.4;
   --xy-connectionline-stroke: var(--accent);
   --xy-handle-background-color: var(--paper);
@@ -691,12 +596,8 @@ input[type='range']:hover::-webkit-slider-thumb {
   border-radius: 14px;
 }
 .fnode {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px;
   min-width: 176px;
   max-width: 260px;
-  box-shadow: var(--shadow);
   transition: border-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
   font-size: var(--fs-md);
 }
@@ -724,7 +625,6 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 .fnode-head .val {
   font: var(--fs-xs) var(--mono);
-  color: var(--ink-3);
 }
 .fnode-body {
   padding: 2px 12px 10px;
@@ -754,9 +654,6 @@ input[type='range']:hover::-webkit-slider-thumb {
   transform: translate(-50%, -50%) scale(1.4);
   background: var(--accent);
   border-color: var(--accent);
-}
-.fnode .react-flow__handle.connected {
-  background: var(--ink-2);
 }
 .port.in .react-flow__handle {
   left: -12px;
@@ -869,7 +766,6 @@ input[type='range']:hover::-webkit-slider-thumb {
 
 .toolbar {
   display: flex;
-  gap: 6px;
   align-items: center;
   padding: 10px 14px;
   border-bottom: 1px solid var(--line-soft);
@@ -961,13 +857,11 @@ input[type='range']:hover::-webkit-slider-thumb {
   bottom: 22px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--ink);
-  color: var(--paper);
   padding: 8px 16px;
-  border-radius: 999px;
   font-size: var(--fs-md);
   z-index: 100;
   animation: rise 0.3s var(--ease);
+  animation-name: rise-x;
 }
 
 @keyframes rise {
@@ -975,9 +869,6 @@ input[type='range']:hover::-webkit-slider-thumb {
     opacity: 0;
     transform: translateY(6px);
   }
-}
-.toast {
-  animation-name: rise-x;
 }
 @keyframes rise-x {
   from {
@@ -994,10 +885,6 @@ input[type='range']:hover::-webkit-slider-thumb {
   right: 0;
   top: calc(100% + 8px);
   z-index: 50;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
   padding: 6px;
   min-width: 210px;
   animation: rise 0.2s var(--ease);
@@ -1061,10 +948,6 @@ button:focus-visible {
   border-radius: 999px;
   box-shadow: var(--shadow);
 }
-.toolbar .mutator .btn {
-  box-shadow: none;
-  border-color: transparent;
-}
 .toolbar .mutator .btn:hover {
   background: var(--accent-soft);
   color: var(--accent);
@@ -1123,7 +1006,6 @@ button:focus-visible {
   background: var(--accent-soft);
 }
 .fnode.locked {
-  border-color: var(--accent);
   box-shadow: var(--shadow), inset 3px 0 0 var(--accent);
 }
 .react-flow__node.selected .fnode.locked {
@@ -1146,13 +1028,10 @@ button:focus-visible {
 
 .harmony {
   display: flex;
-  align-items: flex-end;
-  gap: 4px;
 }
 .harmony .input {
   font-family: var(--mono);
   font-size: var(--fs-md);
-  width: 170px;
 }
 .harmony .select {
   width: 18px;
@@ -1184,10 +1063,6 @@ button:focus-visible {
   max-height: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  box-shadow: var(--shadow), 0 30px 80px -30px rgba(0, 0, 0, 0.35);
   animation: rise 0.3s var(--ease);
   overflow: hidden;
 }
@@ -1214,7 +1089,6 @@ button:focus-visible {
 .sheet-title {
   margin: 0;
   font-size: var(--fs-xl);
-  font-weight: 400;
 }
 .sheet-body {
   overflow: auto;
@@ -1226,7 +1100,6 @@ button:focus-visible {
   margin-top: 10px;
 }
 .fn-track h3 {
-  font-weight: 400;
   font-size: var(--fs-xl);
   margin: 18px 0 2px;
 }
@@ -1324,8 +1197,6 @@ button:focus-visible {
   background: var(--accent);
 }
 .garden-pop {
-  left: 0;
-  right: auto;
   width: 290px;
   max-height: 70vh;
   overflow-y: auto;
@@ -1556,10 +1427,6 @@ button:focus-visible {
 }
 
 /* ---------- sliders, blocks, listening ---------- */
-
-.toolbar {
-  flex-wrap: wrap;
-}
 .nodes {
   display: flex;
   flex-direction: column;
@@ -1670,18 +1537,9 @@ button:focus-visible {
   gap: 8px;
   width: calc(100% + 12px);
   margin: 0 -6px;
-  padding: 10px 10px;
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  background: var(--card);
   text-align: left;
   cursor: pointer;
   transition: border-color 0.25s var(--ease), background 0.25s var(--ease);
-}
-.kit-trigger:hover,
-.kit-trigger.open {
-  border-color: var(--line);
-  background: var(--paper-2);
 }
 .kit-trigger b {
   display: block;
@@ -1709,10 +1567,6 @@ button:focus-visible {
   /* one row no taller than the window: the kit list and the details each scroll on their own */
   grid-template-rows: minmax(0, 1fr);
   max-height: calc(100vh - 24px);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: var(--shadow), 0 24px 60px -24px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   animation: rise 0.22s var(--ease);
 }
@@ -1826,7 +1680,6 @@ button:focus-visible {
 }
 .kit-detail h3 {
   margin: 0;
-  font-weight: 400;
   font-size: var(--fs-xl);
 }
 .kit-detail > .muted {
@@ -1919,7 +1772,6 @@ button:focus-visible {
   padding: 2px 4px;
   background: color-mix(in srgb, var(--card) 85%, transparent);
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
   font-size: var(--fs-sm);
 }
 .viz-zoom .muted {
@@ -1934,9 +1786,7 @@ button:focus-visible {
 
 .track-tools {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
   margin: -4px -4px 8px;
 }
 .track-tools .icon-btn:disabled {
@@ -2022,10 +1872,6 @@ button:focus-visible {
   z-index: 40;
   max-height: 360px;
   overflow-y: auto;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
   padding: 4px;
   animation: rise 0.18s var(--ease);
   scrollbar-width: thin;
@@ -2136,10 +1982,10 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 5px;
-  max-width: 190px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 .grid-dot {
   display: inline-block;
@@ -2153,19 +1999,12 @@ button:focus-visible {
   align-items: center;
   gap: 6px;
 }
-.grid-controls .input.num {
-  width: 40px;
-}
 .grid-times {
   font-size: var(--fs-sm);
 }
-.dropdown.compact .dropdown-field {
-  padding: 2px 8px;
-  border-radius: 8px;
-  min-width: 96px;
-}
 .dropdown.compact .dropdown-value b {
   font-size: var(--fs-md);
+  max-width: none;
 }
 .dropdown.compact .dropdown-pop {
   right: auto;
@@ -2189,22 +2028,10 @@ button:focus-visible {
 }
 .topbar {
   min-width: 0;
-  gap: 18px;
-}
-.harmony .input {
-  width: 140px;
 }
 @media (max-width: 1500px) {
   .brand small {
     display: none;
-  }
-}
-@media (max-width: 1340px) {
-  .grid-field > span {
-    max-width: 110px;
-  }
-  .harmony .input {
-    width: 110px;
   }
 }
 @media (max-width: 1360px) {
@@ -2218,11 +2045,6 @@ button:focus-visible {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-
-.input.num.grid-oct {
-  width: 34px;
 }
 
 /* ---------- a top bar that fits ---------- */
@@ -2250,14 +2072,6 @@ button:focus-visible {
   .field-inline.hide-narrow[style] {
     width: 64px !important;
   }
-  .grid-field > span {
-    max-width: 100px;
-  }
-}
-@media (max-width: 1340px) {
-  .harmony .input {
-    width: 92px;
-  }
 }
 
 /* ---------- a top bar that never shifts ---------- */
@@ -2267,12 +2081,6 @@ button:focus-visible {
 }
 .topbar .field-inline.w-length {
   width: 118px;
-}
-.topbar .field-inline.w-octave {
-  width: 46px;
-}
-.grid-field > span {
-  max-width: 100%;
 }
 .grid-controls .dropdown.compact {
   flex: 1;
@@ -2291,27 +2099,12 @@ button:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.dropdown.compact .dropdown-value b {
-  flex: none;
-  max-width: 62%;
-}
 .topbar .input.num,
 .dropdown.compact .dropdown-value {
   font-variant-numeric: tabular-nums;
 }
 .field-placeholder {
-  display: block;
-  padding: 3px 0;
   color: var(--ink-3);
-  border-bottom: 1px solid var(--line-soft);
-}
-@media (max-width: 1340px) {
-  .topbar .field-inline.w-grid {
-    width: 166px;
-  }
-  .topbar .field-inline.w-length {
-    width: 106px;
-  }
 }
 
 /* ---------- pitch range ---------- */
@@ -2327,7 +2120,6 @@ button:focus-visible {
   gap: 6px;
   border: 1px solid var(--line-soft);
   background: color-mix(in srgb, var(--card) 85%, transparent);
-  border-radius: 999px;
   padding: 3px 10px;
   font: var(--fs-xs) var(--mono);
   color: var(--ink-2);
@@ -2345,10 +2137,6 @@ button:focus-visible {
   right: 0;
   top: calc(100% + 6px);
   width: 330px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
   padding: 12px 14px;
   animation: rise 0.18s var(--ease);
 }
@@ -2378,7 +2166,6 @@ button:focus-visible {
 
 /* the range popover may reach over the node editor; the legend stays clear of the tabs */
 .viz {
-  overflow: visible;
   z-index: 6;
 }
 .viz canvas {
@@ -2393,18 +2180,12 @@ button:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.range-pop {
-  z-index: 30;
-}
 
 .topbar .field-inline.w-song {
   width: 96px;
 }
 
 /* ---------- room for the Song field ---------- */
-.grid-controls .input.num {
-  width: 36px;
-}
 @media (max-width: 1440px) {
   .topbar {
     gap: 12px;
@@ -2423,29 +2204,13 @@ button:focus-visible {
   .topbar .field-inline.w-length {
     width: 94px;
   }
-  .harmony .input {
-    width: 68px;
-  }
   .project-name {
     width: 84px;
-  }
-}
-@media (max-width: 1160px) {
-  .topbar .field-inline.w-grid {
-    width: 140px;
-  }
-  .harmony .input {
-    width: 56px;
-  }
-  .topbar {
-    gap: 10px;
-    padding: 0 14px;
   }
 }
 
 /* compact fields: the value first; its detail only while there is room */
 .dropdown.compact .dropdown-value b {
-  max-width: none;
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -2462,11 +2227,7 @@ button:focus-visible {
 /* ---------- the selected track's own controls, apart from the song's ---------- */
 .track-panel {
   display: flex;
-  align-items: flex-end;
   gap: 12px;
-  padding: 4px 12px 6px;
-  margin: 6px 0;
-  align-self: stretch;
   border-radius: 12px;
   background: var(--paper-2);
   border: 1px solid var(--line-soft);
@@ -2477,13 +2238,11 @@ button:focus-visible {
 @media (max-width: 1440px) {
   .track-panel {
     gap: 10px;
-    padding: 4px 10px 6px;
   }
 }
 @media (max-width: 1340px) {
   .track-panel {
     gap: 8px;
-    padding: 4px 8px 6px;
   }
 }
 @media (max-width: 1340px) {
@@ -2504,16 +2263,6 @@ button:focus-visible {
     width: 140px;
   }
 }
-@media (max-width: 1340px) {
-  .topbar .project-name {
-    width: 116px;
-  }
-}
-@media (max-width: 1160px) {
-  .topbar .project-name {
-    width: 96px;
-  }
-}
 /* large headings ask for a light weight (Doto draws every regular weight the same: see fonts.css) */
 .track-title,
 .viz-legend h2,
@@ -2531,9 +2280,6 @@ button:focus-visible {
   font-size: var(--fs-md);
 }
 @media (max-width: 1160px) {
-  .topbar .project-name {
-    width: 74px;
-  }
   .topbar {
     gap: 8px;
   }
@@ -2656,12 +2402,6 @@ button:focus-visible {
   }
 }
 @media (max-width: 1340px) {
-  .w-scale {
-    width: 108px;
-  }
-  .w-prog {
-    width: 44px;
-  }
   .w-prog .dropdown-value b {
     display: none;
   }
@@ -2695,40 +2435,13 @@ button:focus-visible {
   .track-panel {
     padding: 5px 8px;
   }
-  .topbar .field-inline > .input.num {
-    width: 44px;
-  }
-  .grid-controls .input.num {
-    width: 40px;
-  }
-  .input.num.grid-oct {
-    width: 36px;
-  }
-  .w-scale {
-    width: 100px;
-  }
-  .w-prog {
-    width: 40px;
-  }
 }
 @media (max-width: 1160px) {
-  .topbar .project-name {
-    width: 66px;
-  }
-  .w-scale {
-    width: 92px;
-  }
-  .harmony .input {
-    width: 46px;
-  }
   .topbar .field-inline.w-grid {
     width: 132px;
   }
   .topbar .field-inline.w-length {
     width: 84px;
-  }
-  .topbar .field-inline.w-song {
-    width: 76px;
   }
 }
 @media (max-width: 1500px) {
@@ -2743,9 +2456,6 @@ button:focus-visible {
   }
   .w-scale {
     width: 112px;
-  }
-  .w-prog {
-    width: 58px;
   }
   .harmony .input {
     width: 100px;
@@ -2781,9 +2491,6 @@ button:focus-visible {
   }
 }
 @media (max-width: 1160px) {
-  .topbar .project-name {
-    width: 66px;
-  }
   .w-scale {
     width: 90px;
   }
@@ -3019,6 +2726,7 @@ button:focus-visible {
   text-align: right;
   margin-right: 4px;
   text-overflow: ellipsis;
+  letter-spacing: 0;
 }
 .garden-menu {
   display: flex;
@@ -3046,18 +2754,15 @@ button:focus-visible {
 
 /* ---------- tracks: mute & solo in a strip on the left ---------- */
 .track {
-  grid-template-columns: 20px 14px 1fr auto;
   padding-left: 6px;
 }
 .ms-col {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
 }
 .ms-col .ms {
   width: 20px;
   height: 18px;
-  border-radius: 6px;
 }
 .tracks-head {
   display: flex;
@@ -3066,6 +2771,8 @@ button:focus-visible {
   margin: -2px -6px 8px;
   padding: 0 10px 0 6px;
   min-height: 40px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 10px;
 }
 .tracks-head-tools {
   display: flex;
@@ -3073,13 +2780,7 @@ button:focus-visible {
   gap: 2px;
   margin-left: auto;
 }
-.tracks-head-tools .icon-btn {
-  width: 32px;
-  height: 32px;
-  color: var(--ink-2);
-}
 .tracks-head-tools .fx-glyph {
-  font-size: 19px;
   line-height: 1;
   font-style: italic;
 }
@@ -3098,7 +2799,6 @@ button:focus-visible {
 /* ---------- node view toolbar: one row, one height, one icon size ---------- */
 .toolbar {
   flex-wrap: nowrap;
-  overflow-x: auto;
   scrollbar-width: none;
   gap: 6px;
   min-height: 52px;
@@ -3145,17 +2845,15 @@ button:focus-visible {
   font-size: var(--fs-md);
 }
 .toolbar .lock-status .dropdown.compact .dropdown-field {
+  white-space: nowrap;
   height: 32px;
+  box-shadow: var(--shadow);
 }
 
-/* ---------- tracks, second pass ---------- */
+/* ---------- channel rows: M · S · lock, the channel tools ---------- */
 /* M beside S, on the left */
 .ms-col {
-  flex-direction: row;
   gap: 1px;
-}
-.track {
-  grid-template-columns: auto 14px 1fr auto;
 }
 /* the channel's lock against Mutate, after M / S */
 .ms.lock {
@@ -3167,9 +2865,7 @@ button:focus-visible {
 }
 /* a line under the + ƒ 🗑 tools */
 .tracks-head {
-  border-bottom: 1px solid var(--line-soft);
   padding-bottom: 6px;
-  margin-bottom: 10px;
 }
 .tracks-head-tools .fx-glyph {
   font-size: 15px;
@@ -3178,7 +2874,6 @@ button:focus-visible {
 .track-tools .btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
 }
 
 /* ---------- node toolbar: let popups (Copy to…) open outside it ---------- */
@@ -3186,10 +2881,7 @@ button:focus-visible {
   overflow: visible;
 }
 .toolbar .lock-status .dropdown.compact .dropdown-field {
-  width: auto;
-  padding: 0 10px;
   gap: 6px;
-  white-space: nowrap;
 }
 .toolbar .lock-status .dropdown.compact {
   flex: none;
@@ -3200,10 +2892,6 @@ button:focus-visible {
   width: 32px;
   padding: 0;
   justify-content: center;
-}
-.toolbar .lock-status .dropdown.compact .dropdown-field {
-  height: 32px;
-  padding: 0 8px;
 }
 .toolbar .copy-to {
   display: inline-flex;
@@ -3219,7 +2907,6 @@ button:focus-visible {
 .track {
   position: relative;
   /* M · S · lock take the room they need */
-  grid-template-columns: auto 12px 1fr;
   gap: 8px;
 }
 .track .track-actions {
@@ -3228,34 +2915,17 @@ button:focus-visible {
   top: 50%;
   transform: translateY(-50%);
   border-radius: 8px;
-  background: inherit;
-}
-.track:hover .track-actions {
-  background: var(--paper-2);
-  box-shadow: -10px 0 10px var(--paper-2);
-}
-.track.selected:hover .track-actions {
-  background: var(--paper-3);
-  box-shadow: -10px 0 10px var(--paper-3);
 }
 /* plant a function: Save Track · Import · Export on one line */
 .track-tools {
   flex-wrap: nowrap;
   gap: 0;
 }
-.track-tools .btn {
-  padding: 3px 6px;
-  gap: 5px;
-}
 /* Copy to…: a round icon button like its neighbours */
 .toolbar .lock-status .dropdown.compact .dropdown-field {
   width: 32px;
   padding: 0;
   justify-content: center;
-  border-radius: 999px;
-  border: 1px solid var(--line-soft);
-  background: var(--card);
-  box-shadow: var(--shadow);
 }
 .toolbar .lock-status .dropdown.compact .dropdown-chevron {
   display: none;
@@ -3269,7 +2939,6 @@ button:focus-visible {
 .topbar .garden-title .project-name {
   font: 400 var(--fs-xl)/1.2 var(--sans);
   color: var(--accent);
-  letter-spacing: 0;
 }
 
 /* ---------- folding sections: My functions, Function presets ---------- */
@@ -3282,19 +2951,10 @@ button:focus-visible {
   gap: 8px;
   width: 100%;
   padding: 9px 10px;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--ink);
   font: 400 var(--fs-lg)/1.2 var(--sans);
   text-align: left;
   cursor: pointer;
   transition: border-color 0.25s var(--ease), background 0.25s var(--ease);
-}
-.fold-trigger:hover,
-.fold.open .fold-trigger {
-  border-color: var(--line);
-  background: var(--paper-2);
 }
 .fold-trigger small {
   font-size: var(--fs-xs);
@@ -3346,10 +3006,6 @@ button:focus-visible {
   z-index: 80;
   width: 240px;
   padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
-  box-shadow: var(--shadow-lg, var(--shadow));
   font: 400 var(--fs-sm)/1.5 var(--sans);
   letter-spacing: 0;
   text-transform: none;
@@ -3548,7 +3204,7 @@ button:focus-visible {
   margin-right: 4px;
 }
 .all-channels .btn.on {
-  color: var(--accent);
+  border-color: transparent;
 }
 /* closed explanations take no room at all (an invisible one near the edge would widen the page) */
 .info-pop {
@@ -3593,7 +3249,6 @@ aside.panel:last-of-type .info-pop {
 }
 .all-channels .btn.on {
   color: inherit;
-  border-color: transparent;
 }
 
 /* ---------- paste a function: a preview of one fixed size ---------- */
@@ -3847,7 +3502,6 @@ aside.panel:last-of-type .info-pop {
   position: relative;
   min-height: 0;
   max-height: 30vh;
-  overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
   display: flex;
@@ -3855,9 +3509,6 @@ aside.panel:last-of-type .info-pop {
   align-items: flex-start;
   gap: 6px 22px;
   padding: 8px 14px 10px;
-  border: 1px solid var(--line-soft);
-  background: var(--paper);
-  color: var(--ink);
   animation: rise 0.18s var(--ease);
 }
 .score-math .muted {

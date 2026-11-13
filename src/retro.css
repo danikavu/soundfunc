@@ -1,7 +1,8 @@
 /*
- * The 1980s lab-workstation skin: beige instrument chrome with bevelled edges,
- * green-black screens with a glow, LCD value boxes, riveted section plates.
- * Loaded after styles.css; it restyles, it doesn't rearrange.
+ * The desk-calculator skin: a warm-grey case, keys with one face and one travel, a single orange
+ * function key, and VFD screens and value displays set into the case.
+ * Loaded after styles.css (layout and structure); this file is the look. Colours, sizes and the
+ * key / display recipes are tokens at the top — the rest only uses tokens.
  */
 
 /* ---------- palette ----------
@@ -69,6 +70,11 @@
   --lcd-line-soft: #1a2e2b;
   --lcd-edge: #060f0e;
   --glow-ink: 0 0 6px rgba(120, 240, 225, 0.4);
+  /* a display window set into the case */
+  --window: inset 0 2px 3px rgba(0, 0, 0, 0.55), 0 1px 0 var(--hi);
+  /* a key's face and travel */
+  --key-face: linear-gradient(var(--key), var(--key-2));
+  --key-rise: inset 0 1px 0 var(--hi), 0 1px 0 var(--lo);
   /* the custom wave's preview in the Sound tab: black on the case, orange in the dark */
   --wave-preview: #000;
   /* the math sketches over the case: printed in a case grey, faint (overlays.ts reads these) */
@@ -178,7 +184,7 @@
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-/* sunken: a screen or a display set into the case */
+/* sunken: a screen or a display set into the case — a dark rim, a shadow inside the glass, a lip of light below */
 .viz,
 .score-math,
 .nodes-canvas,
@@ -188,7 +194,7 @@
 .app .stepper,
 .app .stretch-ctl,
 .app textarea.formula {
-  box-shadow: inset 1px 1px 0 var(--lo), inset -1px -1px 0 var(--hi);
+  box-shadow: var(--window);
 }
 
 body {
@@ -228,6 +234,7 @@ body {
 }
 .nodes {
   background: var(--paper);
+  container: nodes / inline-size;
 }
 .nodes > .toolbar {
   background: var(--card);
@@ -524,40 +531,11 @@ body,
 .app .stepper-arrows button {
   color: var(--lcd-ink-2);
 }
-.app .stepper-arrows {
-  border-left-color: var(--lcd-edge);
-}
-.app .stepper-arrows button {
-  background: var(--lcd-2);
-  box-shadow: none;
-}
-.app .stepper-arrows button + button {
-  border-top-color: var(--lcd-edge);
-}
-.app .stepper-arrows button:hover:not(:disabled) {
-  background: var(--lcd-3);
-  color: var(--lcd-ink);
-}
-.app .stretch-btn {
-  background: var(--lcd-2);
-  color: var(--lcd-ink-2);
-  border-color: var(--lcd-edge) !important;
-  box-shadow: none;
-}
-.app .stretch-btn:hover:not(:disabled) {
-  background: var(--lcd-3);
-  color: var(--lcd-ink);
-}
-.app .stretch-x {
-  color: var(--lcd-ink-2);
-}
 .app .topbar .input:hover,
 .app .topbar .input:focus,
 .app .dropdown-field:hover,
 .app .dropdown-field.open {
   border-color: var(--lcd-edge);
-  outline: 1px solid var(--lcd-ink-2);
-  outline-offset: -2px;
 }
 /* the garden… the track's name stays printed on the case, not in a display */
 .app .topbar .project-name {
@@ -914,7 +892,6 @@ body,
 .sheet .dropdown-field {
   background: var(--lcd);
   color: var(--lcd-ink);
-  border: 1px solid var(--lcd-edge);
   border-radius: var(--radius);
   text-shadow: var(--glow-ink);
 }
@@ -940,7 +917,6 @@ body,
 .sheet .input {
   background: var(--lcd);
   color: var(--lcd-ink);
-  border: 1px solid var(--lcd-edge);
   border-radius: var(--radius);
   font-family: var(--mono);
   text-shadow: var(--glow-ink);
@@ -999,7 +975,7 @@ body,
   padding-left: 5px;
 }
 
-/* ---------- second pass ---------- */
+/* ---------- details: swatches, the progressions list, steppers, node faceplates ---------- */
 
 /* the channel's colours: small square swatches */
 .app aside.panel button.stone[aria-label^='color'] {
@@ -1241,10 +1217,12 @@ body,
   border-radius: var(--radius);
   background: linear-gradient(var(--key), var(--key-2));
   box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
+  flex-wrap: wrap;
+  position: relative;
 }
 .sauce-row > div:first-child {
-  flex: 1;
   min-width: 0;
+  flex: 1 1 100%;
 }
 .sauce-row .slider > span {
   font-weight: 700;
@@ -1262,14 +1240,6 @@ body,
 .sound-panel .seg button {
   padding: 4px 7px;
   font-size: var(--fs-sm);
-}
-
-.sauce-row {
-  flex-wrap: wrap;
-  position: relative;
-}
-.sauce-row > div:first-child {
-  flex: 1 1 100%;
 }
 .sauce-actions {
   display: flex;
@@ -1343,9 +1313,6 @@ body,
    It answers to the width of the Nodes area, not the window: first its buttons drop their words
    (each keeps its tooltip), then Mutate's Safe / Wild, and if it still doesn't fit it wraps to a
    second row — nothing is ever hidden off the edge. */
-.nodes {
-  container: nodes / inline-size;
-}
 .nodes > .toolbar {
   flex-wrap: wrap;
   overflow: visible;
@@ -1472,4 +1439,118 @@ body,
 }
 .app .ms-col .ms {
   vertical-align: middle;
+}
+
+/* ---------- keys and displays: a display shows a value, a key changes it ----------
+   Displays are windows into the case (dark glass, recessed). Anything you press beside a display —
+   a stepper's ▲▼, stretch's ÷2 / ×2 — is a key with a key's face, not part of the glass. */
+
+/* every display: the same dark rim */
+.app .topbar .input,
+.app .dropdown-field,
+.app .stepper,
+.app .stretch-ctl,
+.app aside.panel .input.num,
+.app textarea.formula,
+.app .harmony .input,
+.sheet .input,
+.sheet .dropdown-field {
+  border: 1px solid var(--edge);
+}
+.app .topbar .input:hover,
+.app .topbar .input:focus,
+.app .dropdown-field:hover,
+.app .dropdown-field.open {
+  outline: 1px solid var(--lcd-ink-3);
+  outline-offset: -3px;
+}
+
+/* stepper: the number in the glass, ▲▼ as two keys on its right */
+.app .stepper {
+  background: var(--lcd);
+  overflow: hidden;
+}
+.app .stepper-arrows {
+  border-left: 1px solid var(--edge);
+}
+.app .stepper-arrows button {
+  width: 20px;
+  background: var(--key-face);
+  color: var(--key-ink-2);
+  box-shadow: inset 0 1px 0 var(--hi);
+}
+.app .stepper-arrows button + button {
+  border-top: 1px solid var(--edge);
+}
+.app .stepper-arrows button:hover:not(:disabled) {
+  background: var(--key);
+  color: var(--key-ink);
+}
+.app .stepper-arrows button:active:not(:disabled) {
+  background: var(--key-2);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* stretch: ÷2 [ × 1 ] ×2 — two keys either side of the glass */
+.app .stretch-ctl {
+  background: var(--lcd);
+  overflow: hidden;
+}
+.app .stretch-btn {
+  padding: 0 9px;
+  background: var(--key-face);
+  color: var(--key-ink);
+  border: none !important;
+  box-shadow: inset 0 1px 0 var(--hi);
+}
+.app .stretch-btn:first-child {
+  border-right: 1px solid var(--edge) !important;
+}
+.app .stretch-btn:last-child {
+  border-left: 1px solid var(--edge) !important;
+}
+.app .stretch-btn:hover:not(:disabled) {
+  background: var(--key);
+  color: var(--key-ink);
+}
+.app .stretch-btn:active:not(:disabled) {
+  background: var(--key-2);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.app .stretch-ctl .input.num.stretch-input {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+.app .stretch-x {
+  color: var(--lcd-ink-3);
+}
+
+/* the node toolbar: every tool is a key; Mutate is a key inside its own recessed group */
+.app .toolbar .btn:not(.ghost),
+.app .toolbar .mutator > .btn {
+  background: var(--key-face);
+  border: 1px solid var(--edge);
+  color: var(--key-ink);
+  box-shadow: var(--key-rise);
+}
+.app .toolbar .btn:not(.ghost):hover,
+.app .toolbar .mutator > .btn:hover {
+  background: var(--key);
+}
+.app .toolbar .btn:not(.ghost):active,
+.app .toolbar .mutator > .btn:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.app .toolbar .mutator {
+  height: auto;
+  padding: 3px 6px 3px 3px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.app .toolbar .mutator > .btn {
+  height: var(--h-md);
 }
