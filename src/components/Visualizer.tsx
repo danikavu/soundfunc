@@ -259,14 +259,14 @@ export function Visualizer() {
 
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const wrap = wrapRef.current!;
+    // the canvas, not the frame: the Score's functions can take room under it
     const ro = new ResizeObserver(() => {
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = wrap.clientWidth * dpr;
-      canvas.height = wrap.clientHeight * dpr;
+      canvas.width = canvas.clientWidth * dpr;
+      canvas.height = canvas.clientHeight * dpr;
       dirty.current = true;
     });
-    ro.observe(wrap);
+    ro.observe(canvas);
     return () => ro.disconnect();
   }, []);
 
@@ -806,7 +806,7 @@ export function Visualizer() {
   };
 
   return (
-    <div className="viz" ref={wrapRef}>
+    <div className={`viz ${mode === 'score' && math.open ? 'with-math' : ''}`} ref={wrapRef}>
       <canvas
         ref={canvasRef}
         onPointerDown={(e) => {
@@ -873,7 +873,6 @@ export function Visualizer() {
         </span>
       </div>
       {mode !== 'ripple' && <RangeControl />}
-      {mode === 'score' && math.open && <ScoreMath detail={math.detail} onDetail={(detail) => setMath({ detail })} />}
       {mode !== 'ripple' && (
         <div className="viz-zoom">
           {view().zoomed && (
@@ -932,6 +931,7 @@ export function Visualizer() {
           ]}
         />
       </div>
+      {mode === 'score' && math.open && <ScoreMath detail={math.detail} onDetail={(detail) => setMath({ detail })} />}
       {tip && (
         <div className="viz-tip" style={{ left: tip.x, top: tip.y }}>
           {tip.text.map((t) => (

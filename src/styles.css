@@ -3838,22 +3838,32 @@ aside.panel:last-of-type .info-pop {
   color: var(--accent);
 }
 
-/* ---------- the Score's functions, in place over the score ---------- */
+/* ---------- the Score's functions, under the score ---------- */
+/* the frame stacks: the score above, the functions below it, nothing on top of the notes */
+.viz.with-math {
+  display: flex;
+  flex-direction: column;
+}
+.viz.with-math canvas {
+  position: relative;
+  inset: auto;
+  flex: 1 1 0;
+  min-height: 0;
+}
 .score-math {
-  position: absolute;
-  top: 40px;
-  left: 12px;
-  z-index: 3;
-  max-width: min(60%, 640px);
-  max-height: calc(100% - 70px);
+  position: relative;
+  flex: 0 0 auto;
+  max-height: 42%;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  padding: 8px 12px;
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--paper) 86%, transparent);
-  backdrop-filter: blur(2px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 22px;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--paper);
   color: var(--ink);
   animation: rise 0.18s var(--ease);
 }
@@ -3862,13 +3872,12 @@ aside.panel:last-of-type .info-pop {
   font-size: 11px;
 }
 .score-math-all {
-  float: right;
-  margin: -2px -4px 0 12px;
+  order: 99;
+  margin-left: auto;
+  align-self: flex-start;
 }
-.score-math-ch + .score-math-ch {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--line-soft);
+.score-math-ch {
+  min-width: 0;
 }
 .score-math-name {
   display: flex;
@@ -3876,7 +3885,7 @@ aside.panel:last-of-type .info-pop {
   gap: 6px;
   font: 11px/1.2 var(--mono);
   color: var(--ink-2);
-  margin-bottom: 3px;
+  margin-bottom: 2px;
 }
 .score-math-name i {
   width: 8px;
