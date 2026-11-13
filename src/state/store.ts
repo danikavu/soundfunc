@@ -67,7 +67,7 @@ interface State {
   addKitTracks: (kit: string | Kit, trackIndexes: number[], adoptSong?: boolean) => void;
   duplicateTrack: (id: string) => void;
   /** mute / solo every track at once (one undo step) */
-  setAllTracks: (flag: 'muted' | 'solo', on: boolean) => void;
+  setAllTracks: (flag: 'muted' | 'solo' | 'locked', on: boolean) => void;
   /** change every melodic channel at once — glide, snap to scale… (drums have neither); one undo step */
   patchMelodic: (patch: Partial<Pick<Track, 'playMode' | 'quantize'>>) => void;
   /** copied nodes (with their wires and the sliders they read), ready to paste into any track */
@@ -97,11 +97,14 @@ interface State {
   setPlaying: (on: boolean) => void;
   setChaos: (chaos: number) => void;
   /** mutate the selected track, or every track plus the harmony; one undo step */
-  mutate: (scope: 'track' | 'garden') => { tracks: number; tried: number };
+  mutate: (scope: 'track' | 'garden') => { tracks: number; tried: number; locked: number };
   checkpoint: () => void;
   undo: () => void;
   redo: () => void;
 }
+
+/** Mutate's Safe ↔ Wild, where it starts (and where a double-click puts it back) */
+export const DEFAULT_CHAOS = 0.3;
 
 export const useStore = create<State>()(
   persist(
@@ -124,7 +127,7 @@ export const useStore = create<State>()(
         setCurrentProjectId: (currentProjectId) => set({ currentProjectId }),
         theme: 'light',
         playing: false,
-        chaos: 0.3,
+        chaos: DEFAULT_CHAOS,
         showFunction: false,
         setShowFunction: (showFunction) => set({ showFunction }),
         past: [],
@@ -196,7 +199,7 @@ export const useStore = create<State>()(
           let n = name;
           for (let i = 1; !n || !validSliderName(n) || taken.has(n); i++) n = `s${i}`;
           const span = Math.max(1, Math.abs(value) * 2);
-          const slider: Slider = value >= 0 && value <= 1 ? { name: n, value, min: 0, max: 1 } : { name: n, value, min: Math.min(0, value - span), max: value + span };
+          const slider: Slider = value >= 0 && value <= 1 ? { name: n, value, min: 0, max: 1, initial: value } : { name: n, value, min: Math.min(0, value - span), max: value + span, initial: value };
           commit(mapTrack(trackId, (x) => ({ ...x, sliders: [...x.sliders, slider] })));
           return n;
         },
@@ -270,7 +273,7 @@ export const useStore = create<State>()(
         mutateNode: (trackId, nodeId) => {
           const { project, chaos } = get();
           const t = project.tracks.find((x) => x.id === trackId);
-          if (!t) return false;
+          if (!t || t.locked) return false;
           const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
           const r = mutateOneNode(t, project.song, nodeId, chaos, seed);
           if (r.track === t) return false;
@@ -345,20 +348,25 @@ export const useStore = create<State>()(
           const targetId = selectedTrackId ?? project.tracks[0]?.id;
           let song = project.song;
           if (scope === 'garden' && chaos > 0.15 && !song.harmonyLocked) song = { ...song, harmony: mutateHarmony(song.harmony, chaos, seed) };
-          let tried = 0, changed = 0;
+          let tried = 0, changed = 0, locked = 0;
           const tracks = project.tracks.map((t, i) => {
             if (scope === 'track' && t.id !== targetId) return t;
+            if (t.locked) {
+              locked++;
+              return t;
+            }
             const r = mutateTrack(t, song, chaos, seed + i * 7919);
             tried += r.tried;
             if (r.track !== t) changed++;
             return r.track;
           });
           commit((p) => ({ ...p, song, tracks }));
-          return { tracks: changed, tried };
+          return { tracks: changed, tried, locked };
         },
         toggleTheme: () => set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
         /** snapshot before a continuous edit (typing, dragging) so it undoes as one step */
-        checkpoint: () => set((s) => ({ past: [...s.past, s.project].slice(-HISTORY_LIMIT), future: [] })),
+        // nothing changed since the last checkpoint (a double-click's second press…): one undo step is enough
+        checkpoint: () => set((s) => (s.past[s.past.length - 1] === s.project ? { future: [] } : { past: [...s.past, s.project].slice(-HISTORY_LIMIT), future: [] })),
         undo: () =>
           set((s) => {
             const prev = s.past[s.past.length - 1];

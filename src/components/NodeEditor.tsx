@@ -19,7 +19,7 @@ import { blockFromSelection, collapseNodes, explodeFormula, freeSpot, insertBloc
 import { BLOCKS } from '../engine/blocks';
 import { useLibrary } from '../state/library';
 import { nodeHeight, uid } from '../engine/presets';
-import { useSelectedTrack, useStore } from '../state/store';
+import { DEFAULT_CHAOS, useSelectedTrack, useStore } from '../state/store';
 import { FuncNode, GraphContext, CATEGORY_COLORS } from './FuncNode';
 import { Icon, Info, Seg, getRender } from './ui';
 import { toast } from './TopBar';
@@ -110,9 +110,9 @@ function Palette({ state, hasOutput, onPick, onClose }: { state: PaletteState; h
                   <button
                     className="icon-btn palette-del"
                     title={`Delete block “${item.block.name}”`}
-                    onClick={() => confirm(`Delete the block “${item.block.name}”?`) && deleteBlock(item.block.id)}
+                    onClick={() => (deleteBlock(item.block.id), toast(`Deleted the block “${item.block.name}”`))}
                   >
-                    <Icon name="trash" size={12} />
+                    <Icon name="close" size={12} />
                   </button>
                 )}
               </div>
@@ -130,10 +130,15 @@ export function runMutate(scope: 'track' | 'garden') {
   const { mutate, chaos } = useStore.getState();
   const r = mutate(scope);
   const mood = chaos < 0.35 ? 'harmonious' : chaos < 0.7 ? 'adventurous' : 'experimental';
+  const skipped = scope === 'garden' && r.locked ? ` (${r.locked} locked left alone)` : '';
   toast(
     r.tracks
-      ? `${scope === 'garden' ? `Mutated ${r.tracks} channels${useStore.getState().project.song.harmonyLocked ? '' : ' and the harmony'}` : 'Mutated'} · ${mood} · best of ${r.tried} candidates — ⌘Z to undo`
-      : 'Nothing to mutate — every node is locked',
+      ? `${scope === 'garden' ? `Mutated ${r.tracks} channels${skipped}${useStore.getState().project.song.harmonyLocked ? '' : ' and the harmony'}` : 'Mutated'} · ${mood} · best of ${r.tried} candidates — ⌘Z to undo`
+      : r.locked && scope === 'track'
+        ? 'This channel is locked — unlock it (the padlock beside M / S) to mutate it'
+        : r.locked
+          ? 'Nothing to mutate — every channel is locked'
+          : 'Nothing to mutate — every node is locked',
   );
 }
 
@@ -148,7 +153,7 @@ function Mutator() {
       </button>
       <label className="chaos" title="How far the randomizer may wander">
         <span>Safe</span>
-        <input type="range" min={0} max={1} step={0.01} value={chaos} onChange={(e) => setChaos(Number(e.target.value))} aria-label="Harmonious to experimental" />
+        <input type="range" min={0} max={1} step={0.01} value={chaos} onChange={(e) => setChaos(Number(e.target.value))} onDoubleClick={() => setChaos(DEFAULT_CHAOS)} aria-label="Harmonious to experimental" />
         <span>Wild</span>
       </label>
       <Seg<'track' | 'garden'>

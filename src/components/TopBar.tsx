@@ -372,7 +372,7 @@ export function TopBar() {
         <label className="field-inline hide-narrow w-space" title={`Volume — the whole track's level: ${Math.round((song.volume ?? 0.8) * 100)}% (each channel's own is in its Sound tab)`}>
           <span>Volume</span>
           <span className="space-slider">
-            <input type="range" min={0} max={1} step={0.01} value={song.volume ?? 0.8} onChange={(e) => setSong({ volume: Number(e.target.value) }, false)} aria-label="Volume" />
+            <input type="range" min={0} max={1} step={0.01} value={song.volume ?? 0.8} onChange={(e) => setSong({ volume: Number(e.target.value) }, false)} onDoubleClick={() => setSong({ volume: 0.8 })} aria-label="Volume" />
           </span>
         </label>
       </div>

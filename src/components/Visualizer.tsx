@@ -5,6 +5,7 @@ import { BEATS_PER_BAR, audibleTracks, harmonyAt, isDrum, patternBeats, renderTr
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Seg, getRender } from './ui';
 import { RangeControl } from './RangeControl';
+import { ScoreMath, useScoreMath } from './ScoreMath';
 import { RIPPLE_DEFAULTS, RIPPLE_STYLES, RippleMemory, drawRipple, type RippleOptions, type RippleStyle } from './ripple';
 
 /** the header's height: Ripple centres its figure in the space below it */
@@ -14,7 +15,10 @@ const RIPPLE_BOTTOM = 46;
 const RIPPLE_KEY = 'sf-ripple';
 function loadRipple(): RippleOptions {
   try {
-    return { ...RIPPLE_DEFAULTS, ...JSON.parse(localStorage.getItem(RIPPLE_KEY) ?? '{}') };
+    const saved = { ...RIPPLE_DEFAULTS, ...JSON.parse(localStorage.getItem(RIPPLE_KEY) ?? '{}') };
+    // a style that has since been retired falls back to Pond
+    if (!RIPPLE_STYLES.some((r) => r.value === saved.style)) saved.style = RIPPLE_DEFAULTS.style;
+    return saved;
   } catch {
     return RIPPLE_DEFAULTS;
   }
@@ -122,6 +126,7 @@ export function Visualizer() {
   const selectTrack = useStore((s) => s.selectTrack);
   const selected = useSelectedTrack();
   const [mode, setMode] = useState<Mode>('score');
+  const [math, setMath] = useScoreMath();
   const [tip, setTip] = useState<{ x: number; y: number; text: string[] } | null>(null);
   /** Ripple's look, remembered between visits */
   const [ripple, setRippleState] = useState<RippleOptions>(loadRipple);
@@ -254,14 +259,14 @@ export function Visualizer() {
 
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const wrap = wrapRef.current!;
+    // the canvas, not the frame: the Score's functions can take room under it
     const ro = new ResizeObserver(() => {
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = wrap.clientWidth * dpr;
-      canvas.height = wrap.clientHeight * dpr;
+      canvas.width = canvas.clientWidth * dpr;
+      canvas.height = canvas.clientHeight * dpr;
       dirty.current = true;
     });
-    ro.observe(wrap);
+    ro.observe(canvas);
     return () => ro.disconnect();
   }, []);
 
@@ -319,7 +324,6 @@ export function Visualizer() {
   useEffect(() => {
     let raf = 0;
     const wave = new Float32Array(2048);
-    const spec = new Uint8Array(1024);
     const draw = () => {
       raf = requestAnimationFrame(draw);
       const pos = engine.position();
@@ -731,7 +735,6 @@ export function Visualizer() {
       } else if (mode === 'ripple') {
         placedRef.current = [];
         const live = engine.waveform(wave);
-        if (live) engine.spectrum(spec);
         const heard = drawRipple(
           g,
           W,
@@ -741,8 +744,6 @@ export function Visualizer() {
           P,
           {
             wave: live ? wave : null,
-            spectrum: live ? spec : null,
-            sampleRate: engine.sampleRate,
             playBeat: pos === null ? null : pos % score.total,
             secPerBeat,
             score,
@@ -805,138 +806,142 @@ export function Visualizer() {
   };
 
   return (
-    <div className="viz" ref={wrapRef}>
-      <canvas
-        ref={canvasRef}
-        onPointerDown={(e) => {
-          if (mode !== 'function') return;
-          (e.target as HTMLElement).setPointerCapture(e.pointerId);
-          scrubAt(e);
-        }}
-        onPointerMove={(e) => {
-          if (mode === 'function') {
-            if (scrubRef.current !== null) scrubAt(e);
-            return;
-          }
-          if (mode !== 'score') return;
-          const { best, x } = hit(e);
-          if (best !== hoverRef.current) dirty.current = true;
-          hoverRef.current = best;
-          setTip(
-            best
-              ? {
-                  x,
-                  y: best.y,
-                  text: isDrum(best.track.waveform)
-                    ? [`${best.note.name}  ·  vel ${Math.round(best.note.velocity * 127)}  ·  step ${best.note.step}`, `${best.track.name}${best.note.tune ? `  ·  tune ${best.note.tune.toFixed(1)}` : ''}`]
-                    : [
-                        `${best.note.name}  ·  midi ${best.note.midi}  ·  ${best.note.freq.toFixed(1)} Hz`,
-                        `vel ${(best.note.velocity * 127).toFixed(0)}  ·  ${best.note.duration.toFixed(2)} beats  ·  step ${best.note.step}`,
-                        `${best.track.name}  ·  f = ${best.note.raw.toFixed(3)}  ·  chord ${chordName(best.note.h, project.song.root, project.song.scale).name}`,
-                      ],
-                }
-              : null,
-          );
-        }}
-        onPointerUp={endScrub}
-        onPointerCancel={endScrub}
-        onPointerLeave={() => {
-          if (mode === 'function') return;
-          hoverRef.current = null;
-          dirty.current = true;
-          setTip(null);
-        }}
-        onDoubleClick={() => mode !== 'ripple' && setView(0, 0)}
-        onClick={(e) => {
-          if (mode !== 'score') return;
-          const { best } = hit(e);
-          if (best) {
-            selectTrack(best.track.id);
-            engine.preview(best.track, best.note.midi, best.note.velocity);
-          }
-        }}
-        style={{ cursor: mode === 'function' ? 'ew-resize' : tip ? 'pointer' : 'default', touchAction: 'none' }}
-      />
-      <div className="viz-legend">
-        <h2>{mode === 'score' ? 'The Track' : mode === 'function' ? selected?.name ?? '—' : 'Ripple'}</h2>
-        <span className="muted">
-          {mode !== 'ripple' && (project.song.repeat === 'exact' ? '⟲ repeats exactly · ' : pass > 0 ? `pass ${pass + 1} · ` : '')}
-          {mode === 'score' && `${Number(score.total.toFixed(3))} beats · ${midiToName(score.lo + 2)}–${midiToName(score.hi - 2)}${score.drums.length ? ` · ${score.drums.length} drum lanes` : ''}`}
-          {mode === 'function' &&
-            `y = f(x) · ${Number(score.total.toFixed(3))} beats · drag to hear it${
-              fnRange.outside > 0
-                ? ` · ${Math.max(1, Math.round(fnRange.outside * 100))}% ${project.song.pitchRange.mode === 'wrap' ? 'wrapped' : 'clamped'} into ${midiToName(project.song.pitchRange.low)}–${midiToName(project.song.pitchRange.high)}`
-                : ''
-            }`}
-          {mode === 'ripple' && `${RIPPLE_STYLES.find((x) => x.value === ripple.style)?.hint ?? ''}${playing || rippleLive ? '' : ' · press space to listen'}`}
-        </span>
-      </div>
-      {mode !== 'ripple' && <RangeControl />}
-      {mode !== 'ripple' && (
-        <div className="viz-zoom">
-          {view().zoomed && (
-            <span className="muted">
-              bars {Math.floor((offset + view().start) / BEATS_PER_BAR) + 1}–{Math.ceil((offset + view().start + view().span) / BEATS_PER_BAR)}
-            </span>
-          )}
-          <button className="icon-btn" onClick={() => zoomAt(1 / 1.6)} title="Zoom in (⌘/Ctrl + scroll, or pinch)">
-            <Icon name="plus" size={13} />
-          </button>
-          <button className="icon-btn" onClick={() => zoomAt(1.6)} title="Zoom out">
-            <Icon name="minus" size={13} />
-          </button>
-          <button className="icon-btn" onClick={() => setView(0, 0)} title="Show the whole loop (double-click the view)" disabled={!view().zoomed}>
-            <Icon name="fit" size={13} />
-          </button>
-        </div>
-      )}
-      {mode === 'ripple' && (
-        <div className="ripple-opts">
-          <Seg<RippleStyle> value={ripple.style} onChange={(style) => setRipple({ style })} options={RIPPLE_STYLES.map(({ value, label }) => ({ value, label }))} />
-          <span className="ripple-opts-row">
-            <button className={`btn small ghost ${ripple.trails ? 'on' : ''}`} aria-pressed={ripple.trails} onClick={() => setRipple({ trails: !ripple.trails })} title="Older frames linger and fade">
-              Trails
-            </button>
-            <button
-              className={`btn small ghost ${ripple.colour === 'channels' ? 'on' : ''}`}
-              aria-pressed={ripple.colour === 'channels'}
-              onClick={() => setRipple({ colour: ripple.colour === 'channels' ? 'ink' : 'channels' })}
-              title={ripple.colour === 'channels' ? 'In the channels’ colours — click for one ink' : 'In one ink — click for the channels’ colours'}
-            >
-              Colours
-            </button>
-            {ripple.style === 'mandala' && (
-              <span className="ripple-sym" title="How many times the wave is folded round">
-                <button className="icon-btn" onClick={() => setRipple({ symmetry: Math.max(2, ripple.symmetry - 1) })} aria-label="Fewer folds">
-                  <Icon name="minus" size={11} />
-                </button>
-                <span className="mono">×{ripple.symmetry}</span>
-                <button className="icon-btn" onClick={() => setRipple({ symmetry: Math.min(16, ripple.symmetry + 1) })} aria-label="More folds">
-                  <Icon name="plus" size={11} />
-                </button>
-              </span>
-            )}
+    <>
+      <div className="viz" ref={wrapRef}>
+        <canvas
+          ref={canvasRef}
+          onPointerDown={(e) => {
+            if (mode !== 'function') return;
+            (e.target as HTMLElement).setPointerCapture(e.pointerId);
+            scrubAt(e);
+          }}
+          onPointerMove={(e) => {
+            if (mode === 'function') {
+              if (scrubRef.current !== null) scrubAt(e);
+              return;
+            }
+            if (mode !== 'score') return;
+            const { best, x } = hit(e);
+            if (best !== hoverRef.current) dirty.current = true;
+            hoverRef.current = best;
+            setTip(
+              best
+                ? {
+                    x,
+                    y: best.y,
+                    text: isDrum(best.track.waveform)
+                      ? [`${best.note.name}  ·  vel ${Math.round(best.note.velocity * 127)}  ·  step ${best.note.step}`, `${best.track.name}${best.note.tune ? `  ·  tune ${best.note.tune.toFixed(1)}` : ''}`]
+                      : [
+                          `${best.note.name}  ·  midi ${best.note.midi}  ·  ${best.note.freq.toFixed(1)} Hz`,
+                          `vel ${(best.note.velocity * 127).toFixed(0)}  ·  ${best.note.duration.toFixed(2)} beats  ·  step ${best.note.step}`,
+                          `${best.track.name}  ·  f = ${best.note.raw.toFixed(3)}  ·  chord ${chordName(best.note.h, project.song.root, project.song.scale).name}`,
+                        ],
+                  }
+                : null,
+            );
+          }}
+          onPointerUp={endScrub}
+          onPointerCancel={endScrub}
+          onPointerLeave={() => {
+            if (mode === 'function') return;
+            hoverRef.current = null;
+            dirty.current = true;
+            setTip(null);
+          }}
+          onDoubleClick={() => mode !== 'ripple' && setView(0, 0)}
+          onClick={(e) => {
+            if (mode !== 'score') return;
+            const { best } = hit(e);
+            if (best) {
+              selectTrack(best.track.id);
+              engine.preview(best.track, best.note.midi, best.note.velocity);
+            }
+          }}
+          style={{ cursor: mode === 'function' ? 'ew-resize' : tip ? 'pointer' : 'default', touchAction: 'none' }}
+        />
+        <div className="viz-legend">
+          <h2>{mode === 'score' ? 'The Track' : mode === 'function' ? selected?.name ?? '—' : 'Ripple'}</h2>
+          <span className="muted">
+            {mode !== 'ripple' && (project.song.repeat === 'exact' ? '⟲ repeats exactly · ' : pass > 0 ? `pass ${pass + 1} · ` : '')}
+            {mode === 'score' && `${Number(score.total.toFixed(3))} beats · ${midiToName(score.lo + 2)}–${midiToName(score.hi - 2)}${score.drums.length ? ` · ${score.drums.length} drum lanes` : ''}`}
+            {mode === 'function' &&
+              `y = f(x) · ${Number(score.total.toFixed(3))} beats · drag to hear it${
+                fnRange.outside > 0
+                  ? ` · ${Math.max(1, Math.round(fnRange.outside * 100))}% ${project.song.pitchRange.mode === 'wrap' ? 'wrapped' : 'clamped'} into ${midiToName(project.song.pitchRange.low)}–${midiToName(project.song.pitchRange.high)}`
+                  : ''
+              }`}
+            {mode === 'ripple' && `${RIPPLE_STYLES.find((x) => x.value === ripple.style)?.hint ?? ''}${playing || rippleLive ? '' : ' · press space to listen'}`}
           </span>
         </div>
-      )}
-      <div className="viz-tabs">
-        <Seg<Mode>
-          value={mode}
-          onChange={setMode}
-          options={[
-            { value: 'score', label: 'Score' },
-            { value: 'function', label: 'Function' },
-            { value: 'ripple', label: 'Ripple' },
-          ]}
-        />
-      </div>
-      {tip && (
-        <div className="viz-tip" style={{ left: tip.x, top: tip.y }}>
-          {tip.text.map((t) => (
-            <div key={t}>{t}</div>
-          ))}
+        {mode !== 'ripple' && <RangeControl />}
+        {mode !== 'ripple' && (
+          <div className="viz-zoom">
+            {view().zoomed && (
+              <span className="muted">
+                bars {Math.floor((offset + view().start) / BEATS_PER_BAR) + 1}–{Math.ceil((offset + view().start + view().span) / BEATS_PER_BAR)}
+              </span>
+            )}
+            {mode === 'score' && (
+              <button
+                className={`icon-btn ${math.open ? 'on' : ''}`}
+                aria-pressed={math.open}
+                onClick={() => setMath({ open: !math.open })}
+                title={math.open ? 'Hide the functions' : 'Show the function of every channel you can hear, as math, over the score'}
+                aria-label="Functions"
+              >
+                <span className="fx-glyph">ƒ</span>
+              </button>
+            )}
+            <button className="icon-btn" onClick={() => zoomAt(1 / 1.6)} title="Zoom in (⌘/Ctrl + scroll, or pinch)">
+              <Icon name="plus" size={13} />
+            </button>
+            <button className="icon-btn" onClick={() => zoomAt(1.6)} title="Zoom out">
+              <Icon name="minus" size={13} />
+            </button>
+            <button className="icon-btn" onClick={() => setView(0, 0)} title="Show the whole loop (double-click the view)" disabled={!view().zoomed}>
+              <Icon name="fit" size={13} />
+            </button>
+          </div>
+        )}
+        {mode === 'ripple' && (
+          <div className="ripple-opts">
+            <Seg<RippleStyle> value={ripple.style} onChange={(style) => setRipple({ style })} options={RIPPLE_STYLES.map(({ value, label }) => ({ value, label }))} />
+            <span className="ripple-opts-row">
+              <button className={`btn small ghost ${ripple.trails ? 'on' : ''}`} aria-pressed={ripple.trails} onClick={() => setRipple({ trails: !ripple.trails })} title="Older frames linger and fade">
+                Trails
+              </button>
+              <button
+                className={`btn small ghost ${ripple.colour === 'channels' ? 'on' : ''}`}
+                aria-pressed={ripple.colour === 'channels'}
+                onClick={() => setRipple({ colour: ripple.colour === 'channels' ? 'ink' : 'channels' })}
+                title={ripple.colour === 'channels' ? 'In the channels’ colours — click for one ink' : 'In one ink — click for the channels’ colours'}
+              >
+                Colours
+              </button>
+            </span>
+          </div>
+        )}
+        <div className="viz-tabs">
+          <Seg<Mode>
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'score', label: 'Score' },
+              { value: 'function', label: 'Function' },
+              { value: 'ripple', label: 'Ripple' },
+            ]}
+          />
         </div>
-      )}
-    </div>
+        {tip && (
+          <div className="viz-tip" style={{ left: tip.x, top: tip.y }}>
+            {tip.text.map((t) => (
+              <div key={t}>{t}</div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* the functions take their own row under the score, never its room */}
+      {mode === 'score' && math.open && <ScoreMath detail={math.detail} onDetail={(detail) => setMath({ detail })} />}
+    </>
   );
 }

@@ -11,12 +11,12 @@ import { exportMidi, collectNotes, simplifyCurve, CURVE_TOLERANCE } from './midi
 import { patternBeats, songWindows, stretchOf } from './project';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
 import { CHANNEL_PALETTE, KITS, PRESETS, defaultProject, pickColor, trackFromPreset, trackFromTemplate, voicedInversion, voicedPitch } from './presets';
-import { HARMONY_VARS, harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
+import { HARMONY_VARS, SONG_DEFAULTS, harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
 import { chordName, chordTones, limitPitch, PROGRESSIONS, spellDegree } from './music';
 import { mulberry32, mutateFormula, mutateOneNode, mutateTimbre, mutateTrack, musicalScore } from './mutate';
 import { useStore } from '../state/store';
 import { parsePattern } from './graph';
-import { timbreHarmonics } from './timbre';
+import { WAVE_VOICES, timbreHarmonics, timbreSamples, waveVoiceOf } from './timbre';
 import { PATCHES, applySauce, cutoffHz, drumOf, surprise, synthOf } from './synth';
 import { WAVEFORMS, type Waveform } from './project';
 import { fitToSpan, importedPitch, importMath } from './importMath';
@@ -1653,6 +1653,62 @@ describe('jam takes', () => {
     expect(v.getUint16(22, true)).toBe(2);
     expect(v.getUint32(40, true)).toBe(12);
     expect(v.getInt16(44 + 10, true)).toBe(-3);
+  });
+});
+
+describe('stock voices', () => {
+  it('a voice with its own wave plays it, and its wave parses into a full cycle', () => {
+    const shaped = Object.entries(PATCHES).filter(([, p]) => p.shape);
+    expect(shaped.map(([w]) => w).sort()).toEqual(['brass', 'flute', 'pad', 'pluck']);
+    for (const [w, p] of shaped) {
+      expect(p.wave, w).toBe('custom');
+      const s = timbreSamples(p.shape!, 256)!;
+      expect(s, w).not.toBeNull();
+      expect(Math.max(...Array.from(s, Math.abs)), w).toBeGreaterThan(0.5);
+    }
+  });
+  it('every patch keeps wow and vibrato in range, and only a pure sine stays bare', () => {
+    for (const [w, p] of Object.entries(PATCHES)) {
+      expect(p.wow, w).toBeGreaterThanOrEqual(0);
+      expect(p.wow, w).toBeLessThanOrEqual(1);
+      expect(p.gain, w).toBeGreaterThan(0);
+    }
+    expect(PATCHES.sine.chorus).toBe(0);
+  });
+});
+
+describe('the hip-hop & lo-fi kits', () => {
+  it('every channel of Boom Bap, Tongue Clicks and Rainy Window plays notes', () => {
+    for (const id of ['boombap', 'clicks', 'lofi']) {
+      const kit = KITS.find((k) => k.id === id)!;
+      const song = { ...SONG_DEFAULTS, ...kit.song };
+      kit.tracks.forEach((t, i) => {
+        const r = renderTrack(trackFromTemplate(t, t.name, i), song, 0, true);
+        expect(r.notes.length + r.curve.beat.length, `${kit.name} · ${t.name}`).toBeGreaterThan(0);
+      });
+    }
+  });
+});
+
+describe('the Sonic Menagerie', () => {
+  it('ten whole voices: each wave parses and sounds, every setting is a real one, the filter is on', () => {
+    expect(WAVE_VOICES).toHaveLength(10);
+    expect(new Set(WAVE_VOICES.map((v) => v.id)).size).toBe(10);
+    for (const v of WAVE_VOICES) {
+      const s = timbreSamples(v.timbre, 256)!;
+      expect(s, v.name).not.toBeNull();
+      expect(Math.max(...Array.from(s, Math.abs)), v.name).toBeGreaterThan(0.5);
+      for (const k of Object.keys(v.synth)) expect(PATCHES.custom, `${v.name}: ${k}`).toHaveProperty(k);
+      // cutoff, resonance and the filter envelope only act when the filter is on
+      expect(v.synth.filter, v.name).not.toBe('off');
+      expect(v.attack).toBeGreaterThan(0);
+    }
+  });
+  it('knows which one a channel wears, and stops knowing once a setting moves', () => {
+    const v = WAVE_VOICES[3];
+    const t = { waveform: 'custom', timbre: v.timbre, attack: v.attack, release: v.release, synth: { ...v.synth } };
+    expect(waveVoiceOf(t)?.id).toBe(v.id);
+    expect(waveVoiceOf({ ...t, synth: { ...v.synth, drive: 0.9 } })).toBeUndefined();
   });
 });
 

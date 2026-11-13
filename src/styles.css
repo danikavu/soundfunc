@@ -1729,9 +1729,45 @@ button:focus-visible {
 .kit-mine-tools {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
+  gap: 2px;
   padding: 4px 2px 2px;
+}
+.kit-list .kit-mine-tools .icon-btn {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+}
+.kit-mine-tools .icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.kit-row {
+  position: relative;
+}
+.kit-row-actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s var(--ease);
+}
+.kit-row:hover .kit-row-actions,
+.kit-row:focus-within .kit-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.kit-list .kit-row-actions .icon-btn {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 6px;
 }
 .kit-mine-tools .save-voice {
   display: flex;
@@ -1747,10 +1783,6 @@ button:focus-visible {
 .kit-mine-empty {
   padding: 2px 10px 6px;
   font-size: 11px;
-}
-.kit-mine-actions {
-  gap: 4px;
-  margin: 4px 0 2px;
 }
 .kit-list .kit-group-head {
   padding: 10px 10px 4px;
@@ -1903,13 +1935,30 @@ button:focus-visible {
 .track-tools {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 2px;
-  margin: -4px -8px 8px;
+  margin: -4px -4px 8px;
 }
-.track-tools .btn {
-  font-size: 11px;
-  padding: 3px 8px;
-  color: var(--ink-2);
+.track-tools .icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* the presets folder: lit while linked, a dot while it needs reconnecting */
+.track-tools .mine-folder {
+  position: relative;
+}
+.track-tools .mine-folder.on {
+  color: var(--accent);
+}
+.track-tools .mine-folder.needs::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--accent);
 }
 
 /* ---------- dropdowns (voice, step length) ---------- */
@@ -2865,29 +2914,6 @@ button:focus-visible {
   color: var(--ink-3);
   margin: 10px 0 4px;
 }
-/* My functions: Export all and the presets folder, above the list */
-.mine-tools {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: 0 0 6px;
-  min-width: 0;
-}
-.mine-tools .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  white-space: nowrap;
-}
-.mine-tools .btn svg {
-  flex: none;
-}
-/* a long folder name ends in … rather than pushing the row wider */
-.mine-tools .btn .mine-folder-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .mine-row {
   position: relative;
 }
@@ -3129,7 +3155,15 @@ button:focus-visible {
   gap: 1px;
 }
 .track {
-  grid-template-columns: 41px 14px 1fr auto;
+  grid-template-columns: auto 14px 1fr auto;
+}
+/* the channel's lock against Mutate, after M / S */
+.ms.lock {
+  display: inline-grid;
+  place-items: center;
+}
+.ms.lock:not(.on) {
+  opacity: 0.55;
 }
 /* a line under the + ƒ 🗑 tools */
 .tracks-head {
@@ -3184,7 +3218,8 @@ button:focus-visible {
 /* tracks: hover actions float over the row, so names get the full width */
 .track {
   position: relative;
-  grid-template-columns: 38px 12px 1fr;
+  /* M · S · lock take the room they need */
+  grid-template-columns: auto 12px 1fr;
   gap: 8px;
 }
 .track .track-actions {
@@ -3403,24 +3438,104 @@ button:focus-visible {
   flex: none;
 }
 /* the custom wave's own tools: Mutate wave, and its lock against the channel's Mutate */
-.wave-tools {
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
 .wave-lock.on {
   color: var(--ink);
-  border-color: var(--line);
+}
+/* the voice's tools: icons in two small groups */
+.voice-tool-group {
+  gap: 2px;
+}
+.voice-tool-group + .voice-tool-group {
+  padding-left: 8px;
+  border-left: 1px solid var(--line-soft);
+}
+/* ‹ › through the voices: the top bar's undo / redo glyphs, a size down */
+.icon-btn.voice-step {
+  font: 900 17px/1 var(--mono);
+  padding-bottom: 2px;
+  color: var(--ink);
+}
+.icon-btn.voice-step:hover {
+  color: var(--accent);
+}
+/* changed and unsaved: Save takes the accent, keeps a dot, and flashes on each change */
+.voice-save {
+  position: relative;
+}
+.voice-save.dirty {
+  color: var(--accent);
+  animation: save-flash 0.9s ease-out;
+}
+.voice-save.dirty::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+@keyframes save-flash {
+  0% {
+    background: var(--accent);
+    color: var(--paper);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-save.dirty {
+    animation: none;
+  }
+}
+/* the Sonic Menagerie under the custom wave: a wave glyph over a short name */
+.wave-voices {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 6px;
+}
+.wave-voices button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 5px 2px 4px;
+  font: inherit;
+  font-size: 10.5px;
+  letter-spacing: -0.06em;
+  cursor: pointer;
+  border-radius: var(--radius);
+  border: 1px solid var(--edge);
+  background: linear-gradient(var(--card), var(--paper-2));
+  color: var(--ink);
+  box-shadow: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--lo);
+}
+.wave-voices button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wave-voices button:hover {
+  background: var(--card);
+}
+.wave-voices button.on {
+  background: var(--lcd);
+  color: var(--lcd-ink);
+  border-color: var(--lcd-edge);
+  text-shadow: var(--glow-ink);
+  box-shadow: inset 1px 1px 0 #000, inset -1px -1px 0 #24402f;
 }
 /* Save voice, and voices in and out as files */
 .voice-tools {
   margin-top: 8px;
   gap: 6px;
   align-items: center;
-}
-.voice-files {
-  margin-left: auto;
-  gap: 2px;
 }
 .all-channels {
   display: flex;
@@ -3722,10 +3837,62 @@ aside.panel:last-of-type .info-pop {
 .ripple-opts .btn.on {
   color: var(--accent);
 }
-.ripple-sym {
+
+/* ---------- the Score's functions, under the score ---------- */
+/* the strip takes its own row between the score and the nodes: the score keeps its full size */
+.center:has(> .score-math) {
+  grid-template-rows: minmax(180px, 40%) auto minmax(0, 1fr);
+}
+.score-math {
+  position: relative;
+  min-height: 0;
+  max-height: 30vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 22px;
+  padding: 8px 14px 10px;
+  border: 1px solid var(--line-soft);
+  background: var(--paper);
+  color: var(--ink);
+  animation: rise 0.18s var(--ease);
+}
+.score-math .muted {
+  margin: 0;
+  font-size: 11px;
+}
+.score-math-all {
+  order: 99;
+  margin-left: auto;
+  align-self: flex-start;
+}
+.score-math-ch {
+  min-width: 0;
+}
+.score-math-name {
   display: flex;
   align-items: center;
-  gap: 2px;
-  font-size: 11px;
+  gap: 6px;
+  font: 11px/1.2 var(--mono);
   color: var(--ink-2);
+  margin-bottom: 2px;
+}
+.score-math-name i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.score-math-tex {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.score-math-tex .katex {
+  font-size: 1em;
+}
+.viz-zoom .icon-btn.on {
+  color: var(--accent);
 }

@@ -447,6 +447,7 @@ export class AudioEngine {
     const { input, filter } = this.chain(p, amp, 261.6, now, Infinity);
     const bank = this.oscBank(p, track.timbre, 261.6, input, amp, now);
     if (p.vibrato > 0) bank.nodes.push(this.vibrato(p, bank.oscs.map((o) => o.o), now));
+    if (p.wow > 0) bank.nodes.push(this.wow(p, bank.oscs.map((o) => o.o), now));
     const v: GlideVoice = {
       key: glideKey(track),
       amp,
@@ -523,7 +524,8 @@ export class AudioEngine {
     const nodes: AudioScheduledSourceNode[] = [];
     const n = Math.max(1, Math.min(7, Math.round(p.unison)));
     const each = WAVE_LEVEL[p.wave] / Math.sqrt(n);
-    const wave = p.wave === 'custom' ? this.periodicWave(timbre) : null;
+    // a stock voice may bring its own one-cycle wave; otherwise the channel's f(p)
+    const wave = p.wave === 'custom' ? this.periodicWave(p.shape ?? timbre) : null;
     for (let i = 0; i < n; i++) {
       const spread = n === 1 ? 0 : -1 + (2 * i) / (n - 1);
       const o = ctx.createOscillator();
@@ -584,6 +586,27 @@ export class AudioEngine {
     lfo.connect(depth);
     for (const o of targets) depth.connect(o.detune);
     return lfo; // started (and stopped) with the voice's other sources
+  }
+
+  /**
+   * Tape wow: a slow drift of pitch (two rates, up to ±14 cents), its phase taken from the clock
+   * rather than the note, so every note on the channel — a whole chord — wavers together.
+   */
+  private wow(p: SynthParams, targets: OscillatorNode[], when: number) {
+    const ctx = this.ctx!;
+    const RATE = 0.55;
+    const phase = (2 * Math.PI * RATE * when) % (2 * Math.PI);
+    // sin(ωt + φ) plus a little of its third partial, so the drift isn't a perfect sine
+    const real = new Float32Array([0, Math.sin(phase), 0, 0.3 * Math.sin(3 * phase)]);
+    const imag = new Float32Array([0, Math.cos(phase), 0, 0.3 * Math.cos(3 * phase)]);
+    const lfo = ctx.createOscillator();
+    lfo.setPeriodicWave(ctx.createPeriodicWave(real, imag, { disableNormalization: true }));
+    lfo.frequency.value = RATE;
+    const depth = ctx.createGain();
+    depth.gain.value = p.wow * 14;
+    lfo.connect(depth);
+    for (const o of targets) depth.connect(o.detune);
+    return lfo;
   }
 
   private killGlide(id: string, fade: number) {
@@ -811,6 +834,7 @@ export class AudioEngine {
     /** oscillators that sound at the note's pitch — these follow the bend (an LFO doesn't) */
     const pitched: OscillatorNode[] = bank.oscs.map((x) => x.o);
     if (p.vibrato > 0) nodes.push(this.vibrato(p, pitched, when));
+    if (p.wow > 0) nodes.push(this.wow(p, pitched, when));
 
     // bend: every pitched oscillator's detune follows the note's bend curve (in cents)
     if (expr?.bend) {

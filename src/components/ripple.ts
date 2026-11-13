@@ -1,22 +1,18 @@
 /**
- * The Ripple view: the track as something to watch. Five styles, all drawn around the
+ * The Ripple view: the track as something to watch. Three styles, all drawn around the
  * centre of the view:
  *   pond    — every note drops a stone: rings spread from its place on the circle of notes
  *   halo    — the live waveform bent into a ring
- *   bloom   — the spectrum as petals, low notes inside, highs at the tips
  *   phase   — the waveform against itself a moment later: a Lissajous phase portrait
- *   mandala — the waveform folded n times round the centre, slowly turning
  * Pond reads the score (it shows notes even when silent); the others read the sound.
  */
 import type { Note, Track } from '../engine/project';
 
-export type RippleStyle = 'pond' | 'halo' | 'bloom' | 'phase' | 'mandala';
+export type RippleStyle = 'pond' | 'halo' | 'phase';
 export const RIPPLE_STYLES: { value: RippleStyle; label: string; hint: string }[] = [
   { value: 'pond', label: 'Pond', hint: 'every note drops a stone on the circle of notes' },
   { value: 'halo', label: 'Halo', hint: 'the live waveform bent into a ring' },
-  { value: 'bloom', label: 'Bloom', hint: 'the spectrum as petals: lows inside, highs at the tips' },
   { value: 'phase', label: 'Phase', hint: 'the wave against itself a moment later — a Lissajous figure' },
-  { value: 'mandala', label: 'Mandala', hint: 'the waveform folded round the centre, slowly turning' },
 ];
 
 export interface RippleOptions {
@@ -25,10 +21,8 @@ export interface RippleOptions {
   trails: boolean;
   /** channels' own colours, or one ink */
   colour: 'channels' | 'ink';
-  /** mandala: how many times the wave is folded round */
-  symmetry: number;
 }
-export const RIPPLE_DEFAULTS: RippleOptions = { style: 'pond', trails: true, colour: 'channels', symmetry: 6 };
+export const RIPPLE_DEFAULTS: RippleOptions = { style: 'pond', trails: true, colour: 'channels' };
 
 export interface RippleScore {
   melodic: { track: Track; notes: Note[]; glide: [number, number, number][] }[];
@@ -38,8 +32,6 @@ export interface RippleScore {
 
 export interface RippleFrame {
   wave: Float32Array | null;
-  spectrum: Uint8Array | null;
-  sampleRate: number;
   /** the playhead within the pass, in beats (null when stopped) */
   playBeat: number | null;
   secPerBeat: number;
@@ -56,10 +48,9 @@ interface Palette {
   glow: number;
 }
 
-/** what persists between frames: trails and peak holds */
+/** what persists between frames: the trails */
 export class RippleMemory {
   waves: Float32Array[] = [];
-  peaks = new Float32Array(0);
   /** the recent loudest sample: quiet music is scaled up so the figures keep their size */
   level = 0.05;
   push(w: Float32Array, keep: number) {
@@ -100,10 +91,10 @@ const quiet = (w: Float32Array | null) => {
   return m < 1e-3;
 };
 
-function backdrop(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P: Palette, now: number, rings = 7) {
+function backdrop(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P: Palette, now: number, rings = 7, width = 1) {
   g.save();
   g.strokeStyle = P.rake;
-  g.lineWidth = 1;
+  g.lineWidth = width;
   // raked sand: rings that breathe very slightly
   for (let i = 1; i <= rings; i++) {
     const r = R * (0.18 + (i / rings) * 0.95) + Math.sin(now * 0.6 + i * 0.8) * 1.2;
@@ -118,7 +109,7 @@ function backdrop(g: CanvasRenderingContext2D, cx: number, cy: number, R: number
 // ---------- pond: notes as stones ----------
 
 function pond(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P: Palette, f: RippleFrame, opts: RippleOptions) {
-  backdrop(g, cx, cy, R, P, f.now, 5);
+  backdrop(g, cx, cy, R, P, f.now, 5, 0.5);
   // the circle of notes: C at the top, a semitone every 30°
   g.save();
   g.font = '10.5px Doto, monospace';
@@ -134,6 +125,7 @@ function pond(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P:
     g.moveTo(cx + Math.cos(a) * R * 0.2, cy + Math.sin(a) * R * 0.2);
     g.lineTo(cx + Math.cos(a) * R * 1.05, cy + Math.sin(a) * R * 1.05);
     g.strokeStyle = P.rake;
+    g.lineWidth = 0.5;
     g.stroke();
   }
   g.restore();
@@ -166,7 +158,7 @@ function pond(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P:
       if (tt <= 0 || tt >= 1) continue;
       g.globalAlpha = (1 - tt) * (1 - lag) * 0.75 * weight;
       g.strokeStyle = colour;
-      g.lineWidth = 1.2 + (1 - tt) * 1.2;
+      g.lineWidth = 0.45 + (1 - tt) * 0.35; // hairlines: the rings stay fine as they spread
       g.beginPath();
       g.arc(x, y, 3 + tt * size, 0, TAU);
       g.stroke();
@@ -193,7 +185,7 @@ function pond(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P:
         const p = place(m);
         if (prev) {
           g.globalAlpha = (1 - age / (opts.trails ? 1.6 : 0.6)) * 0.9;
-          g.lineWidth = 1 + 2.5 * (1 - age / 1.6);
+          g.lineWidth = 0.5 + 0.7 * (1 - age / 1.6);
           g.beginPath();
           g.moveTo(prev[0], prev[1]);
           g.lineTo(p[0], p[1]);
@@ -236,9 +228,9 @@ function pond(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P:
   g.restore();
 }
 
-// ---------- halo / mandala / phase: the live waveform ----------
+// ---------- halo / phase: the live waveform ----------
 
-function waveRing(g: CanvasRenderingContext2D, w: Float32Array, start: number, cx: number, cy: number, r0: number, amp: number, from: number, to: number, mirror: boolean, N: number, petal = 0) {
+function waveRing(g: CanvasRenderingContext2D, w: Float32Array, start: number, cx: number, cy: number, r0: number, amp: number, from: number, to: number, mirror: boolean, N: number) {
   g.beginPath();
   for (let i = 0; i <= N; i++) {
     const u = i / N;
@@ -246,8 +238,7 @@ function waveRing(g: CanvasRenderingContext2D, w: Float32Array, start: number, c
     const k = mirror ? (u < 0.5 ? u * 2 : (1 - u) * 2) : u;
     const s = w[start + Math.min(w.length - start - 1, Math.floor(k * (N - 1)))] ?? 0;
     const a = from + (to - from) * u;
-    // a petal: the slice swells out in the middle and meets the next at its ends
-    const r = r0 + petal * Math.sin(Math.PI * u) + s * amp * (petal ? Math.sin(Math.PI * u) : 1);
+    const r = r0 + s * amp;
     const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
     i ? g.lineTo(x, y) : g.moveTo(x, y);
   }
@@ -269,46 +260,6 @@ function halo(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P:
     waveRing(g, w, 0, cx, cy, R * (0.72 + i * 0.045), R * 0.45, -Math.PI / 2, TAU - Math.PI / 2, true, 512);
     g.stroke();
   });
-  // the still stone in the middle
-  g.globalAlpha = 1;
-  g.shadowBlur = 0;
-  g.fillStyle = P.ink;
-  g.beginPath();
-  g.ellipse(cx, cy, R * 0.14, R * 0.11, -0.3, 0, TAU);
-  g.fill();
-  g.restore();
-}
-
-function mandala(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P: Palette, f: RippleFrame, opts: RippleOptions, mem: RippleMemory) {
-  backdrop(g, cx, cy, R, P, f.now, 4);
-  const cs = colours(f, opts, P);
-  const n = Math.max(2, Math.min(16, Math.round(opts.symmetry)));
-  const turn = f.now * 0.12;
-  g.save();
-  g.lineJoin = 'round';
-  if (P.glow > 0) g.shadowBlur = 8 * P.glow;
-  mem.waves.forEach((w, h) => {
-    const fade = h === 0 ? 0.9 : 0.4 * (1 - h / mem.waves.length);
-    for (let s = 0; s < n; s++) {
-      const c = cs[s % cs.length];
-      g.strokeStyle = c;
-      if (P.glow > 0) g.shadowColor = c;
-      g.globalAlpha = fade;
-      g.lineWidth = h === 0 ? 1.5 : 1;
-      const a0 = turn + (s / n) * TAU, a1 = turn + ((s + 1) / n) * TAU;
-      // each petal is the wave out and back across its slice; inner and outer petals counter-turn
-      waveRing(g, w, 0, cx, cy, R * (0.5 + h * 0.03), R * 0.32, a0, a1, true, 160, R * 0.42);
-      g.stroke();
-      waveRing(g, w, 0, cx, cy, R * 0.22, R * 0.16, -a0 + Math.PI / n, -a1 + Math.PI / n, true, 120, R * 0.2);
-      g.globalAlpha = fade * 0.6;
-      g.stroke();
-    }
-  });
-  g.globalAlpha = 0.9;
-  g.fillStyle = cs[0];
-  g.beginPath();
-  g.arc(cx, cy, 3.5, 0, TAU);
-  g.fill();
   g.restore();
 }
 
@@ -350,54 +301,6 @@ function phase(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P
   g.restore();
 }
 
-// ---------- bloom: the spectrum as petals ----------
-
-function bloom(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, P: Palette, f: RippleFrame, opts: RippleOptions, mem: RippleMemory) {
-  backdrop(g, cx, cy, R, P, f.now, 4);
-  const spec = f.spectrum;
-  const bars = 72;
-  if (mem.peaks.length !== bars) mem.peaks = new Float32Array(bars);
-  const cs = colours(f, opts, P);
-  // 40 Hz … 12 kHz on a log scale: every octave gets the same room
-  const binOf = (hz: number) => Math.round((hz / (f.sampleRate / 2)) * (spec ? spec.length : 1024));
-  const levels = new Float32Array(bars);
-  for (let i = 0; i < bars; i++) {
-    const hz0 = 40 * Math.pow(300, i / bars), hz1 = 40 * Math.pow(300, (i + 1) / bars);
-    let m = 0;
-    if (spec) for (let b = binOf(hz0); b <= Math.max(binOf(hz0), binOf(hz1)); b++) m = Math.max(m, spec[b] ?? 0);
-    levels[i] = m / 255;
-    mem.peaks[i] = Math.max(levels[i], mem.peaks[i] - (opts.trails ? 0.008 : 0.03));
-  }
-  g.save();
-  if (P.glow > 0) g.shadowBlur = 10 * P.glow;
-  const inner = R * 0.28;
-  // mirrored left and right, lows at the top: a flower that opens with the sound
-  for (const side of [1, -1]) {
-    for (let i = 0; i < bars; i++) {
-      const a = -Math.PI / 2 + side * ((i + 0.5) / bars) * Math.PI;
-      const v = Math.pow(levels[i], 1.4);
-      const c = cs[Math.floor((i / bars) * cs.length) % cs.length];
-      g.strokeStyle = c;
-      if (P.glow > 0) g.shadowColor = c;
-      g.globalAlpha = 0.35 + 0.6 * v;
-      g.lineWidth = Math.max(1.5, ((TAU * inner) / (bars * 2)) * 0.7);
-      g.lineCap = 'round';
-      g.beginPath();
-      g.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
-      g.lineTo(cx + Math.cos(a) * (inner + 2 + v * R * 0.95), cy + Math.sin(a) * (inner + 2 + v * R * 0.95));
-      g.stroke();
-      // the peak, held a moment
-      const p = Math.pow(mem.peaks[i], 1.4);
-      g.globalAlpha = 0.8;
-      g.fillStyle = c;
-      g.beginPath();
-      g.arc(cx + Math.cos(a) * (inner + 6 + p * R * 0.95), cy + Math.sin(a) * (inner + 6 + p * R * 0.95), 1.6, 0, TAU);
-      g.fill();
-    }
-  }
-  g.restore();
-}
-
 /**
  * Draw one frame centred in a W × H canvas, below `top` px of header.
  * Returns false when there is nothing live to show (silent), so the caller can say so.
@@ -431,14 +334,8 @@ export function drawRipple(g: CanvasRenderingContext2D, W: number, H: number, to
     case 'halo':
       halo(g, cx, cy, R, P, f, opts, mem);
       break;
-    case 'bloom':
-      bloom(g, cx, cy, R, P, f, opts, mem);
-      break;
     case 'phase':
       phase(g, cx, cy, R, P, f, opts, mem);
-      break;
-    case 'mandala':
-      mandala(g, cx, cy, R, P, f, opts, mem);
       break;
   }
   return !silent;

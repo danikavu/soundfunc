@@ -3,12 +3,12 @@ import { engine } from '../engine/audio';
 import { CONSTANTS, FUNCTIONS } from '../engine/expr';
 import { PITCH_MODES, midiToName, type PitchMode } from '../engine/music';
 import { CHANNEL_PALETTE, TRACK_COLORS } from '../engine/presets';
-import { DRUMS, STRETCH_MAX, STRETCH_MIN, WAVEFORMS, isDrum, keyLabel, patternBeats, stretchOf, voiceLabel, type PlayMode, type Waveform } from '../engine/project';
-import { readVoiceFile, useLibrary, voiceFile, voiceOf, wearsVoice } from '../state/library';
+import { DRUMS, SONG_DEFAULTS, STRETCH_MAX, STRETCH_MIN, TRACK_DEFAULTS, WAVEFORMS, isDrum, keyLabel, patternBeats, stretchOf, voiceLabel, type PlayMode, type Track, type Waveform } from '../engine/project';
+import { readVoiceFile, useLibrary, voiceFile, voiceOf, wearsVoice, type Voice } from '../state/library';
 import { mutateTimbre } from '../engine/mutate';
 import { DRUM_BASE, PATCHES, VOICE_HINTS as SYNTH_HINTS, cutoffHz, surprise, type DrumParams, type FilterKind, type MelodicVoice, type OscWave, type SynthParams } from '../engine/synth';
 import { toast } from './TopBar';
-import { TIMBRE_PRESETS, timbreSamples } from '../engine/timbre';
+import { WAVE_VOICES, timbreSamples, waveVoiceOf, type WaveVoice } from '../engine/timbre';
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Info, NumberField, Seg, Slider, Stepper, TextField, download, fileSafe, getRender } from './ui';
 import { StepPicker } from './StepPicker';
@@ -23,38 +23,10 @@ type Tab = 'channel' | 'sound' | 'notes' | 'guide';
 function TimbreEditor() {
   const track = useSelectedTrack()!;
   const { updateTrack, checkpoint } = useStore();
-  const chaos = useStore((s) => s.chaos);
   const samples = timbreSamples(track.timbre, 128);
   const d = samples ? Array.from(samples, (v, i) => `${i ? 'L' : 'M'}${((i / 127) * 200).toFixed(1)},${(22 - v * 18).toFixed(1)}`).join('') : '';
-  const unlocked = !!track.timbreUnlocked;
   return (
-    <div style={{ marginTop: 12 }}>
-      {/* the wave has its own Mutate; the channel's Mutate (R / ⇧R) leaves it alone unless it is unlocked */}
-      <div className="row wave-tools">
-        <button
-          className="btn small"
-          onClick={() => {
-            const timbre = mutateTimbre(track.timbre, chaos);
-            if (!timbre) return toast('No new wave found from this one — try again, or turn Mutate towards Wild');
-            updateTrack(track.id, { timbre });
-            toast('Mutated the wave — ⌘Z to bring the old one back');
-          }}
-          title="Mutate wave: a new f(p) grown from this one (only the wave changes; how far follows Mutate’s Safe ↔ Wild)"
-        >
-          <Icon name="dice" size={12} /> Mutate wave
-        </button>
-        <button
-          className={`btn small ghost wave-lock ${unlocked ? '' : 'on'}`}
-          aria-pressed={!unlocked}
-          onClick={() => {
-            updateTrack(track.id, { timbreUnlocked: !unlocked });
-            toast(unlocked ? 'Wave locked — Mutate leaves it as it is' : 'Wave unlocked — Mutate (R / ⇧R) may change it too');
-          }}
-          title={unlocked ? 'Unlocked: Mutate (R / ⇧R) may change this wave too — click to lock it' : 'Locked: Mutate (R / ⇧R) leaves this wave alone — click to let it change the wave too'}
-        >
-          <Icon name={unlocked ? 'unlock' : 'lock'} size={12} /> {unlocked ? 'Unlocked' : 'Locked'}
-        </button>
-      </div>
+    <div style={{ marginTop: 10 }}>
       <div className="field">
         <span>
           One cycle of the wave, <code className="mono">f(p)</code> with p = 0 → 1
@@ -70,16 +42,29 @@ function TimbreEditor() {
         <line x1="0" x2="200" y1="22" y2="22" stroke="var(--line)" strokeDasharray="2 4" />
         {d && <path d={d} fill="none" stroke="var(--wave-preview)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
       </svg>
-      <div className="seg" style={{ marginTop: 6 }}>
-        {TIMBRE_PRESETS.map((t) => (
-          <button key={t.label} className={t.formula === track.timbre ? 'on' : ''} onClick={() => updateTrack(track.id, { timbre: t.formula })}>
-            {t.label}
+      {/* the Sonic Menagerie: each a whole voice — wave, envelope and Shape */}
+      <div className="wave-voices">
+        {WAVE_VOICES.map((v) => (
+          <button
+            key={v.id}
+            className={v.timbre === track.timbre ? 'on' : ''}
+            onClick={() => {
+              updateTrack(track.id, wearWaveVoice(v));
+              toast(`${v.name} — ${v.hint.split(' — ')[0]}. ⌘Z to go back`);
+            }}
+            title={`${v.name}: ${v.hint}`}
+          >
+            <WaveGlyph formula={v.timbre} color="currentColor" />
+            <span>{v.label}</span>
           </button>
         ))}
       </div>
     </div>
   );
 }
+
+/** everything a wave voice sets on a channel */
+const wearWaveVoice = (v: WaveVoice) => ({ waveform: 'custom' as Waveform, timbre: v.timbre, attack: v.attack, release: v.release, synth: { ...v.synth } });
 
 function WaveGlyph({ formula, color }: { formula: string; color: string }) {
   const s = timbreSamples(formula, 48);
@@ -105,6 +90,27 @@ const VOICE_HINTS: Record<string, string> = {
 };
 const GLYPH_FORMULA: Partial<Record<Waveform, string>> = { sine: 'sin(tau*p)', triangle: 'tri(p)', square: 'sqr(p)', sawtooth: 'saw(p)' };
 
+type TrackPatch = Parameters<ReturnType<typeof useStore.getState>['updateTrack']>[1];
+/**
+ * Every voice a channel can step through with ‹ ›, in the Voice menu's order: a drum channel
+ * through the drums; a melodic one through your voices, the Sonic Menagerie, then the stock voices.
+ */
+function voiceSteps(track: Track, voices: Voice[]): { key: string; label: string; patch: TrackPatch }[] {
+  if (isDrum(track.waveform)) return (Object.keys(DRUMS) as Waveform[]).map((w) => ({ key: w, label: voiceLabel(w), patch: { waveform: w, synth: undefined } }));
+  return [
+    ...voices.filter((v) => !isDrum(v.waveform)).map((v) => ({ key: `mine:${v.id}`, label: v.name, patch: { waveform: v.waveform, timbre: v.timbre, attack: v.attack, release: v.release, synth: v.synth ? { ...v.synth } : undefined } })),
+    ...WAVE_VOICES.map((v) => ({ key: `menagerie:${v.id}`, label: v.name, patch: wearWaveVoice(v) })),
+    ...(Object.keys(WAVEFORMS) as Waveform[]).map((w) => ({ key: w, label: voiceLabel(w), patch: { waveform: w, synth: undefined } })),
+  ];
+}
+/** where the channel is in that list: the voice it wears, else its plain voice */
+function voiceStepAt(track: Track, voices: Voice[]): string {
+  const mine = voices.find((v) => wearsVoice(track, v));
+  if (mine) return `mine:${mine.id}`;
+  const m = waveVoiceOf(track);
+  return m ? `menagerie:${m.id}` : track.waveform;
+}
+
 /** One dropdown for the sound: melodic voices, drums, and voices you saved. */
 function VoicePicker() {
   const track = useSelectedTrack()!;
@@ -114,14 +120,15 @@ function VoicePicker() {
   const glyph = (w: Waveform, timbre?: string) =>
     w === 'custom' && timbre ? <WaveGlyph formula={timbre} color="currentColor" /> : GLYPH_FORMULA[w] ? <WaveGlyph formula={GLYPH_FORMULA[w]!} color="currentColor" /> : <span className={`voice-dot ${isDrum(w) ? 'drum' : ''}`} />;
   const mine = voices.find((v) => wearsVoice(track, v));
+  const menagerie = mine ? undefined : waveVoiceOf(track);
   return (
     <Dropdown
       label="Voice"
       value={
         <>
           <span className="dropdown-glyph">{glyph(track.waveform, track.timbre)}</span>
-          <b>{mine ? mine.name : voiceLabel(track.waveform)}</b>
-          <small>{mine ? `my voice · ${voiceLabel(track.waveform)}` : VOICE_HINTS[track.waveform]}</small>
+          <b>{mine ? mine.name : menagerie ? menagerie.name : voiceLabel(track.waveform)}</b>
+          <small>{mine ? `my voice · ${voiceLabel(track.waveform)}` : menagerie ? menagerie.hint.split(' — ')[0] : VOICE_HINTS[track.waveform]}</small>
         </>
       }
       groups={[
@@ -134,7 +141,18 @@ function VoicePicker() {
             glyph: glyph(v.waveform, v.timbre),
             selected: mine?.id === v.id,
             onSelect: () => up({ waveform: v.waveform, timbre: v.timbre, attack: v.attack, release: v.release, synth: v.synth ? { ...v.synth } : undefined }),
-            onDelete: () => confirm(`Delete the voice “${v.name}”? Channels using it keep their sound.`) && deleteVoice(v.id),
+            onDelete: () => (deleteVoice(v.id), toast(`Deleted the voice “${v.name}” — channels using it keep their sound`)),
+          })),
+        },
+        {
+          title: 'Sonic Menagerie',
+          items: WAVE_VOICES.map((v) => ({
+            key: `menagerie:${v.id}`,
+            label: v.name,
+            hint: v.hint,
+            glyph: glyph('custom', v.timbre),
+            selected: menagerie?.id === v.id,
+            onSelect: () => up(wearWaveVoice(v)),
           })),
         },
         {
@@ -144,7 +162,7 @@ function VoicePicker() {
             label: WAVEFORMS[w as keyof typeof WAVEFORMS],
             hint: VOICE_HINTS[w],
             glyph: glyph(w, w === 'custom' ? track.timbre : undefined),
-            selected: !mine && track.waveform === w,
+            selected: !mine && !menagerie && track.waveform === w,
             // a new voice starts from its own patch — the channel's changes were for the old one
             onSelect: () => up({ waveform: w, synth: undefined }),
           })),
@@ -186,9 +204,14 @@ function SoundPanel() {
   const changed = Object.keys(changes).length > 0;
   const set = (patch: Partial<SynthParams & DrumParams>, record = false) => updateTrack(track.id, { synth: { ...changes, ...patch } }, record);
   const reset = () => updateTrack(track.id, { synth: undefined });
+  // one knob back to the voice's own setting
+  const unset = (key: keyof (SynthParams & DrumParams)) => {
+    const { [key]: _gone, ...rest } = changes;
+    updateTrack(track.id, { synth: Object.keys(rest).length ? rest : undefined }, false);
+  };
   const knob = (label: string, key: keyof (SynthParams & DrumParams), min: number, max: number, value: number, format: (v: number) => string = pct, step = 0.01) => (
     <div onPointerDown={checkpoint}>
-      <Slider label={label} value={value} min={min} max={max} step={step} format={format} onChange={(v) => set({ [key]: v })} />
+      <Slider label={label} value={value} min={min} max={max} step={step} format={format} onChange={(v) => set({ [key]: v })} reset={() => unset(key)} />
     </div>
   );
 
@@ -251,12 +274,14 @@ function SoundPanel() {
       <div className="sound-tab">
         {tab === 'osc' && (
           <>
-            {p.wave !== 'custom' && (
+            {track.waveform !== 'custom' && (
               <div className="row sound-wave">
                 <Seg<OscWave>
                   value={p.wave}
                   onChange={(wave) => (checkpoint(), set({ wave }))}
                   options={[
+                    // a voice with its own wave (Koto, Mist Pad…) can go back to it
+                    ...(PATCHES[track.waveform as MelodicVoice]?.shape ? [{ value: 'custom' as OscWave, label: 'Own' }] : []),
                     { value: 'sine', label: 'Sine' },
                     { value: 'triangle', label: 'Tri' },
                     { value: 'sawtooth', label: 'Saw' },
@@ -308,12 +333,12 @@ function SoundPanel() {
         {tab === 'amp' && (
           <>
             <div onPointerDown={checkpoint}>
-              <Slider label="Attack" value={track.attack} min={0.003} max={1.5} format={secs} onChange={(attack) => updateTrack(track.id, { attack }, false)} />
+              <Slider label="Attack" value={track.attack} min={0.003} max={1.5} format={secs} onChange={(attack) => updateTrack(track.id, { attack }, false)} reset={TRACK_DEFAULTS.attack} />
             </div>
             {knob('Decay', 'decay', 0.02, 3, p.decay, secs)}
             {knob('Sustain', 'sustain', 0, 1, p.sustain)}
             <div onPointerDown={checkpoint}>
-              <Slider label="Release" value={track.release} min={0.02} max={3} format={secs} onChange={(release) => updateTrack(track.id, { release }, false)} />
+              <Slider label="Release" value={track.release} min={0.02} max={3} format={secs} onChange={(release) => updateTrack(track.id, { release }, false)} reset={TRACK_DEFAULTS.release} />
             </div>
           </>
         )}
@@ -336,6 +361,7 @@ function SoundPanel() {
               />
             </div>
             {knob('Vibrato', 'vibrato', 0, 1, p.vibrato)}
+            {knob('Wow', 'wow', 0, 1, p.wow)}
           </>
         )}
       </div>
@@ -344,16 +370,34 @@ function SoundPanel() {
 }
 
 /** Keep the current sound as a named voice — and bring voices in from, or take them out to, a file. */
-function SaveVoice() {
+/**
+ * The voice's tools, icons only, under the Voice menu: for a custom wave its own Mutate and the
+ * lock against the channel's Mutate; then save, import, export all, export this sound. Save lights
+ * up (and flashes on every change) while the sound differs from any voice you have or preset.
+ */
+function VoiceTools() {
   const track = useSelectedTrack()!;
+  const updateTrack = useStore((s) => s.updateTrack);
+  const chaos = useStore((s) => s.chaos);
   const { voices, saveVoice, importVoices } = useLibrary();
   const [naming, setNaming] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // a stock voice with nothing changed is already in the Voice menu: nothing to save
   const savable = track.waveform === 'custom' || Object.keys(track.synth ?? {}).length > 0;
+  // the saved voice this channel sounds like, if any — its name is the one you gave it
+  const worn = voices.find((v) => wearsVoice(track, v));
+  // changed from every preset and saved voice: worth saving
+  const dirty = savable && !worn && !waveVoiceOf(track);
+  const sound = JSON.stringify([track.waveform, track.timbre, track.attack, track.release, track.synth]);
+  const custom = track.waveform === 'custom';
+  const unlocked = !!track.timbreUnlocked;
+  const fresh = () => {
+    const preset = WAVE_VOICES.find((v) => v.timbre === track.timbre);
+    return track.waveform === 'custom' ? (preset?.name ?? (track.name.trim() || 'My wave')) : voiceLabel(track.waveform);
+  };
   const suggest = () => {
-    const preset = TIMBRE_PRESETS.find((p) => p.formula === track.timbre);
-    const base = track.waveform === 'custom' ? (preset?.label ?? 'My wave') : voiceLabel(track.waveform);
+    if (worn) return worn.name;
+    const base = fresh();
     let name = base, i = 2;
     while (voices.some((v) => v.name === name)) name = `${base} ${i++}`;
     return name;
@@ -369,14 +413,70 @@ function SaveVoice() {
   if (naming === null)
     return (
       <div className="row voice-tools">
-        {savable && (
-          <button className="btn small ghost" onClick={() => setNaming(suggest())} title="Keep this sound — waveform, custom f(p), attack, release, and its Shape settings">
-            <Icon name="save" size={13} /> Save voice
-          </button>
+        <span className="row voice-tool-group">
+          {([-1, 1] as const).map((dir) => (
+            <button
+              key={dir}
+              className="icon-btn voice-step"
+              onClick={() => {
+                const list = voiceSteps(track, voices);
+                const at = list.findIndex((x) => x.key === voiceStepAt(track, voices));
+                const next = list[(Math.max(0, at) + dir + list.length) % list.length];
+                updateTrack(track.id, next.patch);
+                toast(next.label);
+              }}
+              title={dir < 0 ? 'Previous voice' : 'Next voice'}
+              aria-label={dir < 0 ? 'Previous voice' : 'Next voice'}
+            >
+              {dir < 0 ? '<' : '>'}
+            </button>
+          ))}
+        </span>
+        {custom && (
+          <span className="row voice-tool-group">
+            <button
+              className="icon-btn"
+              onClick={() => {
+                if (track.locked) return toast('This channel is locked — unlock it (the padlock beside M / S) to mutate its wave');
+                const timbre = mutateTimbre(track.timbre, chaos);
+                if (!timbre) return toast('No new wave found from this one — try again, or turn Mutate towards Wild');
+                updateTrack(track.id, { timbre });
+                toast('Mutated the wave — ⌘Z to bring the old one back');
+              }}
+              title="Mutate wave: a new f(p) grown from this one (only the wave changes; how far follows Mutate’s Safe ↔ Wild)"
+              aria-label="Mutate wave"
+            >
+              <Icon name="dice" size={14} />
+            </button>
+            <button
+              className={`icon-btn wave-lock ${unlocked ? '' : 'on'}`}
+              aria-pressed={!unlocked}
+              onClick={() => {
+                updateTrack(track.id, { timbreUnlocked: !unlocked });
+                toast(unlocked ? 'Wave locked — Mutate leaves it as it is' : 'Wave unlocked — Mutate (R / ⇧R) may change it too');
+              }}
+              title={unlocked ? 'Unlocked: Mutate (R / ⇧R) may change this wave too — click to lock it' : 'Locked: Mutate (R / ⇧R) leaves this wave alone — click to let it change the wave too'}
+              aria-label={unlocked ? 'Wave unlocked' : 'Wave locked'}
+            >
+              <Icon name={unlocked ? 'unlock' : 'lock'} size={14} />
+            </button>
+          </span>
         )}
-        <span className="row voice-files">
+        <span className="row voice-tool-group">
+          {savable && (
+            <button
+              // a new key on every change while unsaved restarts the flash
+              key={dirty ? sound : 'saved'}
+              className={`icon-btn voice-save ${dirty ? 'dirty' : ''}`}
+              onClick={() => setNaming(suggest())}
+              title={dirty ? 'Changed — save this sound as a voice (waveform, f(p), attack, release and its Shape)' : 'Save this sound as a voice (waveform, f(p), attack, release and its Shape)'}
+              aria-label={dirty ? 'Save voice (changed)' : 'Save voice'}
+            >
+              <Icon name="save" size={14} />
+            </button>
+          )}
           <button className="icon-btn" onClick={() => fileRef.current?.click()} title="Import voices from a .json file — they join My voices in the Voice menu" aria-label="Import voices">
-            <Icon name="upload" size={13} />
+            <Icon name="upload" size={14} />
           </button>
           <button
             className="icon-btn"
@@ -385,19 +485,19 @@ function SaveVoice() {
             title={voices.length ? `Export all ${voices.length} of your voices as one file` : 'Save a voice first — then you can export your voices'}
             aria-label="Export all voices"
           >
-            <Icon name="download" size={13} />
+            <Icon name="download" size={14} />
           </button>
           {savable && (
             <button
               className="icon-btn"
               onClick={() => {
-                const name = suggest();
-                download(`${fileSafe(name)}.soundfunc-voice.json`, JSON.stringify(voiceFile([voiceOf(track, name)]), null, 2), 'application/json');
+                const voice = worn ?? voiceOf(track, fresh());
+                download(`${fileSafe(voice.name)}.soundfunc-voice.json`, JSON.stringify(voiceFile([voice]), null, 2), 'application/json');
               }}
-              title="Export this sound as a voice file (without saving it)"
+              title={worn ? `Export “${worn.name}” as a voice file` : 'Export this sound as a voice file (without saving it)'}
               aria-label="Export this sound"
             >
-              <Icon name="send" size={13} />
+              <Icon name="send" size={14} />
             </button>
           )}
         </span>
@@ -642,14 +742,14 @@ function ChannelTab() {
                   ]}
                 />
               </div>
-              <Slider label="Portamento" value={track.glide} min={0} max={0.5} format={(v) => `${Math.round(v * 1000)}ms`} onChange={(g) => up({ glide: g })} />
+              <Slider label="Portamento" value={track.glide} min={0} max={0.5} format={(v) => `${Math.round(v * 1000)}ms`} onChange={(g) => up({ glide: g })} reset={TRACK_DEFAULTS.glide} />
             </>
           )}
         </>
       )}
 
       <div className="eyebrow">Feel</div>
-      {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} />}
+      {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} reset={TRACK_DEFAULTS.swing} />}
       {drum ? (
         <p className="muted row" style={{ fontSize: 11, gap: 6 }}>
           Drum channel
@@ -677,7 +777,7 @@ function ChannelTab() {
       )}
 
       <div className="eyebrow">Export</div>
-      <Slider label="Loops" value={project.song.exportLoops} min={1} max={32} step={1} format={(v) => `×${v}`} onChange={(exportLoops) => setSong({ exportLoops })} />
+      <Slider label="Loops" value={project.song.exportLoops} min={1} max={32} step={1} format={(v) => `×${v}`} onChange={(exportLoops) => setSong({ exportLoops })} reset={SONG_DEFAULTS.exportLoops} />
       <div className="eyebrow-sub row" style={{ gap: 6, marginTop: 14, alignItems: 'center' }}>
         <span className="muted" style={{ fontSize: 11.5 }}>Pitch-bend range</span>
         <Info>
@@ -718,7 +818,7 @@ function ChannelTab() {
           <Icon name="copy" size={12} /> Duplicate
         </button>
         <button className="btn small ghost" onClick={() => removeTrack(track.id)}>
-          <Icon name="trash" size={12} /> Remove
+          <Icon name="close" size={12} /> Remove
         </button>
       </div>
     </>
@@ -738,15 +838,15 @@ function SoundTab() {
         <b>{track.name}</b>
       </div>
       <div className="eyebrow">Mix</div>
-      <Slider label="Volume" value={track.volume} min={0} max={1} onChange={(volume) => up({ volume })} />
-      <Slider label="Pan" value={track.pan} min={-1} max={1} format={(v) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `L${Math.round(-v * 100)}` : `R${Math.round(v * 100)}`)} onChange={(pan) => up({ pan })} />
-      <Slider label="Reverb" value={track.send} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(send) => up({ send })} />
+      <Slider label="Volume" value={track.volume} min={0} max={1} onChange={(volume) => up({ volume })} reset={TRACK_DEFAULTS.volume} />
+      <Slider label="Pan" value={track.pan} min={-1} max={1} format={(v) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `L${Math.round(-v * 100)}` : `R${Math.round(v * 100)}`)} onChange={(pan) => up({ pan })} reset={TRACK_DEFAULTS.pan} />
+      <Slider label="Reverb" value={track.send} min={0} max={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(send) => up({ send })} reset={TRACK_DEFAULTS.send} />
 
       <div className="eyebrow">Voice</div>
       <VoicePicker />
+      <VoiceTools />
       {track.waveform === 'custom' && <TimbreEditor />}
       <SoundPanel />
-      <SaveVoice />
 
     </>
   );

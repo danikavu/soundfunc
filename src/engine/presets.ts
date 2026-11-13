@@ -204,7 +204,7 @@ const ROOT = 'wrap(h, -3, 4)';
 const WALKING_BASS = voice('Walking bass', 'triangle', `${ROOT} + pick(n, 0, 2, 0, 4, 0, 5, 0, 2)`, '0.72 + 0.12 * (n % 2 == 0)', { length: 0.95 }, {
   stepBeats: 1, steps: 8, octave: 2, attack: 0.005, release: 0.12, volume: 0.8, send: 0.15,
 });
-const RHODES_COMP = voice('Rhodes comp', 'bell', voicedPitch(4), 'pick(n % 8, 0.55, 0, 0, 0.42, 0.55, 0, 0, 0.35) * (0.85 + 0.15 * rand(n + 16k, 8))', {
+const RHODES_COMP = voice('Rhodes comp', 'keys', voicedPitch(4), 'pick(n % 8, 0.55, 0, 0, 0.42, 0.55, 0, 0, 0.35) * (0.85 + 0.15 * rand(n + 16k, 8))', {
   chord: 4, inversion: voicedInversion(4), length: 1.2, strum: 0.015,
 }, { stepBeats: 0.5, steps: 16, octave: 4, swing: 0.33, volume: 0.5, send: 0.55 });
 const BOSSA_GUITAR = voice('Nylon guitar', 'pluck', voicedPitch(4), '0.48 * bits(pick(floor(n / 16), 0x9228, 0x2924), n)', {
@@ -1327,39 +1327,53 @@ export const KITS: Kit[] = [
     id: 'boombap',
     name: 'Boom Bap',
     description:
-      '90 bpm, head-nod hip-hop. A kick that skips around the backbeat, a fat snare with ghost notes, lazy swung hats, a sub that lands with the kick, and dusty 7th chords on the harmony — the keys breathe with a sidechain Curve.',
+      '90 bpm, head-nod hip-hop in A minor, i–VI–iv–v. A saturated kick that skips around the backbeat, a cracking snare with a rim layered on it and ghost notes that come and go, dusty swung hats, a bass with enough harmonics to hear on a phone, worn Rhodes sevenths breathing with a sidechain Curve, and a filtered horn chop closing every second bar.',
     song: { bpm: 90, root: 9, scale: 'minor', harmony: 'pick(bar, 0, 5, 3, 4)' },
     tracks: [
-      drum('Kick', 'kick', 32, `${BOOM_KICK} * (0.88 + 0.1 * rand(n + 32k, 3))`, { volume: 0.95, swing: 0.1 }),
-      drum('Snare', 'snare', 32, 'max(every(n, 8, 4), 0.28 * bits(pick(floor(n / 16), 0x0001, 0x0101), n))', { volume: 0.85, send: 0.22, swing: 0.1 }),
-      drum('Hats', 'hat', 32, 'every(n, 2) * (0.45 + 0.3 * every(n, 4) + 0.12 * rand(n + 32k, 5))', { swing: 0.16, volume: 0.5 }),
-      drum('Open hat', 'openhat', 32, 'n % 32 == 30 ? 0.42 : 0', { swing: 0.16, volume: 0.45 }),
-      voice('Sub', 'sine', 'h', `0.85 * ${BOOM_KICK}`, { length: 3 }, { octave: 2, steps: 32, volume: 0.75, attack: 0.005, release: 0.18, swing: 0.1, send: 0.05 }),
+      drum('Kick', 'kick', 32, `${BOOM_KICK} * (0.86 + 0.12 * rand(n + 32k, 3))`, { volume: 0.95, swing: 0.1, synth: { tone: -0.1, decay: 1.15, drive: 0.35 } }),
+      drum('Snare', 'snare', 32, 'max(0.95 * every(n, 8, 4), 0.2 * bits(pick(floor(n / 16), 0x0041, 0x0105), n) * chance(n + 32k, 0.75, 3))', {
+        volume: 0.82, send: 0.2, swing: 0.1, synth: { tone: 0.05, decay: 1.25, drive: 0.3 },
+      }),
+      drum('Rim', 'rim', 32, '0.5 * every(n, 8, 4)', { volume: 0.35, send: 0.15, swing: 0.1, synth: { tone: 0.2 } }),
+      drum('Hats', 'hat', 32, 'every(n, 2) * (0.38 + 0.3 * every(n, 4) + 0.1 * rand(n + 32k, 5)) + 0.16 * (n % 8 == 7) * chance(n + 32k, 0.5, 6)', {
+        swing: 0.16, volume: 0.48, pan: 0.12, synth: { tone: -0.35, decay: 0.85 },
+      }),
+      drum('Open hat', 'openhat', 32, 'n % 32 == 30 ? 0.38 : 0', { swing: 0.16, volume: 0.4, pan: 0.12, synth: { tone: -0.3 } }),
+      voice('Bass', 'custom', ROOT, `0.85 * ${BOOM_KICK}`, { length: 3 }, {
+        timbre: 'sin(tau*p) + 0.32*sin(2*tau*p) + 0.12*sin(3*tau*p) + 0.04*sin(4*tau*p)',
+        octave: 2, steps: 32, volume: 0.72, attack: 0.005, release: 0.16, swing: 0.1, send: 0.04,
+        synth: { filter: 'lowpass', cutoff: 0.34, resonance: 0.18, envAmount: 0.25, envDecay: 0.12, keyTrack: 0.3, decay: 0.6, sustain: 0.75, drive: 0.3, sub: 0.25 },
+      }),
       {
-        name: 'Keys',
-        waveform: 'bell',
+        name: 'Rhodes',
+        waveform: 'keys',
         steps: 32,
         stepBeats: 0.25,
         octave: 4,
-        volume: 0.5,
-        send: 0.6,
+        volume: 0.48,
+        send: 0.45,
         swing: 0.16,
-        attack: 0.01,
-        release: 0.9,
+        attack: 0.008,
+        release: 0.7,
+        synth: { cutoff: 0.5, wow: 0.4, drive: 0.18, chorus: 0.42, delay: 0.1 },
         graph: wire(
           {
-            pitch: ['expr', { formula: 'h' }],
-            hit: ['expr', { formula: 'bits(pick(floor(n / 16), 0x8202, 0x8020), n)' }],
+            pitch: ['expr', { formula: voicedPitch(4) }],
+            hit: ['expr', { formula: 'bits(pick(floor(n / 16), 0x8202, 0x8020), n) * (0.9 + 0.1 * rand(n + 32k, 7))' }],
             duck: ['curve', { points: '0:0.5:0.6 0.9:1:0 1:0.5:0', repeats: 8, lo: 0, hi: 0.7 }],
             v: ['math', { op: 'mul' }],
             chord: ['number', { value: 4, min: 1, max: 8 }],
+            inversion: ['expr', { formula: voicedInversion(4) }],
             length: ['number', { value: 6, min: 0, max: 16 }],
-            strum: ['number', { value: 0.04, min: -0.5, max: 0.5 }],
+            strum: ['number', { value: 0.035, min: -0.5, max: 0.5 }],
             out: ['output'],
           },
-          ['pitch.out>out.pitch', 'hit.out>v.a', 'duck.out>v.b', 'v.out>out.velocity', 'chord.out>out.chord', 'length.out>out.length', 'strum.out>out.strum'],
+          ['pitch.out>out.pitch', 'hit.out>v.a', 'duck.out>v.b', 'v.out>out.velocity', 'chord.out>out.chord', 'inversion.out>out.inversion', 'length.out>out.length', 'strum.out>out.strum'],
         ),
       },
+      voice('Horn chop', 'brass', voicedPitch(3), '0.5 * (n == 27) + 0.42 * (n == 30)', { chord: 3, inversion: voicedInversion(3), length: 0.55 }, {
+        steps: 32, octave: 4, attack: 0.015, release: 0.14, volume: 0.32, send: 0.3, swing: 0.1, synth: { cutoff: 0.45, wow: 0.2, drive: 0.25 },
+      }),
     ],
   },
   {
@@ -1447,7 +1461,7 @@ export const KITS: Kit[] = [
     id: 'clicks',
     name: 'Tongue Clicks',
     description:
-      '92 bpm West Coast minimalism in the spirit of the Neptunes’ tongue-click hits: almost nothing. Two-tone mouth clicks, a dry finger snap on 2 and 4, a deep kick, a sub under it and a lone synth blip. The space is the groove.',
+      '92 bpm West Coast minimalism in the spirit of the Neptunes’ tongue-click hits: almost nothing. Two-tone mouth clicks, a dry finger snap on 2 and 4, a deep driven kick with an 808 under it, and one rounded synth blip echoing into the gap. The space is the groove.',
     song: { bpm: 92, root: 1, scale: 'minor', harmony: 'pick(bar, 0, 0, 0, 3)' },
     tracks: [
       drum('Click high', 'tom', 32, '0.75 * bits(pick(floor(n / 16), 0x9228, 0x922A), n) * (0.85 + 0.15 * rand(n + 32k, 1))', {
@@ -1456,13 +1470,15 @@ export const KITS: Kit[] = [
       drum('Click low', 'tom', 32, '0.7 * bits(pick(floor(n / 16), 0x0480, 0x0490), n)', {
         tune: '17', volume: 0.55, send: 0.08, swing: 0.06, pan: 0.15, synth: { decay: 0.25, tone: 0.5 },
       }),
-      drum('Snap', 'clap', 32, '0.8 * every(n, 8, 4)', { volume: 0.6, send: 0.18, synth: { decay: 0.3, tone: 0.5 } }),
-      drum('Kick', 'kick', 32, 'bits(pick(floor(n / 16), 0x8010, 0x8012), n)', { volume: 0.85, synth: { decay: 1.6, tone: -0.3 } }),
-      voice('Sub', 'sine', ROOT, "0.8 * bits(pick(floor(n / 16), 0x8010, 0x8012), n)", { length: 3 }, {
-        steps: 32, octave: 2, volume: 0.7, attack: 0.005, release: 0.25, send: 0,
+      drum('Snap', 'clap', 32, '0.8 * every(n, 8, 4)', { volume: 0.6, send: 0.2, synth: { decay: 0.3, tone: 0.55 } }),
+      drum('Kick', 'kick', 32, 'bits(pick(floor(n / 16), 0x8010, 0x8012), n)', { volume: 0.88, synth: { decay: 1.6, tone: -0.3, drive: 0.3 } }),
+      voice('808', 'sine', ROOT, '0.82 * bits(pick(floor(n / 16), 0x8010, 0x8012), n)', { length: 3 }, {
+        steps: 32, octave: 2, volume: 0.7, attack: 0.004, release: 0.3, send: 0, synth: { drive: 0.35 },
       }),
-      voice('Blip', 'square', 'h + pick(k % 4, 4, 4, 7, 2)', '0.45 * (n % 32 == 22)', { length: 0.6 }, {
-        steps: 32, octave: 5, volume: 0.3, release: 0.12, send: 0.3, synth: { cutoff: 0.55, delay: 0.35, delayTime: 0.75 },
+      voice('Blip', 'custom', 'h + pick(k % 4, 4, 4, 7, 2)', '0.45 * (n % 32 == 22)', { length: 0.6 }, {
+        timbre: 'tanh(3*sin(tau*p)) + 0.2*sin(3*tau*p)',
+        steps: 32, octave: 5, volume: 0.32, attack: 0.003, release: 0.12, send: 0.3,
+        synth: { filter: 'lowpass', cutoff: 0.58, resonance: 0.25, envAmount: 0.4, envDecay: 0.1, keyTrack: 0.6, decay: 0.25, sustain: 0.3, chorus: 0.2, delay: 0.42, delayTime: 0.75 },
       }),
     ],
   },
@@ -1488,19 +1504,29 @@ export const KITS: Kit[] = [
     id: 'lofi',
     name: 'Rainy Window',
     description:
-      '72 bpm lo-fi: a soft, dark kick, a rim on 2 and 4, lazy swung hats, vinyl crackle, a warm detuned e-piano on IV–iii–ii–I sevenths, a round sub and a few bell notes drifting over it.',
+      '72 bpm lo-fi in C, IV–iii–ii–I sevenths. A soft, dark kick, a brushed snare with a rim under it dragged behind the beat, lazy swung hats, vinyl crackle, a worn Rhodes wavering on a tape that never quite holds pitch, a round bass, a tape pad far behind and a music box drifting over the top.',
     song: { bpm: 72, root: 0, scale: 'major', harmony: 'pick(bar, 3, 2, 1, 0)' },
     tracks: [
-      drum('Kick', 'kick', 32, '0.75 * bits(pick(floor(n / 16), 0x8020, 0x8024), n)', { swing: 0.2, volume: 0.75, synth: { tone: -0.5, decay: 0.9 } }),
-      drum('Rim', 'rim', 32, '0.6 * every(n, 8, 4)', { shift: '0.1 * every(n, 8, 4)', volume: 0.5, send: 0.4, synth: { tone: -0.3 } }),
-      drum('Hats', 'hat', 32, 'every(n, 2) * chance(n + 32k, 0.85, 2) * (0.25 + 0.15 * every(n, 4) + 0.08 * rand(n + 32k, 4))', { swing: 0.25, volume: 0.35, synth: { tone: -0.5 } }),
-      drum('Crackle', 'hat', 32, '0.05 + 0.1 * chance(n + 32k, 0.4, 9)', { ratchet: '1 + floor(3 * rand(n + 32k, 10))', volume: 0.18, pan: 0.2, send: 0, synth: { tone: 0.8, decay: 0.3 } }),
-      voice('E-piano', 'keys', voicedPitch(4), '0.5 * every(n, 16) + 0.25 * (n % 16 == 10)', { chord: 4, inversion: voicedInversion(4), length: 7, strum: 0.04 }, {
-        steps: 32, octave: 4, volume: 0.45, send: 0.55, swing: 0.2, synth: { cutoff: 0.5, vibrato: 0.25, chorus: 0.45 },
+      drum('Kick', 'kick', 32, '0.78 * bits(pick(floor(n / 16), 0x8020, 0x8024), n)', { swing: 0.2, volume: 0.78, synth: { tone: -0.55, decay: 0.95, drive: 0.15 } }),
+      drum('Snare', 'snare', 32, '0.55 * every(n, 8, 4) + 0.1 * (n % 16 == 15) * chance(n + 32k, 0.5, 2)', {
+        shift: '0.1 * every(n, 8, 4)', swing: 0.2, volume: 0.55, send: 0.35, synth: { tone: -0.55, decay: 0.9 },
       }),
-      voice('Sub', 'sine', ROOT, '0.65 * bits(pick(floor(n / 16), 0x8020, 0x8024), n)', { length: 5 }, { steps: 32, octave: 2, volume: 0.6, release: 0.3, send: 0 }),
-      voice('Bells', 'bell', 'h + pick(floor(n / 4) + k, 4, 2, 7, 4, 9, 7)', '0.35 * every(n, 8, 6) * chance(floor(n / 8) + 4k, 0.55, 12)', { length: 2 }, {
-        steps: 32, octave: 5, volume: 0.3, send: 0.75, swing: 0.25, pan: -0.25,
+      drum('Rim', 'rim', 32, '0.45 * every(n, 8, 4)', { shift: '0.1 * every(n, 8, 4)', volume: 0.38, send: 0.4, synth: { tone: -0.3 } }),
+      drum('Hats', 'hat', 32, 'every(n, 2) * chance(n + 32k, 0.85, 2) * (0.25 + 0.15 * every(n, 4) + 0.08 * rand(n + 32k, 4))', { swing: 0.25, volume: 0.35, synth: { tone: -0.6, decay: 0.7 } }),
+      drum('Crackle', 'hat', 32, '0.05 + 0.1 * chance(n + 32k, 0.4, 9)', { ratchet: '1 + floor(3 * rand(n + 32k, 10))', volume: 0.18, pan: 0.2, send: 0, synth: { tone: 0.8, decay: 0.3 } }),
+      voice('Rhodes', 'keys', voicedPitch(4), '0.5 * every(n, 16) + 0.25 * (n % 16 == 10)', { chord: 4, inversion: voicedInversion(4), length: 7, strum: 0.05 }, {
+        steps: 32, octave: 4, volume: 0.46, send: 0.55, swing: 0.2, synth: { cutoff: 0.44, wow: 0.55, drive: 0.12, chorus: 0.5, delay: 0.18 },
+      }),
+      voice('Bass', 'custom', ROOT, '0.68 * bits(pick(floor(n / 16), 0x8020, 0x8024), n)', { length: 5 }, {
+        timbre: 'sin(tau*p) + 0.18*sin(2*tau*p) + 0.05*sin(3*tau*p)',
+        steps: 32, octave: 2, volume: 0.62, attack: 0.008, release: 0.3, send: 0.03,
+        synth: { filter: 'lowpass', cutoff: 0.3, keyTrack: 0.3, decay: 0.8, sustain: 0.7, drive: 0.12, wow: 0.2 },
+      }),
+      voice('Tape pad', 'pad', voicedPitch(3), '0.24 * every(n, 32)', { chord: 3, inversion: voicedInversion(3), length: 30 }, {
+        steps: 32, octave: 3, volume: 0.26, attack: 0.9, release: 2, send: 0.7, synth: { cutoff: 0.38, wow: 0.5, chorus: 0.6 },
+      }),
+      voice('Music box', 'bell', 'h + pick(floor(n / 4) + k, 4, 2, 7, 4, 9, 7)', '0.32 * every(n, 8, 6) * chance(floor(n / 8) + 4k, 0.55, 12)', { length: 2 }, {
+        steps: 32, octave: 5, volume: 0.28, send: 0.75, swing: 0.25, pan: -0.25, synth: { cutoff: 0.62, wow: 0.35, delay: 0.35, delayTime: 0.75 },
       }),
     ],
   },
