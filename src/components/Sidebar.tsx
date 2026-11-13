@@ -408,19 +408,12 @@ export function Sidebar() {
       {pastChannels && (
         <div className="to-channels">
           <button
-            className="btn small"
+            className="icon-btn"
             onClick={() => panelRef.current?.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })}
             title="Back up to the channels"
+            aria-label="Back up to the channels"
           >
-            <Icon name="upload" size={11} /> Channels
-            <span className="to-channels-dots" aria-hidden>
-              {project.tracks
-                .filter((t) => audible.has(t.id))
-                .slice(0, 9)
-                .map((t) => (
-                  <i key={t.id} style={{ background: t.color }} />
-                ))}
-            </span>
+            <Icon name="upload" size={12} />
           </button>
         </div>
       )}
