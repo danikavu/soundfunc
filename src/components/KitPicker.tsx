@@ -40,12 +40,25 @@ export function KitPicker() {
     toast(`${replacing ? 'Updated' : 'Saved'} the kit “${name}” — ${k.tracks.length} channels, under My kits`);
   };
   const exportKits = (ks: typeof mine, file: string) => download(file, JSON.stringify(kitFile(ks), null, 2), 'application/json');
+  // Replace track (also a double-click on a kit in the list)
+  const replaceWith = (k: (typeof allKits)[number]) => {
+    addKit(k, false);
+    setOpen(false);
+    toast(`Planted ${k.name} — ⌘Z to bring your track back`);
+  };
   // one kit in the list, with export (and delete, for your own) on hover
   const kitRow = (k: (typeof allKits)[number]) => {
     const own = k.id.startsWith('mine:') ? mine.find((m) => `mine:${m.id}` === k.id) : undefined;
     return (
       <li key={k.id} className="kit-row">
-        <button className={k.id === kitId ? 'on' : ''} onMouseEnter={() => setKitId(k.id)} onFocus={() => setKitId(k.id)} onClick={() => setKitId(k.id)}>
+        <button
+          className={k.id === kitId ? 'on' : ''}
+          onMouseEnter={() => setKitId(k.id)}
+          onFocus={() => setKitId(k.id)}
+          onClick={() => setKitId(k.id)}
+          onDoubleClick={() => replaceWith(k)}
+          title="Double-click to replace the track with this kit"
+        >
           <span className="serif">{k.name}</span>
           <small>
             {k.song?.bpm ? `${k.song.bpm} bpm · ` : ''}
@@ -196,11 +209,7 @@ export function KitPicker() {
             <div className="kit-actions">
               <button
                 className="btn primary small"
-                onClick={() => {
-                  addKit(kit, false);
-                  setOpen(false);
-                  toast(`Planted ${kit.name} — ⌘Z to bring your track back`);
-                }}
+                onClick={() => replaceWith(kit)}
               >
                 Replace track
               </button>

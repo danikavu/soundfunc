@@ -625,7 +625,7 @@ body,
 /* ---------- channels ---------- */
 
 .track {
-  grid-template-columns: 38px 22px 1fr 12px;
+  grid-template-columns: auto 22px 1fr 12px;
   border-radius: var(--radius);
   border: 1px solid transparent;
 }

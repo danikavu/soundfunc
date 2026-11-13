@@ -280,6 +280,7 @@ export function Sidebar() {
   const { project, selectTrack, updateTrack, addTrack, removeTrack, duplicateTrack, setAllTracks } = useStore();
   const allMuted = project.tracks.length > 0 && project.tracks.every((t) => t.muted);
   const anySolo = project.tracks.some((t) => t.solo);
+  const allLocked = project.tracks.length > 0 && project.tracks.every((t) => t.locked);
   const selected = useSelectedTrack();
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
 
@@ -304,6 +305,14 @@ export function Sidebar() {
               onClick={() => setAllTracks('solo', !anySolo)}
             >
               S
+            </button>
+            <button
+              className={`ms lock ${allLocked ? 'on' : ''}`}
+              title={allLocked ? 'Unlock every channel — Mutate may change them again' : 'Lock every channel against Mutate'}
+              aria-label={allLocked ? 'Unlock all' : 'Lock all'}
+              onClick={() => setAllTracks('locked', !allLocked)}
+            >
+              <Icon name={allLocked ? 'lock' : 'unlock'} size={10} />
             </button>
           </div>
         )}
@@ -342,6 +351,15 @@ export function Sidebar() {
             </button>
             <button className={`ms solo ${t.solo ? 'on' : ''}`} title="Solo" aria-label={`Solo ${t.name}`} onClick={() => updateTrack(t.id, { solo: !t.solo })}>
               S
+            </button>
+            <button
+              className={`ms lock ${t.locked ? 'on' : ''}`}
+              title={t.locked ? 'Locked — Mutate leaves this channel alone. Click to unlock' : 'Lock this channel against Mutate'}
+              aria-label={`${t.locked ? 'Unlock' : 'Lock'} ${t.name}`}
+              aria-pressed={!!t.locked}
+              onClick={() => updateTrack(t.id, { locked: !t.locked })}
+            >
+              <Icon name={t.locked ? 'lock' : 'unlock'} size={10} />
             </button>
           </div>
           <span className="ch-num" style={{ background: t.color }}>

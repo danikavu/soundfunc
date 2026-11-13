@@ -3155,7 +3155,15 @@ button:focus-visible {
   gap: 1px;
 }
 .track {
-  grid-template-columns: 41px 14px 1fr auto;
+  grid-template-columns: auto 14px 1fr auto;
+}
+/* the channel's lock against Mutate, after M / S */
+.ms.lock {
+  display: inline-grid;
+  place-items: center;
+}
+.ms.lock:not(.on) {
+  opacity: 0.55;
 }
 /* a line under the + ƒ 🗑 tools */
 .tracks-head {
@@ -3210,7 +3218,8 @@ button:focus-visible {
 /* tracks: hover actions float over the row, so names get the full width */
 .track {
   position: relative;
-  grid-template-columns: 38px 12px 1fr;
+  /* M · S · lock take the room they need */
+  grid-template-columns: auto 12px 1fr;
   gap: 8px;
 }
 .track .track-actions {

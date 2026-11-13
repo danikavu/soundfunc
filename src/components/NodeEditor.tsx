@@ -130,10 +130,15 @@ export function runMutate(scope: 'track' | 'garden') {
   const { mutate, chaos } = useStore.getState();
   const r = mutate(scope);
   const mood = chaos < 0.35 ? 'harmonious' : chaos < 0.7 ? 'adventurous' : 'experimental';
+  const skipped = scope === 'garden' && r.locked ? ` (${r.locked} locked left alone)` : '';
   toast(
     r.tracks
-      ? `${scope === 'garden' ? `Mutated ${r.tracks} channels${useStore.getState().project.song.harmonyLocked ? '' : ' and the harmony'}` : 'Mutated'} · ${mood} · best of ${r.tried} candidates — ⌘Z to undo`
-      : 'Nothing to mutate — every node is locked',
+      ? `${scope === 'garden' ? `Mutated ${r.tracks} channels${skipped}${useStore.getState().project.song.harmonyLocked ? '' : ' and the harmony'}` : 'Mutated'} · ${mood} · best of ${r.tried} candidates — ⌘Z to undo`
+      : r.locked && scope === 'track'
+        ? 'This channel is locked — unlock it (the padlock beside M / S) to mutate it'
+        : r.locked
+          ? 'Nothing to mutate — every channel is locked'
+          : 'Nothing to mutate — every node is locked',
   );
 }
 

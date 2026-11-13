@@ -437,6 +437,7 @@ function VoiceTools() {
             <button
               className="icon-btn"
               onClick={() => {
+                if (track.locked) return toast('This channel is locked — unlock it (the padlock beside M / S) to mutate its wave');
                 const timbre = mutateTimbre(track.timbre, chaos);
                 if (!timbre) return toast('No new wave found from this one — try again, or turn Mutate towards Wild');
                 updateTrack(track.id, { timbre });

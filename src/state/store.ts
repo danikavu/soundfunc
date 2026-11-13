@@ -67,7 +67,7 @@ interface State {
   addKitTracks: (kit: string | Kit, trackIndexes: number[], adoptSong?: boolean) => void;
   duplicateTrack: (id: string) => void;
   /** mute / solo every track at once (one undo step) */
-  setAllTracks: (flag: 'muted' | 'solo', on: boolean) => void;
+  setAllTracks: (flag: 'muted' | 'solo' | 'locked', on: boolean) => void;
   /** change every melodic channel at once — glide, snap to scale… (drums have neither); one undo step */
   patchMelodic: (patch: Partial<Pick<Track, 'playMode' | 'quantize'>>) => void;
   /** copied nodes (with their wires and the sliders they read), ready to paste into any track */
@@ -97,7 +97,7 @@ interface State {
   setPlaying: (on: boolean) => void;
   setChaos: (chaos: number) => void;
   /** mutate the selected track, or every track plus the harmony; one undo step */
-  mutate: (scope: 'track' | 'garden') => { tracks: number; tried: number };
+  mutate: (scope: 'track' | 'garden') => { tracks: number; tried: number; locked: number };
   checkpoint: () => void;
   undo: () => void;
   redo: () => void;
@@ -273,7 +273,7 @@ export const useStore = create<State>()(
         mutateNode: (trackId, nodeId) => {
           const { project, chaos } = get();
           const t = project.tracks.find((x) => x.id === trackId);
-          if (!t) return false;
+          if (!t || t.locked) return false;
           const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
           const r = mutateOneNode(t, project.song, nodeId, chaos, seed);
           if (r.track === t) return false;
@@ -348,16 +348,20 @@ export const useStore = create<State>()(
           const targetId = selectedTrackId ?? project.tracks[0]?.id;
           let song = project.song;
           if (scope === 'garden' && chaos > 0.15 && !song.harmonyLocked) song = { ...song, harmony: mutateHarmony(song.harmony, chaos, seed) };
-          let tried = 0, changed = 0;
+          let tried = 0, changed = 0, locked = 0;
           const tracks = project.tracks.map((t, i) => {
             if (scope === 'track' && t.id !== targetId) return t;
+            if (t.locked) {
+              locked++;
+              return t;
+            }
             const r = mutateTrack(t, song, chaos, seed + i * 7919);
             tried += r.tried;
             if (r.track !== t) changed++;
             return r.track;
           });
           commit((p) => ({ ...p, song, tracks }));
-          return { tracks: changed, tried };
+          return { tracks: changed, tried, locked };
         },
         toggleTheme: () => set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
         /** snapshot before a continuous edit (typing, dragging) so it undoes as one step */

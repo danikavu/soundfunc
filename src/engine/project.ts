@@ -96,6 +96,8 @@ export interface Track {
   glide: number;
   muted: boolean;
   solo: boolean;
+  /** locked against Mutate: R / ⇧R, the per-node dice and Mutate wave all leave this channel alone */
+  locked?: boolean;
   /** this channel's changes to its voice's sound (synth settings, or drum tone / decay / drive) — on top of the voice's patch */
   synth?: Partial<SynthParams> & Partial<DrumParams>;
   /** named constants this track's formulas read, Desmos-style — each track has its own */

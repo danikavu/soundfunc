@@ -185,6 +185,7 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
   const checkpoint = useStore((s) => s.checkpoint);
   const setLocked = useStore((s) => s.setLocked);
   const mutateNode = useStore((s) => s.mutateNode);
+  const channelLocked = useStore((s) => !!s.project.tracks.find((t) => t.id === ctx?.trackId)?.locked);
   const chaos = useStore((s) => s.chaos);
   const setAudition = useStore((s) => s.setAudition);
   const applyGraphEdit = useStore((s) => s.applyGraphEdit);
@@ -246,9 +247,11 @@ export const FuncNode = memo(function FuncNode({ id, type, data }: NodeProps) {
         {def.params.length > 0 && (
           <button
             className="lock nodrag dice"
-            disabled={!!d.locked}
+            disabled={!!d.locked || channelLocked}
             title={
-              d.locked
+              channelLocked
+                ? 'The channel is locked against Mutate — unlock it beside M / S'
+                : d.locked
                 ? 'Locked — unlock to mutate it'
                 : `Mutate just this node — ${chaos < 0.35 ? 'harmonious' : chaos < 0.7 ? 'adventurous' : 'experimental'}, by the Mutate dial`
             }
