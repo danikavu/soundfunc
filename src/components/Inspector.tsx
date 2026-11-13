@@ -348,7 +348,7 @@ function SoundPanel() {
             {knob('Chorus', 'chorus', 0, 1, p.chorus)}
             {knob('Delay', 'delay', 0, 1, p.delay)}
             <div className="row sound-wave seg-tight">
-              <span className="muted" style={{ fontSize: 11.5, width: 64 }}>Delay time</span>
+              <span className="muted" style={{ fontSize: 'var(--fs-sm)', width: 64 }}>Delay time</span>
               <Seg<number>
                 value={p.delayTime}
                 onChange={(delayTime) => (checkpoint(), set({ delayTime }))}
@@ -710,7 +710,7 @@ function ChannelTab() {
     <>
       <TextField className="track-title" value={track.name} onFocus={checkpoint} onValue={(name) => updateTrack(track.id, { name }, false)} />
       <ColorRow color={track.color} onColor={(color) => up({ color })} />
-      <div className="muted" style={{ fontSize: 11 }}>
+      <div className="muted" style={{ fontSize: 'var(--fs-sm)' }}>
         {glide ? 'continuous glide' : `${render.notes.length} ${drum ? 'hits' : 'notes'}`} · {keyLabel(project.song)}
       </div>
 
@@ -751,7 +751,7 @@ function ChannelTab() {
       <div className="eyebrow">Feel</div>
       {!glide && <Slider label="Swing" value={track.swing} min={0} max={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(swing) => up({ swing })} reset={TRACK_DEFAULTS.swing} />}
       {drum ? (
-        <p className="muted row" style={{ fontSize: 11, gap: 6 }}>
+        <p className="muted row" style={{ fontSize: 'var(--fs-sm)', gap: 6 }}>
           Drum channel
           <Info>On drums, pitch tunes the hit in semitones, and ratchet turns a step into a roll.</Info>
         </p>
@@ -779,7 +779,7 @@ function ChannelTab() {
       <div className="eyebrow">Export</div>
       <Slider label="Loops" value={project.song.exportLoops} min={1} max={32} step={1} format={(v) => `×${v}`} onChange={(exportLoops) => setSong({ exportLoops })} reset={SONG_DEFAULTS.exportLoops} />
       <div className="eyebrow-sub row" style={{ gap: 6, marginTop: 14, alignItems: 'center' }}>
-        <span className="muted" style={{ fontSize: 11.5 }}>Pitch-bend range</span>
+        <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Pitch-bend range</span>
         <Info>
           A MIDI file only says how far a bend goes from −8192 to +8191; the instrument that plays it decides how many semitones that is — its
           pitch-bend range. If the two differ, bends come out bigger or smaller than you hear here (half the size when SoundFunc writes ±24 and the
@@ -795,7 +795,7 @@ function ChannelTab() {
         />
       </div>
       <div className="eyebrow-sub row" style={{ gap: 6, marginTop: 14, alignItems: 'center' }}>
-        <span className="muted" style={{ fontSize: 11.5 }}>Curves</span>
+        <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Curves</span>
         <Info>
           For the automation export (Export → MIDI + automation): glides and note bends go out as pitch bend, volume as
           expression or pressure. Simplified keeps only the points that redraw each curve when a DAW joins them with straight lines — corners stay,
@@ -860,7 +860,7 @@ function NotesTab() {
     let lo = 127, hi = 0;
     curve.midi.forEach((m, i) => curve.velocity[i] >= 0.01 && ((lo = Math.min(lo, m)), (hi = Math.max(hi, m))));
     return (
-      <p className="muted row" style={{ marginTop: 0, fontSize: 11.5, gap: 6 }}>
+      <p className="muted row" style={{ marginTop: 0, fontSize: 'var(--fs-sm)', gap: 6 }}>
         {curve.midi.length} pitch samples{lo <= hi && ` · ${midiToName(Math.round(lo))}–${midiToName(Math.round(hi))}`}
         <Info>
           {track.name} glides instead of playing notes. The CSV export holds every sample, and MIDI export writes them as pitch bend (±24 semitones) with
@@ -871,7 +871,7 @@ function NotesTab() {
   }
   return (
     <>
-      <p className="muted row" style={{ marginTop: 0, fontSize: 11.5, gap: 6 }}>
+      <p className="muted row" style={{ marginTop: 0, fontSize: 'var(--fs-sm)', gap: 6 }}>
         One pass · {keyLabel(song)}
         <Info>Every note of one pass of {track.name}. Click a row to hear it. Export the full data as CSV or MIDI from the top bar.</Info>
       </p>

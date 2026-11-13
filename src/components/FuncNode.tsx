@@ -11,14 +11,14 @@ import { docFor } from '../engine/nodeDocs';
 import type { Slider } from '../engine/project';
 
 export const CATEGORY_COLORS: Record<Category, string> = {
-  // bright enough to read on the node's dark screen
-  source: '#4fc98a',
-  math: '#6aa8ff',
-  wave: '#3fd0c4',
-  series: '#e8a93a',
-  rhythm: '#b77ae0',
-  form: '#d99a4e',
-  output: '#ff5a48',
+  // one lightness and strength, bright enough to read on the node's dark screen
+  source: '#73c076',
+  math: '#67b0f9',
+  wave: '#00c4c4',
+  series: '#d5a13c',
+  rhythm: '#be95ec',
+  form: '#e99355',
+  output: '#f18b71',
 };
 
 export interface GraphCtx {

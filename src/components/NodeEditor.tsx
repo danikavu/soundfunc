@@ -260,7 +260,7 @@ function SelectionTools() {
             if (e.key === 'Enter') commitName();
             if (e.key === 'Escape') setNaming(null);
           }}
-          style={{ width: 150, fontSize: 12 }}
+          style={{ width: 150, fontSize: 'var(--fs-md)' }}
           aria-label="Block name"
         />
         <button className="btn small primary" onClick={commitName}>

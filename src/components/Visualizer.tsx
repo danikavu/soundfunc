@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { engine } from '../engine/audio';
 import { SCALES, chordName, limitPitch, midiToName, valueToPitch } from '../engine/music';
 import { BEATS_PER_BAR, audibleTracks, harmonyAt, isDrum, patternBeats, renderTrack, scaleLength, songBeats, stretchOf, voiceLabel, type Note, type Song, type Track, type TrackRender } from '../engine/project';
@@ -127,6 +127,7 @@ export function Visualizer() {
   const selected = useSelectedTrack();
   const [mode, setMode] = useState<Mode>('score');
   const [math, setMath] = useScoreMath();
+  const onMathZoom = useCallback((zoom: number) => setMath({ zoom }), [setMath]);
   const [tip, setTip] = useState<{ x: number; y: number; text: string[] } | null>(null);
   /** Ripple's look, remembered between visits */
   const [ripple, setRippleState] = useState<RippleOptions>(loadRipple);
@@ -941,7 +942,7 @@ export function Visualizer() {
         )}
       </div>
       {/* the functions take their own row under the score, never its room */}
-      {mode === 'score' && math.open && <ScoreMath detail={math.detail} onDetail={(detail) => setMath({ detail })} />}
+      {mode === 'score' && math.open && <ScoreMath detail={math.detail} onDetail={(detail) => setMath({ detail })} zoom={math.zoom} onZoom={onMathZoom} />}
     </>
   );
 }

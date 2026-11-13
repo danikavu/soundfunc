@@ -237,8 +237,7 @@ export function normalizeProject(p: Project): Project {
       const { lengthMode: _m, lengthBeats: _l, ...rest } = t as Track & { lengthMode?: unknown; lengthBeats?: unknown };
       const track = { ...TRACK_DEFAULTS, ...rest };
       // the palette changed: an old colour becomes the new colour in the same place
-      const old = LEGACY_COLORS.indexOf(String(track.color).toLowerCase());
-      if (old >= 0) track.color = NEW_COLORS[old];
+      track.color = COLOR_MIGRATION[String(track.color).toLowerCase()] ?? track.color;
       // sliders used to belong to the whole song; each track now keeps the ones its formulas read
       if (legacySliders?.length && !t.sliders) {
         const used = formulaNames(track.graph);
@@ -249,8 +248,16 @@ export function normalizeProject(p: Project): Project {
   };
 }
 
-const LEGACY_COLORS = ['#c4583d', '#6f8a63', '#4a5d7e', '#b39561', '#8a6a7e', '#5e8a86', '#6f6a62'];
-const NEW_COLORS = ['#e2483a', '#e8a93a', '#4fc98a', '#4f86d9', '#a865d6', '#3fb7b0', '#e07a3c'];
+/* the channel colours, as they are now: seven of one lightness and strength, then twelve softer ones and five extras (presets.ts uses them) */
+export const CHANNEL_COLORS = ['#e97265', '#d08b00', '#57b35d', '#48a0f4', '#b181e5', '#00b7b8', '#e170a0'];
+export const CHANNEL_COLORS_WIDE = ['#ee96b1', '#f2979e', '#eba16e', '#cab45d', '#abbf6c', '#69cba3', '#51c6e0', '#67bff0', '#92b3fb', '#adaaf8', '#d49de0', '#e398ca', '#baa798', '#9aaebc', '#d5c66f', '#82d2a8', '#d95448'];
+/* earlier palettes, mapped colour for colour onto the current one, so saved projects match */
+const pairs = (from: string[], to: string[]) => from.map((c, i) => [c, to[i % to.length]] as const);
+const COLOR_MIGRATION: Record<string, string> = Object.fromEntries([
+  ...pairs(['#c4583d', '#6f8a63', '#4a5d7e', '#b39561', '#8a6a7e', '#5e8a86', '#6f6a62'], CHANNEL_COLORS),
+  ...pairs(['#e2483a', '#e8a93a', '#4fc98a', '#4f86d9', '#a865d6', '#3fb7b0', '#e07a3c'], CHANNEL_COLORS),
+  ...pairs(['#f06292', '#ff8a65', '#ffd54f', '#c5e15a', '#8bc34a', '#26a69a', '#4dd0e1', '#64b5f6', '#7986cb', '#9575cd', '#ce93d8', '#f48fb1', '#bcaaa4', '#b0bec5', '#d4c25a', '#7fdba8', '#ff5a5a'], CHANNEL_COLORS_WIDE),
+]);
 
 /** every name the track's formulas read */
 export function formulaNames(graph: Graph): Set<string> {

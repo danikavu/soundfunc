@@ -1,18 +1,5 @@
 :root {
-  --paper: #f3efe6;
-  --paper-2: #ece6da;
-  --paper-3: #e3dccd;
-  --card: #f8f5ee;
-  --ink: #2b2a27;
-  --ink-2: #5d5a53;
-  --ink-3: #948e82;
-  --line: #d8d0bf;
-  --line-soft: #e4ddcf;
-  --accent: #c4583d;
-  --accent-soft: rgba(196, 88, 61, 0.12);
   --moss: #6f8a63;
-  --rake: rgba(43, 42, 39, 0.055);
-  --shadow: 0 1px 2px rgba(43, 42, 39, 0.06), 0 8px 24px -12px rgba(43, 42, 39, 0.18);
   /* one family throughout: Doto, a dot-matrix face (monospaced, so it serves numbers and code too) */
   --serif: 'Doto', ui-monospace, Menlo, monospace;
   --sans: 'Doto', ui-monospace, Menlo, monospace;
@@ -31,10 +18,7 @@
   --ink-3: #7c766b;
   --line: #3a3732;
   --line-soft: #2f2d29;
-  --accent: #dc7553;
-  --accent-soft: rgba(220, 117, 83, 0.14);
   --moss: #8fab82;
-  --rake: rgba(235, 229, 216, 0.04);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -12px rgba(0, 0, 0, 0.6);
   color-scheme: dark;
 }
@@ -51,9 +35,8 @@ body,
 }
 
 body {
-  background: var(--paper);
   color: var(--ink);
-  font: 13px/1.5 var(--sans);
+  font: var(--fs-md)/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
   transition: background 0.5s var(--ease), color 0.5s var(--ease);
   overflow: hidden;
@@ -75,7 +58,6 @@ textarea {
 
 .app {
   display: grid;
-  grid-template-rows: 60px 1fr;
   height: 100%;
 }
 
@@ -91,8 +73,6 @@ textarea {
   grid-template-rows: minmax(180px, 40%) minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
-  border-left: 1px solid var(--line-soft);
-  border-right: 1px solid var(--line-soft);
 }
 
 .panel {
@@ -109,7 +89,7 @@ textarea {
 /* ---------- typography bits ---------- */
 
 .eyebrow {
-  font: 500 10px/1 var(--sans);
+  font: 500 var(--fs-xs)/1 var(--sans);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -137,7 +117,7 @@ textarea {
   text-transform: none;
 }
 .eyebrow-actions .btn {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   padding: 3px 7px;
   color: var(--ink-2);
 }
@@ -155,21 +135,18 @@ textarea {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 22px;
-  padding: 0 20px;
-  border-bottom: 1px solid var(--line-soft);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  font: 600 17px/1 var(--serif);
+  font: 600 var(--fs-xl)/1 var(--serif);
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
 .brand small {
-  font: 400 11px/1 var(--serif);
+  font: 400 var(--fs-sm)/1 var(--serif);
   color: var(--ink-3);
   letter-spacing: 0.3em;
 }
@@ -178,8 +155,7 @@ textarea {
   background: none;
   border: none;
   border-bottom: 1px solid transparent;
-  font: 400 14px/1.2 var(--serif);
-  width: 150px;
+  font: 400 var(--fs-lg)/1.2 var(--serif);
   padding: 3px 0;
   color: var(--ink-2);
   transition: border-color 0.3s var(--ease);
@@ -192,8 +168,6 @@ textarea {
 
 .transport {
   display: flex;
-  align-items: center;
-  gap: 16px;
   margin-left: auto;
 }
 
@@ -202,12 +176,6 @@ textarea {
 }
 
 .play {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: var(--paper);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -216,10 +184,6 @@ textarea {
 .play:hover {
   transform: scale(1.06);
 }
-.play.on {
-  background: var(--accent);
-  border-color: var(--accent);
-}
 
 .field-inline {
   display: flex;
@@ -227,10 +191,8 @@ textarea {
   gap: 2px;
 }
 .field-inline > span {
-  font: 500 9px/1 var(--sans);
-  letter-spacing: 0.16em;
+  font: 500 var(--fs-xs)/1 var(--sans);
   text-transform: uppercase;
-  color: var(--ink-3);
 }
 
 /* ---------- controls ---------- */
@@ -274,40 +236,21 @@ textarea {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: transparent;
   cursor: pointer;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--fs-md);
   transition: border-color 0.25s var(--ease), background 0.25s var(--ease), color 0.25s;
 }
-.btn:hover {
-  border-color: var(--ink-2);
-}
-.btn.primary {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
-}
 .btn.primary:hover {
-  background: var(--accent);
   border-color: var(--accent);
-}
-.btn.ghost {
-  border-color: transparent;
-}
-.btn.ghost:hover {
-  background: var(--paper-2);
 }
 .btn.small {
   padding: 3px 9px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .icon-btn {
   width: 26px;
   height: 26px;
-  border-radius: 50%;
   border: none;
   background: transparent;
   display: grid;
@@ -317,7 +260,6 @@ textarea {
   transition: background 0.2s, color 0.2s;
 }
 .icon-btn:hover {
-  background: var(--paper-3);
   color: var(--ink);
 }
 .icon-btn.active {
@@ -331,12 +273,12 @@ textarea {
   align-items: center;
   gap: 10px;
   margin: 8px 0;
-  font-size: 12px;
+  font-size: var(--fs-md);
   color: var(--ink-2);
 }
 .slider output {
   text-align: right;
-  font: 11px var(--mono);
+  font: var(--fs-sm) var(--mono);
   color: var(--ink-3);
 }
 input[type='range'] {
@@ -347,19 +289,22 @@ input[type='range'] {
   background: transparent;
   cursor: pointer;
 }
+/* the groove: mixed from the text colour, so it shows on a light key, a dark key and a screen alike */
 input[type='range']::-webkit-slider-runnable-track {
-  height: 1px;
-  background: var(--line);
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
 }
 input[type='range']::-moz-range-track {
-  height: 1px;
-  background: var(--line);
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
 }
 input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 11px;
   height: 11px;
-  margin-top: -5px;
+  margin-top: -4px;
   border-radius: 50%;
   background: var(--paper);
   border: 1.5px solid var(--ink);
@@ -394,7 +339,7 @@ input[type='range']:hover::-webkit-slider-thumb {
   min-width: 0;
 }
 .field > span {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--ink-3);
 }
 
@@ -405,43 +350,24 @@ input[type='range']:hover::-webkit-slider-thumb {
   gap: 4px;
 }
 .seg button {
-  border: 1px solid var(--line-soft);
-  background: transparent;
   padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   cursor: pointer;
-  color: var(--ink-2);
   transition: all 0.25s var(--ease);
 }
 .seg button:hover {
-  border-color: var(--line);
   color: var(--ink);
-}
-.seg button.on {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
 }
 
 /* ---------- sidebar ---------- */
 
 .track {
   display: grid;
-  grid-template-columns: 14px 1fr auto;
   align-items: center;
-  gap: 10px;
   padding: 9px 10px;
   margin: 0 -6px 2px;
-  border-radius: 10px;
   cursor: pointer;
   transition: background 0.25s var(--ease);
-}
-.track:hover {
-  background: var(--paper-2);
-}
-.track.selected {
-  background: var(--paper-3);
 }
 .track.dim {
   opacity: 0.45;
@@ -452,13 +378,13 @@ input[type='range']:hover::-webkit-slider-thumb {
   border-radius: 50% 50% 46% 54% / 60% 55% 45% 40%;
 }
 .track-name {
-  font: 400 14px/1.25 var(--serif);
+  font: 400 var(--fs-lg)/1.25 var(--serif);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .track-meta {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -474,20 +400,13 @@ input[type='range']:hover::-webkit-slider-thumb {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  font: 600 10px/1 var(--sans);
+  font: 600 var(--fs-xs)/1 var(--sans);
   color: var(--ink-3);
   cursor: pointer;
   transition: all 0.2s;
 }
 .ms:hover {
   background: var(--paper);
-}
-.ms.on {
-  background: var(--ink);
-  color: var(--paper);
-}
-.ms.on.solo {
-  background: var(--accent);
 }
 /* remove: takes no room until the row is hovered, then slides in beside M/S */
 .ms.remove {
@@ -519,7 +438,6 @@ input[type='range']:hover::-webkit-slider-thumb {
   padding: 8px 10px;
   margin: 0 -6px;
   width: calc(100% + 12px);
-  border-radius: 10px;
   cursor: pointer;
   transition: background 0.25s var(--ease);
 }
@@ -528,7 +446,7 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 .preset b {
   display: block;
-  font: 400 13.5px/1.3 var(--serif);
+  font: 400 var(--fs-md)/1.3 var(--serif);
 }
 /* Function presets, by group: small headers that fold */
 .preset-group-head {
@@ -542,7 +460,7 @@ input[type='range']:hover::-webkit-slider-thumb {
   border: none;
   border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
-  font: 600 10.5px/1 var(--sans, inherit);
+  font: 600 var(--fs-xs)/1 var(--sans, inherit);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-2);
@@ -550,7 +468,7 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 .preset-group-head small {
   margin-left: auto;
-  font: 400 10.5px/1 var(--mono);
+  font: 400 var(--fs-xs)/1 var(--mono);
   letter-spacing: 0;
   color: var(--ink-3);
 }
@@ -586,11 +504,8 @@ input[type='range']:hover::-webkit-slider-thumb {
   width: 76px;
   height: 20px;
 }
-.mini-score.loading {
-  opacity: 0;
-}
 .preset code {
-  font: 10.5px/1.4 var(--mono);
+  font: var(--fs-xs)/1.4 var(--mono);
   color: var(--ink-3);
 }
 
@@ -599,8 +514,6 @@ input[type='range']:hover::-webkit-slider-thumb {
 .viz {
   position: relative;
   min-height: 0;
-  border-bottom: 1px solid var(--line-soft);
-  overflow: hidden;
 }
 .viz canvas {
   position: absolute;
@@ -619,7 +532,6 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 .viz-legend h2 {
   margin: 0;
-  font: 400 20px/1 var(--serif);
 }
 .viz-tabs {
   position: absolute;
@@ -633,7 +545,7 @@ input[type='range']:hover::-webkit-slider-thumb {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 6px 9px;
-  font: 11px/1.45 var(--mono);
+  font: var(--fs-sm)/1.45 var(--mono);
   box-shadow: var(--shadow);
   white-space: nowrap;
   transform: translate(-50%, calc(-100% - 12px));
@@ -644,7 +556,6 @@ input[type='range']:hover::-webkit-slider-thumb {
 .nodes {
   position: relative;
   min-height: 0;
-  display: grid;
   grid-template-rows: auto minmax(0, 1fr);
 }
 .nodes-canvas {
@@ -652,9 +563,6 @@ input[type='range']:hover::-webkit-slider-thumb {
   min-height: 0;
 }
 .react-flow {
-  --xy-background-color: var(--paper);
-  --xy-edge-stroke: var(--ink-3);
-  --xy-edge-stroke-selected: var(--accent);
   --xy-edge-stroke-width: 1.4;
   --xy-connectionline-stroke: var(--accent);
   --xy-handle-background-color: var(--paper);
@@ -691,14 +599,10 @@ input[type='range']:hover::-webkit-slider-thumb {
   border-radius: 14px;
 }
 .fnode {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px;
   min-width: 176px;
   max-width: 260px;
-  box-shadow: var(--shadow);
   transition: border-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
-  font-size: 12px;
+  font-size: var(--fs-md);
 }
 .react-flow__node.selected .fnode {
   border-color: var(--ink-2);
@@ -718,13 +622,12 @@ input[type='range']:hover::-webkit-slider-thumb {
   border-radius: 50%;
 }
 .fnode-head b {
-  font: 600 12.5px/1 var(--serif);
+  font: 600 var(--fs-md)/1 var(--serif);
   letter-spacing: 0.03em;
   margin-right: auto;
 }
 .fnode-head .val {
-  font: 10px var(--mono);
-  color: var(--ink-3);
+  font: var(--fs-xs) var(--mono);
 }
 .fnode-body {
   padding: 2px 12px 10px;
@@ -737,7 +640,7 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 .port {
   position: relative;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--ink-2);
   line-height: 18px;
 }
@@ -754,9 +657,6 @@ input[type='range']:hover::-webkit-slider-thumb {
   transform: translate(-50%, -50%) scale(1.4);
   background: var(--accent);
   border-color: var(--accent);
-}
-.fnode .react-flow__handle.connected {
-  background: var(--ink-2);
 }
 .port.in .react-flow__handle {
   left: -12px;
@@ -776,19 +676,19 @@ input[type='range']:hover::-webkit-slider-thumb {
   margin: 5px 0;
 }
 .fnode-param > span {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--ink-3);
   white-space: nowrap;
 }
 .fnode-param .input,
 .fnode-param .select {
-  font-size: 12px;
+  font-size: var(--fs-md);
   width: 100%;
 }
 .formula {
   width: 100%;
   min-width: 190px;
-  font: 12px/1.45 var(--mono);
+  font: var(--fs-md)/1.45 var(--mono);
   background: var(--paper-2);
   border: 1px solid transparent;
   border-radius: 8px;
@@ -805,7 +705,7 @@ input[type='range']:hover::-webkit-slider-thumb {
   border-color: var(--accent);
 }
 .fnode-error {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--accent);
   margin-top: 4px;
 }
@@ -842,7 +742,7 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 .palette h4 {
   margin: 8px 6px 2px;
-  font: 500 9.5px/1 var(--sans);
+  font: 500 var(--fs-xs)/1 var(--sans);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -863,13 +763,12 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 .palette button small {
   display: block;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
 }
 
 .toolbar {
   display: flex;
-  gap: 6px;
   align-items: center;
   padding: 10px 14px;
   border-bottom: 1px solid var(--line-soft);
@@ -884,7 +783,7 @@ input[type='range']:hover::-webkit-slider-thumb {
 /* ---------- inspector ---------- */
 
 .track-title {
-  font: 400 22px/1.2 var(--serif);
+  font: 400 var(--fs-xl)/1.2 var(--serif);
   background: none;
   border: none;
   width: 100%;
@@ -898,12 +797,12 @@ input[type='range']:hover::-webkit-slider-thumb {
 .notes-table {
   width: 100%;
   border-collapse: collapse;
-  font: 11px/1.3 var(--mono);
+  font: var(--fs-sm)/1.3 var(--mono);
   font-variant-numeric: tabular-nums;
 }
 .notes-table th {
   text-align: left;
-  font: 500 9.5px/1 var(--sans);
+  font: 500 var(--fs-xs)/1 var(--sans);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -931,11 +830,11 @@ input[type='range']:hover::-webkit-slider-thumb {
 }
 
 .ref {
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   color: var(--ink-2);
 }
 .ref code {
-  font: 11px var(--mono);
+  font: var(--fs-sm) var(--mono);
   color: var(--ink);
 }
 .ref dl {
@@ -961,13 +860,11 @@ input[type='range']:hover::-webkit-slider-thumb {
   bottom: 22px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--ink);
-  color: var(--paper);
   padding: 8px 16px;
-  border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--fs-md);
   z-index: 100;
   animation: rise 0.3s var(--ease);
+  animation-name: rise-x;
 }
 
 @keyframes rise {
@@ -975,9 +872,6 @@ input[type='range']:hover::-webkit-slider-thumb {
     opacity: 0;
     transform: translateY(6px);
   }
-}
-.toast {
-  animation-name: rise-x;
 }
 @keyframes rise-x {
   from {
@@ -994,10 +888,6 @@ input[type='range']:hover::-webkit-slider-thumb {
   right: 0;
   top: calc(100% + 8px);
   z-index: 50;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
   padding: 6px;
   min-width: 210px;
   animation: rise 0.2s var(--ease);
@@ -1018,7 +908,7 @@ input[type='range']:hover::-webkit-slider-thumb {
 .menu-pop small {
   display: block;
   color: var(--ink-3);
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
 }
 .menu-pop hr {
   border: none;
@@ -1035,7 +925,7 @@ input[type='range']:hover::-webkit-slider-thumb {
 .mono,
 .input.mono {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   letter-spacing: 0.06em;
 }
 
@@ -1061,10 +951,6 @@ button:focus-visible {
   border-radius: 999px;
   box-shadow: var(--shadow);
 }
-.toolbar .mutator .btn {
-  box-shadow: none;
-  border-color: transparent;
-}
 .toolbar .mutator .btn:hover {
   background: var(--accent-soft);
   color: var(--accent);
@@ -1073,7 +959,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-md);
   color: var(--ink-3);
 }
 .chaos input {
@@ -1081,14 +967,14 @@ button:focus-visible {
 }
 .mutator .seg button {
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .nodes-hint {
   position: absolute;
   bottom: 12px;
   left: 16px;
   z-index: 5;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   pointer-events: none;
 }
 
@@ -1104,7 +990,7 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   opacity: 0.45;
   transition: opacity 0.2s var(--ease), color 0.2s, background 0.2s;
@@ -1123,7 +1009,6 @@ button:focus-visible {
   background: var(--accent-soft);
 }
 .fnode.locked {
-  border-color: var(--accent);
   box-shadow: var(--shadow), inset 3px 0 0 var(--accent);
 }
 .react-flow__node.selected .fnode.locked {
@@ -1134,7 +1019,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   color: var(--ink-3);
 }
 .lock-status b {
@@ -1146,13 +1031,10 @@ button:focus-visible {
 
 .harmony {
   display: flex;
-  align-items: flex-end;
-  gap: 4px;
 }
 .harmony .input {
   font-family: var(--mono);
-  font-size: 12px;
-  width: 170px;
+  font-size: var(--fs-md);
 }
 .harmony .select {
   width: 18px;
@@ -1184,10 +1066,6 @@ button:focus-visible {
   max-height: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  box-shadow: var(--shadow), 0 30px 80px -30px rgba(0, 0, 0, 0.35);
   animation: rise 0.3s var(--ease);
   overflow: hidden;
 }
@@ -1205,16 +1083,15 @@ button:focus-visible {
 }
 .sheet-foot {
   border-top: 1px solid var(--line-soft);
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
 }
 .sheet-track {
-  font: 400 20px/1.2 var(--serif);
+  font: 400 var(--fs-xl)/1.2 var(--serif);
   padding-right: 18px;
 }
 .sheet-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 400;
+  font-size: var(--fs-xl);
 }
 .sheet-body {
   overflow: auto;
@@ -1226,12 +1103,11 @@ button:focus-visible {
   margin-top: 10px;
 }
 .fn-track h3 {
-  font-weight: 400;
-  font-size: 18px;
+  font-size: var(--fs-xl);
   margin: 18px 0 2px;
 }
 .fn-desc {
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   margin: 10px 0 6px;
 }
 .fn-line {
@@ -1243,7 +1119,7 @@ button:focus-visible {
   border-bottom: 1px dashed var(--line-soft);
 }
 .fn-label {
-  font: 500 9.5px/1.3 var(--sans);
+  font: 500 var(--fs-xs)/1.3 var(--sans);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -1265,7 +1141,7 @@ button:focus-visible {
   color: var(--ink);
 }
 .tex-raw {
-  font: 11px var(--mono);
+  font: var(--fs-sm) var(--mono);
   color: var(--ink-3);
 }
 .fn-code {
@@ -1276,7 +1152,7 @@ button:focus-visible {
 }
 .fn-code code {
   flex: 1;
-  font: 12.5px/1.6 var(--mono);
+  font: var(--fs-md)/1.6 var(--mono);
   background: var(--paper-2);
   border-radius: 8px;
   padding: 6px 10px;
@@ -1284,7 +1160,7 @@ button:focus-visible {
 }
 .fn-pre {
   margin: 12px 0 0;
-  font: 12px/1.65 var(--mono);
+  font: var(--fs-md)/1.65 var(--mono);
   background: var(--paper);
   border: 1px solid var(--line-soft);
   border-radius: 12px;
@@ -1324,26 +1200,24 @@ button:focus-visible {
   background: var(--accent);
 }
 .garden-pop {
-  left: 0;
-  right: auto;
   width: 290px;
   max-height: 70vh;
   overflow-y: auto;
 }
 .garden-pop kbd {
   float: right;
-  font: 10.5px var(--mono);
+  font: var(--fs-xs) var(--mono);
   color: var(--ink-3);
 }
 .garden-list-head {
-  font: 500 9.5px/1 var(--sans);
+  font: 500 var(--fs-xs)/1 var(--sans);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-3);
   padding: 8px 10px 4px;
 }
 .garden-empty {
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   padding: 0 10px 6px;
   margin: 0;
 }
@@ -1358,7 +1232,7 @@ button:focus-visible {
   min-width: 0;
 }
 .garden-row .serif {
-  font-size: 14px;
+  font-size: var(--fs-lg);
 }
 .garden-row.current {
   background: var(--paper-2);
@@ -1388,7 +1262,7 @@ button:focus-visible {
   background: transparent;
   padding: 3px 4px 3px 9px;
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   color: var(--ink-2);
   cursor: pointer;
   transition: all 0.25s var(--ease);
@@ -1430,7 +1304,7 @@ button:focus-visible {
 }
 .save-voice .input {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--fs-md);
 }
 
 /* ---------- paste a function ---------- */
@@ -1446,7 +1320,7 @@ button:focus-visible {
 }
 .import-src {
   min-height: 92px;
-  font-size: 13px;
+  font-size: var(--fs-md);
   resize: vertical;
   field-sizing: fixed;
 }
@@ -1460,7 +1334,7 @@ button:focus-visible {
 .import-error,
 .import-warn {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-md);
   padding: 6px 10px;
   border-radius: 8px;
 }
@@ -1533,19 +1407,19 @@ button:focus-visible {
   background: var(--paper-2);
 }
 .ac-menu code {
-  font: 11.5px var(--mono);
+  font: var(--fs-sm) var(--mono);
   color: var(--accent);
   white-space: nowrap;
 }
 .ac-menu small {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .ac-hint {
-  font-size: 9.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
   padding: 4px 6px 2px;
   border-top: 1px solid var(--line-soft);
@@ -1556,10 +1430,6 @@ button:focus-visible {
 }
 
 /* ---------- sliders, blocks, listening ---------- */
-
-.toolbar {
-  flex-wrap: wrap;
-}
 .nodes {
   display: flex;
   flex-direction: column;
@@ -1581,7 +1451,7 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font: 500 9.5px/1 var(--sans);
+  font: 500 var(--fs-xs)/1 var(--sans);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -1596,7 +1466,7 @@ button:focus-visible {
   width: 110px;
 }
 .slider-chip output {
-  font: 11px var(--mono);
+  font: var(--fs-sm) var(--mono);
   color: var(--ink-3);
   min-width: 34px;
 }
@@ -1605,13 +1475,13 @@ button:focus-visible {
   background: var(--paper-2);
   border-radius: 6px;
   padding: 2px 7px;
-  font: 12px var(--mono);
+  font: var(--fs-md) var(--mono);
   color: var(--accent);
   cursor: text;
 }
 .slider-name-input {
   width: 80px;
-  font: 12px var(--mono);
+  font: var(--fs-md) var(--mono);
 }
 .slider-pop {
   left: 0;
@@ -1670,26 +1540,17 @@ button:focus-visible {
   gap: 8px;
   width: calc(100% + 12px);
   margin: 0 -6px;
-  padding: 10px 10px;
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  background: var(--card);
   text-align: left;
   cursor: pointer;
   transition: border-color 0.25s var(--ease), background 0.25s var(--ease);
 }
-.kit-trigger:hover,
-.kit-trigger.open {
-  border-color: var(--line);
-  background: var(--paper-2);
-}
 .kit-trigger b {
   display: block;
   font-weight: 400;
-  font-size: 14px;
+  font-size: var(--fs-lg);
 }
 .kit-trigger small {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
 }
 .kit-chevron {
@@ -1709,10 +1570,6 @@ button:focus-visible {
   /* one row no taller than the window: the kit list and the details each scroll on their own */
   grid-template-rows: minmax(0, 1fr);
   max-height: calc(100vh - 24px);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: var(--shadow), 0 24px 60px -24px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   animation: rise 0.22s var(--ease);
 }
@@ -1782,11 +1639,11 @@ button:focus-visible {
 }
 .kit-mine-empty {
   padding: 2px 10px 6px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .kit-list .kit-group-head {
   padding: 10px 10px 4px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -1811,10 +1668,10 @@ button:focus-visible {
 }
 .kit-list .serif {
   display: block;
-  font-size: 13.5px;
+  font-size: var(--fs-md);
 }
 .kit-list small {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
 }
 .kit-detail {
@@ -1826,15 +1683,14 @@ button:focus-visible {
 }
 .kit-detail h3 {
   margin: 0;
-  font-weight: 400;
-  font-size: 19px;
+  font-size: var(--fs-xl);
 }
 .kit-detail > .muted {
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   margin: 6px 0 4px;
 }
 .kit-meta {
-  font: 11px var(--mono);
+  font: var(--fs-sm) var(--mono);
   color: var(--ink-3);
   margin: 0 0 12px;
 }
@@ -1849,7 +1705,7 @@ button:focus-visible {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  font: 500 9.5px/1.3 var(--sans);
+  font: 500 var(--fs-xs)/1.3 var(--sans);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -1862,7 +1718,7 @@ button:focus-visible {
   gap: 4px;
   text-transform: none;
   letter-spacing: 0;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .kit-tracks-head input {
@@ -1891,12 +1747,12 @@ button:focus-visible {
   box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(0, 0, 0, 0.3);
 }
 .kit-track-name {
-  font-size: 12.5px;
+  font-size: var(--fs-md);
   min-width: 0;
 }
 .kit-track-name small {
   display: block;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
 }
 
@@ -1919,13 +1775,12 @@ button:focus-visible {
   padding: 2px 4px;
   background: color-mix(in srgb, var(--card) 85%, transparent);
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .viz-zoom .muted {
   padding: 0 6px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
 }
 .viz-zoom .icon-btn:disabled {
   opacity: 0.3;
@@ -1934,9 +1789,7 @@ button:focus-visible {
 
 .track-tools {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
   margin: -4px -4px 8px;
 }
 .track-tools .icon-btn:disabled {
@@ -1991,11 +1844,11 @@ button:focus-visible {
   min-width: 0;
 }
 .dropdown-value b {
-  font: 400 14px/1.2 var(--serif);
+  font: 400 var(--fs-lg)/1.2 var(--serif);
   white-space: nowrap;
 }
 .dropdown-value small {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -2022,17 +1875,13 @@ button:focus-visible {
   z-index: 40;
   max-height: 360px;
   overflow-y: auto;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
   padding: 4px;
   animation: rise 0.18s var(--ease);
   scrollbar-width: thin;
 }
 .dropdown-pop h4 {
   margin: 8px 8px 2px;
-  font: 500 9.5px/1 var(--sans);
+  font: 500 var(--fs-xs)/1 var(--sans);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -2065,11 +1914,11 @@ button:focus-visible {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-md);
   min-width: 0;
 }
 .dropdown-text small {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -2113,13 +1962,13 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--ink-3);
 }
 .step-custom .input {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fs-md);
 }
 .step-custom .input.bad {
   border-bottom-color: var(--accent);
@@ -2136,10 +1985,10 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 5px;
-  max-width: 190px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 .grid-dot {
   display: inline-block;
@@ -2153,19 +2002,12 @@ button:focus-visible {
   align-items: center;
   gap: 6px;
 }
-.grid-controls .input.num {
-  width: 40px;
-}
 .grid-times {
-  font-size: 11px;
-}
-.dropdown.compact .dropdown-field {
-  padding: 2px 8px;
-  border-radius: 8px;
-  min-width: 96px;
+  font-size: var(--fs-sm);
 }
 .dropdown.compact .dropdown-value b {
-  font-size: 13px;
+  font-size: var(--fs-md);
+  max-width: none;
 }
 .dropdown.compact .dropdown-pop {
   right: auto;
@@ -2189,22 +2031,10 @@ button:focus-visible {
 }
 .topbar {
   min-width: 0;
-  gap: 18px;
-}
-.harmony .input {
-  width: 140px;
 }
 @media (max-width: 1500px) {
   .brand small {
     display: none;
-  }
-}
-@media (max-width: 1340px) {
-  .grid-field > span {
-    max-width: 110px;
-  }
-  .harmony .input {
-    width: 110px;
   }
 }
 @media (max-width: 1360px) {
@@ -2218,11 +2048,6 @@ button:focus-visible {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-
-.input.num.grid-oct {
-  width: 34px;
 }
 
 /* ---------- a top bar that fits ---------- */
@@ -2250,14 +2075,6 @@ button:focus-visible {
   .field-inline.hide-narrow[style] {
     width: 64px !important;
   }
-  .grid-field > span {
-    max-width: 100px;
-  }
-}
-@media (max-width: 1340px) {
-  .harmony .input {
-    width: 92px;
-  }
 }
 
 /* ---------- a top bar that never shifts ---------- */
@@ -2267,12 +2084,6 @@ button:focus-visible {
 }
 .topbar .field-inline.w-length {
   width: 118px;
-}
-.topbar .field-inline.w-octave {
-  width: 46px;
-}
-.grid-field > span {
-  max-width: 100%;
 }
 .grid-controls .dropdown.compact {
   flex: 1;
@@ -2291,27 +2102,12 @@ button:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.dropdown.compact .dropdown-value b {
-  flex: none;
-  max-width: 62%;
-}
 .topbar .input.num,
 .dropdown.compact .dropdown-value {
   font-variant-numeric: tabular-nums;
 }
 .field-placeholder {
-  display: block;
-  padding: 3px 0;
   color: var(--ink-3);
-  border-bottom: 1px solid var(--line-soft);
-}
-@media (max-width: 1340px) {
-  .topbar .field-inline.w-grid {
-    width: 166px;
-  }
-  .topbar .field-inline.w-length {
-    width: 106px;
-  }
 }
 
 /* ---------- pitch range ---------- */
@@ -2327,9 +2123,8 @@ button:focus-visible {
   gap: 6px;
   border: 1px solid var(--line-soft);
   background: color-mix(in srgb, var(--card) 85%, transparent);
-  border-radius: 999px;
   padding: 3px 10px;
-  font: 10.5px var(--mono);
+  font: var(--fs-xs) var(--mono);
   color: var(--ink-2);
   cursor: pointer;
   white-space: nowrap;
@@ -2345,19 +2140,15 @@ button:focus-visible {
   right: 0;
   top: calc(100% + 6px);
   width: 330px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
   padding: 12px 14px;
   animation: rise 0.18s var(--ease);
 }
 .range-pop > .muted {
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   margin: 0 0 10px;
 }
 .range-explain {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   margin: 8px 0 10px !important;
 }
 .range-bounds {
@@ -2373,12 +2164,11 @@ button:focus-visible {
 }
 .range-bounds b {
   font-weight: 400;
-  font-size: 14px;
+  font-size: var(--fs-lg);
 }
 
 /* the range popover may reach over the node editor; the legend stays clear of the tabs */
 .viz {
-  overflow: visible;
   z-index: 6;
 }
 .viz canvas {
@@ -2393,18 +2183,12 @@ button:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.range-pop {
-  z-index: 30;
-}
 
 .topbar .field-inline.w-song {
   width: 96px;
 }
 
 /* ---------- room for the Song field ---------- */
-.grid-controls .input.num {
-  width: 36px;
-}
 @media (max-width: 1440px) {
   .topbar {
     gap: 12px;
@@ -2423,29 +2207,13 @@ button:focus-visible {
   .topbar .field-inline.w-length {
     width: 94px;
   }
-  .harmony .input {
-    width: 68px;
-  }
   .project-name {
     width: 84px;
-  }
-}
-@media (max-width: 1160px) {
-  .topbar .field-inline.w-grid {
-    width: 140px;
-  }
-  .harmony .input {
-    width: 56px;
-  }
-  .topbar {
-    gap: 10px;
-    padding: 0 14px;
   }
 }
 
 /* compact fields: the value first; its detail only while there is room */
 .dropdown.compact .dropdown-value b {
-  max-width: none;
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -2462,11 +2230,7 @@ button:focus-visible {
 /* ---------- the selected track's own controls, apart from the song's ---------- */
 .track-panel {
   display: flex;
-  align-items: flex-end;
   gap: 12px;
-  padding: 4px 12px 6px;
-  margin: 6px 0;
-  align-self: stretch;
   border-radius: 12px;
   background: var(--paper-2);
   border: 1px solid var(--line-soft);
@@ -2477,13 +2241,11 @@ button:focus-visible {
 @media (max-width: 1440px) {
   .track-panel {
     gap: 10px;
-    padding: 4px 10px 6px;
   }
 }
 @media (max-width: 1340px) {
   .track-panel {
     gap: 8px;
-    padding: 4px 8px 6px;
   }
 }
 @media (max-width: 1340px) {
@@ -2494,7 +2256,7 @@ button:focus-visible {
 
 /* ---------- the garden’s name as the title ---------- */
 .topbar .project-name {
-  font: 500 15px/1.2 var(--sans);
+  font: 500 var(--fs-lg)/1.2 var(--sans);
   color: var(--ink);
   width: 170px;
   letter-spacing: 0.01em;
@@ -2502,16 +2264,6 @@ button:focus-visible {
 @media (max-width: 1440px) {
   .topbar .project-name {
     width: 140px;
-  }
-}
-@media (max-width: 1340px) {
-  .topbar .project-name {
-    width: 116px;
-  }
-}
-@media (max-width: 1160px) {
-  .topbar .project-name {
-    width: 96px;
   }
 }
 /* large headings ask for a light weight (Doto draws every regular weight the same: see fonts.css) */
@@ -2528,12 +2280,9 @@ button:focus-visible {
 .fn-code code,
 .fn-pre,
 .notes-table {
-  font-size: 12.5px;
+  font-size: var(--fs-md);
 }
 @media (max-width: 1160px) {
-  .topbar .project-name {
-    width: 74px;
-  }
   .topbar {
     gap: 8px;
   }
@@ -2541,7 +2290,7 @@ button:focus-visible {
 
 /* ---------- the top bar: one kind of control, no underlines, one line of labels ---------- */
 :root {
-  --ctl-h: 28px;
+  --ctl-h: var(--h-md);
 }
 .transport,
 .track-panel {
@@ -2656,12 +2405,6 @@ button:focus-visible {
   }
 }
 @media (max-width: 1340px) {
-  .w-scale {
-    width: 108px;
-  }
-  .w-prog {
-    width: 44px;
-  }
   .w-prog .dropdown-value b {
     display: none;
   }
@@ -2695,40 +2438,13 @@ button:focus-visible {
   .track-panel {
     padding: 5px 8px;
   }
-  .topbar .field-inline > .input.num {
-    width: 44px;
-  }
-  .grid-controls .input.num {
-    width: 40px;
-  }
-  .input.num.grid-oct {
-    width: 36px;
-  }
-  .w-scale {
-    width: 100px;
-  }
-  .w-prog {
-    width: 40px;
-  }
 }
 @media (max-width: 1160px) {
-  .topbar .project-name {
-    width: 66px;
-  }
-  .w-scale {
-    width: 92px;
-  }
-  .harmony .input {
-    width: 46px;
-  }
   .topbar .field-inline.w-grid {
     width: 132px;
   }
   .topbar .field-inline.w-length {
     width: 84px;
-  }
-  .topbar .field-inline.w-song {
-    width: 76px;
   }
 }
 @media (max-width: 1500px) {
@@ -2743,9 +2459,6 @@ button:focus-visible {
   }
   .w-scale {
     width: 112px;
-  }
-  .w-prog {
-    width: 58px;
   }
   .harmony .input {
     width: 100px;
@@ -2781,9 +2494,6 @@ button:focus-visible {
   }
 }
 @media (max-width: 1160px) {
-  .topbar .project-name {
-    width: 66px;
-  }
   .w-scale {
     width: 90px;
   }
@@ -2828,7 +2538,7 @@ button:focus-visible {
   max-width: 230px;
   white-space: normal;
   text-align: left;
-  font: 400 11px/1.4 var(--sans);
+  font: 400 var(--fs-sm)/1.4 var(--sans);
   letter-spacing: 0;
   text-transform: none;
   color: var(--paper);
@@ -2851,7 +2561,7 @@ button:focus-visible {
   z-index: 1000 !important;
 }
 .fnode .lock.help {
-  font: 600 11px/1 var(--sans);
+  font: 600 var(--fs-sm)/1 var(--sans);
   width: 18px;
 }
 .fnode .lock.help.on {
@@ -2864,7 +2574,7 @@ button:focus-visible {
   padding: 8px 10px;
   border-radius: 10px;
   background: var(--paper-2);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   line-height: 1.45;
   color: var(--ink-2);
   max-width: 240px;
@@ -2899,7 +2609,7 @@ button:focus-visible {
   gap: 6px;
 }
 .import-param code {
-  font: 12.5px var(--mono);
+  font: var(--fs-md) var(--mono);
   color: var(--accent);
 }
 .import-param .input.num {
@@ -2908,7 +2618,7 @@ button:focus-visible {
 
 /* ---------- my functions ---------- */
 .mine-head {
-  font: 500 9.5px/1 var(--sans);
+  font: 500 var(--fs-xs)/1 var(--sans);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -3019,6 +2729,7 @@ button:focus-visible {
   text-align: right;
   margin-right: 4px;
   text-overflow: ellipsis;
+  letter-spacing: 0;
 }
 .garden-menu {
   display: flex;
@@ -3046,18 +2757,15 @@ button:focus-visible {
 
 /* ---------- tracks: mute & solo in a strip on the left ---------- */
 .track {
-  grid-template-columns: 20px 14px 1fr auto;
   padding-left: 6px;
 }
 .ms-col {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
 }
 .ms-col .ms {
   width: 20px;
   height: 18px;
-  border-radius: 6px;
 }
 .tracks-head {
   display: flex;
@@ -3066,6 +2774,8 @@ button:focus-visible {
   margin: -2px -6px 8px;
   padding: 0 10px 0 6px;
   min-height: 40px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 10px;
 }
 .tracks-head-tools {
   display: flex;
@@ -3073,13 +2783,7 @@ button:focus-visible {
   gap: 2px;
   margin-left: auto;
 }
-.tracks-head-tools .icon-btn {
-  width: 32px;
-  height: 32px;
-  color: var(--ink-2);
-}
 .tracks-head-tools .fx-glyph {
-  font-size: 19px;
   line-height: 1;
   font-style: italic;
 }
@@ -3098,7 +2802,6 @@ button:focus-visible {
 /* ---------- node view toolbar: one row, one height, one icon size ---------- */
 .toolbar {
   flex-wrap: nowrap;
-  overflow-x: auto;
   scrollbar-width: none;
   gap: 6px;
   min-height: 52px;
@@ -3142,20 +2845,18 @@ button:focus-visible {
 }
 .toolbar .lock-status .btn {
   height: 32px;
-  font-size: 12px;
+  font-size: var(--fs-md);
 }
 .toolbar .lock-status .dropdown.compact .dropdown-field {
+  white-space: nowrap;
   height: 32px;
+  box-shadow: var(--shadow);
 }
 
-/* ---------- tracks, second pass ---------- */
+/* ---------- channel rows: M · S · lock, the channel tools ---------- */
 /* M beside S, on the left */
 .ms-col {
-  flex-direction: row;
   gap: 1px;
-}
-.track {
-  grid-template-columns: auto 14px 1fr auto;
 }
 /* the channel's lock against Mutate, after M / S */
 .ms.lock {
@@ -3167,9 +2868,7 @@ button:focus-visible {
 }
 /* a line under the + ƒ 🗑 tools */
 .tracks-head {
-  border-bottom: 1px solid var(--line-soft);
   padding-bottom: 6px;
-  margin-bottom: 10px;
 }
 .tracks-head-tools .fx-glyph {
   font-size: 15px;
@@ -3178,7 +2877,6 @@ button:focus-visible {
 .track-tools .btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
 }
 
 /* ---------- node toolbar: let popups (Copy to…) open outside it ---------- */
@@ -3186,10 +2884,7 @@ button:focus-visible {
   overflow: visible;
 }
 .toolbar .lock-status .dropdown.compact .dropdown-field {
-  width: auto;
-  padding: 0 10px;
   gap: 6px;
-  white-space: nowrap;
 }
 .toolbar .lock-status .dropdown.compact {
   flex: none;
@@ -3200,10 +2895,6 @@ button:focus-visible {
   width: 32px;
   padding: 0;
   justify-content: center;
-}
-.toolbar .lock-status .dropdown.compact .dropdown-field {
-  height: 32px;
-  padding: 0 8px;
 }
 .toolbar .copy-to {
   display: inline-flex;
@@ -3219,7 +2910,6 @@ button:focus-visible {
 .track {
   position: relative;
   /* M · S · lock take the room they need */
-  grid-template-columns: auto 12px 1fr;
   gap: 8px;
 }
 .track .track-actions {
@@ -3228,34 +2918,17 @@ button:focus-visible {
   top: 50%;
   transform: translateY(-50%);
   border-radius: 8px;
-  background: inherit;
-}
-.track:hover .track-actions {
-  background: var(--paper-2);
-  box-shadow: -10px 0 10px var(--paper-2);
-}
-.track.selected:hover .track-actions {
-  background: var(--paper-3);
-  box-shadow: -10px 0 10px var(--paper-3);
 }
 /* plant a function: Save Track · Import · Export on one line */
 .track-tools {
   flex-wrap: nowrap;
   gap: 0;
 }
-.track-tools .btn {
-  padding: 3px 6px;
-  gap: 5px;
-}
 /* Copy to…: a round icon button like its neighbours */
 .toolbar .lock-status .dropdown.compact .dropdown-field {
   width: 32px;
   padding: 0;
   justify-content: center;
-  border-radius: 999px;
-  border: 1px solid var(--line-soft);
-  background: var(--card);
-  box-shadow: var(--shadow);
 }
 .toolbar .lock-status .dropdown.compact .dropdown-chevron {
   display: none;
@@ -3267,9 +2940,8 @@ button:focus-visible {
 
 /* the garden's name: larger, light, in the accent */
 .topbar .garden-title .project-name {
-  font: 400 18px/1.2 var(--sans);
+  font: 400 var(--fs-xl)/1.2 var(--sans);
   color: var(--accent);
-  letter-spacing: 0;
 }
 
 /* ---------- folding sections: My functions, Function presets ---------- */
@@ -3282,22 +2954,13 @@ button:focus-visible {
   gap: 8px;
   width: 100%;
   padding: 9px 10px;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--ink);
-  font: 400 14px/1.2 var(--sans);
+  font: 400 var(--fs-lg)/1.2 var(--sans);
   text-align: left;
   cursor: pointer;
   transition: border-color 0.25s var(--ease), background 0.25s var(--ease);
 }
-.fold-trigger:hover,
-.fold.open .fold-trigger {
-  border-color: var(--line);
-  background: var(--paper-2);
-}
 .fold-trigger small {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--ink-3);
 }
 .fold-chevron {
@@ -3313,7 +2976,7 @@ button:focus-visible {
   padding: 6px 6px 2px;
 }
 .fold-empty {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   margin: 2px 4px 6px;
 }
 /* ---------- ⓘ: explanations on demand ---------- */
@@ -3346,11 +3009,7 @@ button:focus-visible {
   z-index: 80;
   width: 240px;
   padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
-  box-shadow: var(--shadow-lg, var(--shadow));
-  font: 400 11.5px/1.5 var(--sans);
+  font: 400 var(--fs-sm)/1.5 var(--sans);
   letter-spacing: 0;
   text-transform: none;
   color: var(--ink-2);
@@ -3417,7 +3076,7 @@ button:focus-visible {
 .all-channels-bar .btn {
   height: var(--ctl-h);
   padding: 0 8px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 /* the Sound tab: which channel it is */
@@ -3426,7 +3085,7 @@ button:focus-visible {
   align-items: center;
   gap: 8px;
   margin: 0 0 4px;
-  font-size: 14px;
+  font-size: var(--fs-lg);
   min-width: 0;
 }
 .sound-tab-head b {
@@ -3437,9 +3096,21 @@ button:focus-visible {
 .sound-tab-head .kit-swatch {
   flex: none;
 }
-/* the custom wave's own tools: Mutate wave, and its lock against the channel's Mutate */
+/* the custom wave's own tools: Mutate wave, and its lock against the channel's Mutate —
+   red while locked (Mutate leaves the wave alone), green while unlocked (Mutate may change it) */
+.wave-lock {
+  color: var(--go);
+}
 .wave-lock.on {
-  color: var(--ink);
+  color: var(--rec);
+}
+.wave-lock:hover {
+  color: var(--go);
+  background: color-mix(in srgb, var(--go) 14%, transparent);
+}
+.wave-lock.on:hover {
+  color: var(--rec);
+  background: color-mix(in srgb, var(--rec) 14%, transparent);
 }
 /* the voice's tools: icons in two small groups */
 .voice-tool-group {
@@ -3506,7 +3177,7 @@ button:focus-visible {
   min-width: 0;
   padding: 5px 2px 4px;
   font: inherit;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   letter-spacing: -0.06em;
   cursor: pointer;
   border-radius: var(--radius);
@@ -3542,13 +3213,13 @@ button:focus-visible {
   align-items: center;
   gap: 4px;
   margin-top: 12px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .all-channels .muted {
   margin-right: 4px;
 }
 .all-channels .btn.on {
-  color: var(--accent);
+  border-color: transparent;
 }
 /* closed explanations take no room at all (an invisible one near the edge would widen the page) */
 .info-pop {
@@ -3593,7 +3264,6 @@ aside.panel:last-of-type .info-pop {
 }
 .all-channels .btn.on {
   color: inherit;
-  border-color: transparent;
 }
 
 /* ---------- paste a function: a preview of one fixed size ---------- */
@@ -3658,7 +3328,7 @@ aside.panel:last-of-type .info-pop {
 .import-note {
   position: absolute;
   left: 8px;
-  font: 400 10px/1 var(--mono);
+  font: 400 var(--fs-xs)/1 var(--mono);
   color: var(--ink-2);
   opacity: 0.8;
   pointer-events: none;
@@ -3693,7 +3363,7 @@ aside.panel:last-of-type .info-pop {
   border: none;
   background: none;
   padding: 0;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: var(--accent);
   cursor: pointer;
 }
@@ -3710,7 +3380,7 @@ aside.panel:last-of-type .info-pop {
   border: none;
   background: transparent;
   padding: 0 8px;
-  font: 500 11px/1 var(--sans);
+  font: 500 var(--fs-sm)/1 var(--sans);
   color: var(--ink-2);
   cursor: pointer;
 }
@@ -3731,7 +3401,7 @@ aside.panel:last-of-type .info-pop {
 .stretch-x {
   align-self: center;
   padding-left: 7px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--ink-3);
 }
 .channel-grid .input.num.stretch-input {
@@ -3743,7 +3413,7 @@ aside.panel:last-of-type .info-pop {
 }
 .stretch-badge {
   margin-left: 6px;
-  font: 500 10px/1 var(--mono);
+  font: 500 var(--fs-xs)/1 var(--mono);
   color: var(--accent);
   vertical-align: 2px;
 }
@@ -3827,7 +3497,7 @@ aside.panel:last-of-type .info-pop {
 .ripple-opts .seg button,
 .ripple-opts .btn {
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
 }
 .ripple-opts-row {
   display: flex;
@@ -3847,6 +3517,47 @@ aside.panel:last-of-type .info-pop {
   position: relative;
   min-height: 0;
   max-height: 30vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--ink);
+  animation: rise 0.18s var(--ease);
+}
+.score-math-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 6px 3px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.score-math-title {
+  font: 700 var(--fs-xs)/1 var(--sans);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.score-math-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.score-math-zoom {
+  min-width: 40px;
+  text-align: center;
+  font: var(--fs-sm)/1 var(--mono);
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+}
+.score-math-tools .icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.score-math-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -3855,19 +3566,10 @@ aside.panel:last-of-type .info-pop {
   align-items: flex-start;
   gap: 6px 22px;
   padding: 8px 14px 10px;
-  border: 1px solid var(--line-soft);
-  background: var(--paper);
-  color: var(--ink);
-  animation: rise 0.18s var(--ease);
 }
-.score-math .muted {
+.score-math-body .muted {
   margin: 0;
-  font-size: 11px;
-}
-.score-math-all {
-  order: 99;
-  margin-left: auto;
-  align-self: flex-start;
+  font-size: var(--fs-sm);
 }
 .score-math-ch {
   min-width: 0;
@@ -3876,7 +3578,7 @@ aside.panel:last-of-type .info-pop {
   display: flex;
   align-items: center;
   gap: 6px;
-  font: 11px/1.2 var(--mono);
+  font: calc(var(--fs-sm) * max(1, var(--math-zoom, 1) * 0.85))/1.2 var(--mono);
   color: var(--ink-2);
   margin-bottom: 2px;
 }
@@ -3886,7 +3588,7 @@ aside.panel:last-of-type .info-pop {
   border-radius: 2px;
 }
 .score-math-tex {
-  font-size: 13px;
+  font-size: calc(var(--fs-md) * var(--math-zoom, 1));
   line-height: 1.5;
   white-space: nowrap;
 }

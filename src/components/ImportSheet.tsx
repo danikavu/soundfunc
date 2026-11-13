@@ -222,7 +222,7 @@ export function ImportSheet() {
             <div className="eyebrow" style={{ margin: 0 }}>
               Paste a function
             </div>
-            <p className="muted" style={{ margin: '6px 0 0', fontSize: 12 }}>
+            <p className="muted" style={{ margin: '6px 0 0', fontSize: 'var(--fs-md)' }}>
               LaTeX (Desmos: select an expression, ⌘C), <code className="mono">\begin{'{cases}'}</code>, plain math with ⌊ ⌋, mod, frac, ≥ — or several lines: helper
               definitions like <code className="mono">g(x) = …</code> and <code className="mono">IF … : / ELSE IF / OTHERWISE</code> blocks. y as a function of x.
             </p>
@@ -260,7 +260,7 @@ export function ImportSheet() {
             </button>
           </div>
           <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-            <span className="muted" style={{ fontSize: 11 }}>Try:</span>
+            <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Try:</span>
             {EXAMPLES.map((ex) => (
               <button key={ex.label} className="btn small ghost" onClick={() => setSrc(ex.src)}>
                 {ex.label}
@@ -350,7 +350,7 @@ export function ImportSheet() {
                       ]}
                     />
                     {fitting && (
-                      <label className="row" style={{ gap: 6, fontSize: 12 }}>
+                      <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }}>
                         <NumberField className="input num" min={0.25} max={10} value={fitOctaves} onValue={setFitOctaves} aria-label="Octaves to fit into" style={{ width: 64 }} />
                         octaves
                       </label>
@@ -476,7 +476,7 @@ export function ImportSheet() {
                       ]}
                     />
                   </div>
-                  <label className="row" style={{ gap: 6, fontSize: 12 }}>
+                  <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }}>
                     <input type="checkbox" checked={articulate} onChange={(e) => setArticulate(e.target.checked)} />
                     re-attack every step
                   </label>

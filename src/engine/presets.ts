@@ -1,17 +1,12 @@
 import { LIBRARY_PRESETS } from './presetsLibrary';
 import { NODE_DEFS, type GEdge, type GNode, type Graph, type NodeData } from './graph';
 import { DEFAULT_PITCH_RANGE, type PitchMode } from './music';
-import { TRACK_DEFAULTS, type DrumVoice, type Project, type Song, type Track, type Waveform } from './project';
+import { CHANNEL_COLORS, CHANNEL_COLORS_WIDE, TRACK_DEFAULTS, type DrumVoice, type Project, type Song, type Track, type Waveform } from './project';
 
-export const TRACK_COLORS = ['#e2483a', '#e8a93a', '#4fc98a', '#4f86d9', '#a865d6', '#3fb7b0', '#e07a3c'];
+export const TRACK_COLORS = CHANNEL_COLORS;
 
-/** the wider palette: the basic seven, then more lab-instrument colours */
-export const CHANNEL_PALETTE = [
-  ...TRACK_COLORS,
-  '#f06292', '#ff8a65', '#ffd54f', '#c5e15a', '#8bc34a', '#26a69a', '#4dd0e1',
-  '#64b5f6', '#7986cb', '#9575cd', '#ce93d8', '#f48fb1', '#bcaaa4', '#b0bec5',
-  '#d4c25a', '#7fdba8', '#ff5a5a',
-];
+/** the wider palette: the basic seven, then softer ones of the same family */
+export const CHANNEL_PALETTE = [...CHANNEL_COLORS, ...CHANNEL_COLORS_WIDE];
 
 /** a colour no channel has yet, picked at random (any colour, once the palette is used up) */
 export function pickColor(taken: readonly string[], rng: () => number = Math.random): string {
