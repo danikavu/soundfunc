@@ -8,7 +8,7 @@ import { RangeControl } from './RangeControl';
 import { ScoreMath, useScoreMath } from './ScoreMath';
 import { RIPPLE_DEFAULTS, RIPPLE_STYLES, RippleMemory, drawRipple, type RippleOptions, type RippleStyle } from './ripple';
 
-/** the header's height: Ripple centres its figure in the space below it */
+/** the header's height: Scope centres its figure in the space below it */
 const RIPPLE_TOP = 40;
 /** …and the options bar's, at the bottom */
 const RIPPLE_BOTTOM = 46;
@@ -129,7 +129,7 @@ export function Visualizer() {
   const [math, setMath] = useScoreMath();
   const onMathZoom = useCallback((zoom: number) => setMath({ zoom }), [setMath]);
   const [tip, setTip] = useState<{ x: number; y: number; text: string[] } | null>(null);
-  /** Ripple's look, remembered between visits */
+  /** Scope's look, remembered between visits */
   const [ripple, setRippleState] = useState<RippleOptions>(loadRipple);
   const rippleRef = useRef(ripple);
   rippleRef.current = ripple;
@@ -861,7 +861,7 @@ export function Visualizer() {
           style={{ cursor: mode === 'function' ? 'ew-resize' : tip ? 'pointer' : 'default', touchAction: 'none' }}
         />
         <div className="viz-legend">
-          <h2>{mode === 'score' ? 'The Track' : mode === 'function' ? selected?.name ?? '—' : 'Ripple'}</h2>
+          <h2>{mode === 'score' ? 'The Track' : mode === 'function' ? selected?.name ?? '—' : 'Scope'}</h2>
           <span className="muted">
             {mode !== 'ripple' && (project.song.repeat === 'exact' ? '⟲ repeats exactly · ' : pass > 0 ? `pass ${pass + 1} · ` : '')}
             {mode === 'score' && `${Number(score.total.toFixed(3))} beats · ${midiToName(score.lo + 2)}–${midiToName(score.hi - 2)}${score.drums.length ? ` · ${score.drums.length} drum lanes` : ''}`}
@@ -929,7 +929,7 @@ export function Visualizer() {
             options={[
               { value: 'score', label: 'Score' },
               { value: 'function', label: 'Function' },
-              { value: 'ripple', label: 'Ripple' },
+              { value: 'ripple', label: 'Scope' },
             ]}
           />
         </div>
