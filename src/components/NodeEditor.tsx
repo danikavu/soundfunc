@@ -495,14 +495,6 @@ export function NodeEditor() {
       }}
     >
       <div className="toolbar">
-        <Seg<'nodes' | 'math'>
-          value={showMath ? 'math' : 'nodes'}
-          onChange={(v) => setMath({ open: v === 'math' })}
-          options={[
-            { value: 'nodes', label: 'Nodes' },
-            { value: 'math', label: 'Functions' },
-          ]}
-        />
         {!showMath && (
         <button
           className="btn"
@@ -536,6 +528,14 @@ export function NodeEditor() {
         </button>
         <Mutator />
         {!showMath && <SelectionTools />}
+        <button
+          className={`btn func-view-toggle ${showMath ? 'on' : ''}`}
+          aria-pressed={showMath}
+          onClick={() => setMath({ open: !showMath })}
+          title={showMath ? 'Back to the node board' : 'Func View: every channel you can hear, written as math, in the node board’s place'}
+        >
+          <span className="fx-glyph">ƒ</span> Func View
+        </button>
       </div>
       <SlidersBar track={track} />
       {/* Functions: the math takes the board's place; the board stays mounted underneath, so its view and selection survive */}
