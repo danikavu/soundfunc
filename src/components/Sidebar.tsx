@@ -3,14 +3,37 @@ import { MiniScore } from './MiniScore';
 import { KitPicker } from './KitPicker';
 import { audibleTracks, stretchOf, voiceLabel } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
-import { Icon, download, fileSafe } from './ui';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Icon, Seg, download, fileSafe } from './ui';
+import { useRef, useState, type ReactNode } from 'react';
 import { functionFile, functionOf, readFunctionFile, useLibrary, type SavedFunction } from '../state/library';
 import { toast } from './TopBar';
 import { canLinkFolder, forgetPresetFolder, mergeFunctions, mergeKits, mergeVoices, openPresetFolder, readFolderFiles, usePresetFolder } from '../state/presetFolder';
 
 /** Functions you saved: whole tracks — every node with its values — to plant in any garden, or share as a file. */
-function MyFunctions() {
+/** how the function lists are ordered — by group (as the presets were filed), or by when each was added */
+type Order = 'group' | 'newest' | 'oldest';
+const ORDER_KEY = 'sf.presetOrder';
+function useOrder() {
+  const [order, setOrder] = useState<Order>(() => {
+    try {
+      const v = localStorage.getItem(ORDER_KEY);
+      return v === 'newest' || v === 'oldest' ? v : 'group';
+    } catch {
+      return 'group';
+    }
+  });
+  const set = (o: Order) => {
+    setOrder(o);
+    try {
+      localStorage.setItem(ORDER_KEY, o);
+    } catch {
+      /* private window: it just won't be remembered */
+    }
+  };
+  return [order, set] as const;
+}
+
+function MyFunctions({ order }: { order: Order }) {
   const { functions, saveFunction, deleteFunction, importFunctions } = useLibrary();
   const track = useSelectedTrack();
   const plantFunction = useStore((s) => s.plantFunction);
@@ -143,7 +166,7 @@ function MyFunctions() {
       )}
       <Fold id="my-functions" title="My functions" count={functions.length} defaultOpen>
         {functions.length === 0 && <p className="muted fold-empty">Nothing saved yet.</p>}
-        {functions.map((fn, i) => (
+        {(order === 'newest' ? [...functions].sort((a, b) => b.savedAt - a.savedAt) : order === 'oldest' ? [...functions].sort((a, b) => a.savedAt - b.savedAt) : functions).map((fn, i) => (
         <div key={fn.id} className="mine-row">
           <button className="preset reveal" onClick={() => plantFunction(fn)} title={`Plant “${fn.name}” — ${fn.description}`}>
             <span className="preset-line">
@@ -188,6 +211,26 @@ function exportPreset(p: (typeof PRESETS)[number], i: number) {
   download(`${fileSafe(p.name)}.soundfunc-function.json`, JSON.stringify(functionFile([fn]), null, 2), 'application/json');
 }
 
+/** one built-in preset: plant it on click, export it on hover */
+function PresetRow({ p, i, onPlant }: { p: (typeof PRESETS)[number]; i: number; onPlant: (id: string) => void }) {
+  return (
+    <div className="mine-row">
+      <button className="preset reveal" onClick={() => onPlant(p.id)} title={p.description}>
+        <span className="preset-line">
+          <b>{p.name}</b>
+          <MiniScore id={`preset:${p.id}`} make={() => trackFromPreset(p, i)} color={TRACK_COLORS[i % TRACK_COLORS.length]} />
+        </span>
+        <code>{p.formula}</code>
+      </button>
+      <span className="mine-actions">
+        <button className="icon-btn" title={`Export “${p.name}” as a function file — Import puts it under My functions`} aria-label={`Export ${p.name}`} onClick={() => exportPreset(p, i)}>
+          <Icon name="download" size={12} />
+        </button>
+      </span>
+    </div>
+  );
+}
+
 /** One group of Function presets: a small header that folds, remembering whether you left it open. */
 function PresetGroupList({ group, onPlant }: { group: PresetGroup; onPlant: (id: string) => void }) {
   const items = PRESETS_BY_GROUP.get(group) ?? [];
@@ -220,23 +263,7 @@ function PresetGroupList({ group, onPlant }: { group: PresetGroup; onPlant: (id:
         <span>{label}</span>
         <small>{items.length}</small>
       </button>
-      {open &&
-        items.map(({ p, i }) => (
-          <div key={p.id} className="mine-row">
-            <button className="preset reveal" onClick={() => onPlant(p.id)} title={p.description}>
-              <span className="preset-line">
-                <b>{p.name}</b>
-                <MiniScore id={`preset:${p.id}`} make={() => trackFromPreset(p, i)} color={TRACK_COLORS[i % TRACK_COLORS.length]} />
-              </span>
-              <code>{p.formula}</code>
-            </button>
-            <span className="mine-actions">
-              <button className="icon-btn" title={`Export “${p.name}” as a function file — Import puts it under My functions`} aria-label={`Export ${p.name}`} onClick={() => exportPreset(p, i)}>
-                <Icon name="download" size={12} />
-              </button>
-            </span>
-          </div>
-        ))}
+      {open && items.map(({ p, i }) => <PresetRow key={p.id} p={p} i={i} onPlant={onPlant} />)}
     </div>
   );
 }
@@ -283,20 +310,14 @@ export function Sidebar() {
   const allLocked = project.tracks.length > 0 && project.tracks.every((t) => t.locked);
   const selected = useSelectedTrack();
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
-  // scrolled down past the channels (into the presets): offer a way straight back up
-  const panelRef = useRef<HTMLElement>(null);
-  const channelsEnd = useRef<HTMLDivElement>(null);
-  const [pastChannels, setPastChannels] = useState(false);
-  useEffect(() => {
-    const root = panelRef.current, end = channelsEnd.current;
-    if (!root || !end) return;
-    const io = new IntersectionObserver(([e]) => setPastChannels(!e.isIntersecting && e.boundingClientRect.top < (e.rootBounds?.top ?? 0)), { root });
-    io.observe(end);
-    return () => io.disconnect();
-  }, []);
+  const [order, setOrder] = useOrder();
 
+  // two halves that scroll on their own: the channels always in view above, kits and functions below
   return (
-    <aside className="panel" ref={panelRef}>
+    <aside className="panel side-split">
+      <div className="side-half side-channels">
+      {/* the header and its keys stay put while a long list of channels scrolls under them */}
+      <div className="side-channels-head">
       <div className="eyebrow">Channels</div>
       <div className="tracks-head">
         {project.tracks.length > 0 && (
@@ -350,6 +371,7 @@ export function Sidebar() {
           )}
         </div>
       </div>
+      </div>
       {project.tracks.map((t) => (
         <div
           key={t.id}
@@ -394,29 +416,33 @@ export function Sidebar() {
         </div>
       ))}
       {project.tracks.length === 0 && <p className="muted serif">An empty track. Plant something below.</p>}
-      <div ref={channelsEnd} aria-hidden />
+      </div>
 
+      <div className="side-half side-plant">
       <KitPicker />
 
       <div className="eyebrow">Plant a function</div>
-      <MyFunctions />
+      <MyFunctions order={order} />
       <Fold id="function-presets" title="Function presets" count={PRESETS.length}>
-        {(Object.keys(PRESET_GROUPS) as PresetGroup[]).map((g) => (
-          <PresetGroupList key={g} group={g} onPlant={addTrack} />
-        ))}
-      </Fold>
-      {pastChannels && (
-        <div className="to-channels">
-          <button
-            className="icon-btn"
-            onClick={() => panelRef.current?.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })}
-            title="Back up to the channels"
-            aria-label="Back up to the channels"
-          >
-            <Icon name="upload" size={12} />
-          </button>
+        <div className="preset-order">
+          <Seg<Order>
+            value={order}
+            onChange={setOrder}
+            options={[
+              { value: 'group', label: 'Groups' },
+              { value: 'newest', label: 'Newest' },
+              { value: 'oldest', label: 'Oldest' },
+            ]}
+          />
         </div>
-      )}
+        {order === 'group'
+          ? (Object.keys(PRESET_GROUPS) as PresetGroup[]).map((g) => <PresetGroupList key={g} group={g} onPlant={addTrack} />)
+          : // one list by when each preset joined SoundFunc: its place in the catalogue (the library is appended as it grows)
+            (order === 'newest' ? [...PRESETS].map((p, i) => ({ p, i })).reverse() : PRESETS.map((p, i) => ({ p, i }))).map(({ p, i }) => (
+              <PresetRow key={p.id} p={p} i={i} onPlant={addTrack} />
+            ))}
+      </Fold>
+      </div>
     </aside>
   );
 }

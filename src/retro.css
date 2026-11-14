@@ -1564,37 +1564,6 @@ body,
   height: var(--h-md);
 }
 
-/* scrolled down into the presets: a small key in the panel's bottom-left corner takes you back to the channels */
-.to-channels {
-  position: sticky;
-  bottom: 0;
-  height: 0;
-  z-index: 5;
-  pointer-events: none;
-}
-.app .to-channels .icon-btn {
-  position: absolute;
-  left: -10px;
-  bottom: -27px;
-  width: var(--h-sm);
-  height: var(--h-sm);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  background: var(--key-face);
-  box-shadow: var(--key-rise), 0 2px 6px -2px rgba(0, 0, 0, 0.35);
-  color: var(--key-ink-2);
-  pointer-events: auto;
-  animation: rise 0.18s var(--ease);
-  transition: color 0.2s, background 0.2s;
-}
-.app .to-channels .icon-btn:hover {
-  color: var(--key-ink);
-  background: var(--key);
-}
-.app .to-channels .icon-btn:active {
-  transform: translateY(1px);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
-}
 
 /* Func View: its key sits at the right end of the node toolbar, lit (a dark key) while on */
 .app .toolbar .func-view-toggle {
@@ -1611,4 +1580,51 @@ body,
   background-color: var(--paper);
   background-image: radial-gradient(circle, var(--line) 0.6px, transparent 1.3px);
   background-size: 24px 24px;
+}
+
+/* ---------- the left side: two halves, each scrolling on its own ----------
+   the channels always in view on top; rhythm kits and the functions to plant below */
+.app aside.panel.side-split {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.side-half {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+}
+.side-channels {
+  flex: 0 0 50%;
+  border-bottom: 1px solid var(--line);
+}
+.side-plant {
+  flex: 1 1 0;
+  padding-bottom: var(--sp-8);
+}
+/* Groups · Newest · Oldest, at the top of Function presets */
+.preset-order {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 var(--sp-2);
+}
+.side-channels-head {
+  position: sticky;
+  top: calc(-1 * var(--sp-4));
+  z-index: 3;
+  margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) 0;
+  padding: var(--sp-4) var(--sp-4) 0;
+  background: var(--paper);
+}
+/* the gap under the header's rule is the header's own, so scrolled rows never show through it */
+.side-channels-head {
+  padding-bottom: var(--sp-2);
+}
+.side-channels-head .tracks-head {
+  margin-bottom: 0;
 }
