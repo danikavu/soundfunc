@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { GEdge, GNode, Graph, NodeData } from '../engine/graph';
 import type { EditResult } from '../engine/graphEdit';
-import { applyGrid, fixedLengthFor, gridOf, type Grid } from '../engine/steps';
+import { applyGrid, FIXED_LENGTHS, fixedLengthFor, gridOf, type Grid } from '../engine/steps';
 import type { SavedFunction } from './library';
 import { defaultProject, KITS, pickColor, PRESETS, trackFromPreset, trackFromTemplate, uid, type Kit } from '../engine/presets';
 import { mutateHarmony, mutateOneNode, mutateTrack } from '../engine/mutate';
@@ -63,6 +63,11 @@ interface State {
   /** plant a multi-track kit (and its tempo/key); replaces the current tracks unless layering */
   /** a kit by id (built in), or the kit itself (a saved one) */
   addKit: (kit: string | Kit, layer?: boolean) => void;
+  /**
+   * plant channels read from a file (MIDI): never re-gridded — the song is fixed only when every
+   * channel is the same allowed length, otherwise free, so each loops on its own as it was found
+   */
+  plantImported: (channels: (Partial<Track> & { name: string; graph: Graph })[], song: Partial<Song>, opts: { layer: boolean; adoptSong: boolean; name: string }) => void;
   /** add some of a kit's tracks (e.g. just its drums) to the current garden */
   addKitTracks: (kit: string | Kit, trackIndexes: number[], adoptSong?: boolean) => void;
   duplicateTrack: (id: string) => void;
@@ -143,6 +148,25 @@ export const useStore = create<State>()(
           const track = fitToSong({ ...made, color: pickColor(colorsIn(get().project)) }, get().project.song);
           commit((p) => ({ ...p, tracks: [...p.tracks, track] }));
           set({ selectedTrackId: track.id });
+        },
+        plantImported: (channels, fileSong, { layer, adoptSong, name }) => {
+          const start = layer ? get().project.tracks.length : 0;
+          const tracks = withNewColors(
+            channels.map((t, i) => trackFromTemplate(t, t.name, start + i)),
+            layer ? colorsIn(get().project) : [],
+          );
+          const cur = get().project.song;
+          const lengths = [...(layer ? get().project.tracks : []), ...tracks].map((t) => t.steps * t.stepBeats * (t.stretch ?? 1));
+          const same = lengths.every((l) => Math.abs(l - lengths[0]) < 1e-9);
+          const fits = same && (FIXED_LENGTHS as readonly number[]).includes(Math.round(lengths[0] * 1000) / 1000);
+          const song: Song = {
+            ...cur,
+            ...(adoptSong || !layer ? fileSong : {}),
+            ...(fits ? { lengthMode: 'fixed' as const, lengthBeats: lengths[0] } : { lengthMode: 'free' as const, lengthBeats: fixedLengthFor(Math.max(...lengths)) }),
+          };
+          commit((p) => ({ ...p, name: layer ? p.name : name, song, tracks: layer ? [...p.tracks, ...tracks] : tracks }));
+          if (!layer) set({ currentProjectId: null });
+          set({ selectedTrackId: tracks[0]?.id ?? get().selectedTrackId });
         },
         addKit: (which, layer = false) => {
           const kit = typeof which === 'string' ? KITS.find((k) => k.id === which) : which;
