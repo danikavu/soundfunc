@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { NOTE_NAMES, SCALES } from '../engine/music';
+import { SCALES, spellDegree } from '../engine/music';
 import { KIT_GROUPS, KITS, TRACK_COLORS, kitGroupOf, type KitGroup } from '../engine/presets';
 import { isDrum, voiceLabel, type Waveform } from '../engine/project';
 import { asKit, kitFile, kitOf, readKitFile, savedKitOf, useLibrary } from '../state/library';
@@ -202,7 +202,7 @@ export function KitPicker() {
             {kit.song && (
               <p className="kit-meta">
                 {kit.song.bpm} bpm
-                {kit.song.root !== undefined && ` · ${NOTE_NAMES[kit.song.root]} ${(SCALES[kit.song.scale ?? 'major'] ?? SCALES.major).label}`}
+                {kit.song.root !== undefined && ` · ${spellDegree(0, kit.song.root, kit.song.scale ?? 'major')} ${(SCALES[kit.song.scale ?? 'major'] ?? SCALES.major).label}`}
               </p>
             )}
 

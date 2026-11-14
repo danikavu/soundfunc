@@ -1368,6 +1368,16 @@ describe('chords, bass and style kits', () => {
     expect(row(4, 'dorian')).toBe('E F♯ G A B C♯ D');
     expect(chordName(3, 10, 'major').name).toBe('E♭');
   });
+  it('a key is named the way it is written: D♭ major, C♯ minor', () => {
+    expect(spellDegree(0, 1, 'major')).toBe('D♭');
+    expect(spellDegree(0, 1, 'harmonicMinor')).toBe('C♯');
+    expect(spellDegree(0, 8, 'major')).toBe('A♭');
+    expect(spellDegree(0, 8, 'minor')).toBe('G♯');
+    expect(spellDegree(0, 6, 'major')).toBe('F♯');
+    expect(spellDegree(0, 10, 'minor')).toBe('B♭');
+    // and every kit's key comes out with one accidental at most
+    for (const kit of KITS) expect(spellDegree(0, kit.song!.root!, kit.song!.scale!), kit.name).toMatch(/^[A-G][♭♯]?$/);
+  });
   it('every progression reads, and the scale it asks for exists', () => {
     for (const pr of PROGRESSIONS) {
       expect(tryCompile(pr.formula, HARMONY_VARS).error, pr.label).toBeNull();
