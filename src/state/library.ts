@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { uid, type Kit } from '../engine/presets';
-import { NOTE_NAMES, SCALES } from '../engine/music';
+import { SCALES, spellDegree } from '../engine/music';
 import type { Block } from '../engine/graphEdit';
 import { DRUMS, normalizeProject, TRACK_DEFAULTS, WAVEFORMS, type Project, type Slider, type Song, type Track, type Waveform } from '../engine/project';
 
@@ -110,7 +110,7 @@ export function kitOf(project: Project, name: string): SavedKit {
   return {
     id: uid('kit'),
     name,
-    description: `${tracks.length} channel${tracks.length === 1 ? '' : 's'} · ${song.bpm} bpm · ${NOTE_NAMES[song.root]} ${scale}: ${tracks.map((t) => t.name).join(', ')}`,
+    description: `${tracks.length} channel${tracks.length === 1 ? '' : 's'} · ${song.bpm} bpm · ${spellDegree(0, song.root, song.scale)} ${scale}: ${tracks.map((t) => t.name).join(', ')}`,
     savedAt: Date.now(),
     song: { bpm: song.bpm, root: song.root, scale: song.scale, harmony: song.harmony, lengthMode: song.lengthMode, lengthBeats: song.lengthBeats, repeat: song.repeat, pitchRange: { ...song.pitchRange } },
     tracks,
@@ -275,11 +275,13 @@ export const useLibrary = create<Library>()(
       deleteFunction: (id) => set((s) => ({ functions: s.functions.filter((f) => f.id !== id) })),
       importFunctions: (fns) => {
         const taken = new Set(get().functions.map((f) => f.name));
-        const added = fns.map((f) => {
-          let name = f.name, i = 2;
-          while (taken.has(name)) name = `${f.name} ${i++}`;
+        const now = Date.now();
+        const added = fns.map((f, i) => {
+          let name = f.name, n = 2;
+          while (taken.has(name)) name = `${f.name} ${n++}`;
           taken.add(name);
-          return { ...f, id: uid('fn'), name };
+          // it joins My functions now — "newest first" puts it at the top, whatever date the file carries
+          return { ...f, id: uid('fn'), name, savedAt: now + i };
         });
         set((s) => ({ functions: [...s.functions, ...added] }));
         return added.length;

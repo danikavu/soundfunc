@@ -10,7 +10,31 @@ import { toast } from './TopBar';
 import { canLinkFolder, forgetPresetFolder, mergeFunctions, mergeKits, mergeVoices, openPresetFolder, readFolderFiles, usePresetFolder } from '../state/presetFolder';
 
 /** Functions you saved: whole tracks — every node with its values — to plant in any garden, or share as a file. */
+/** My functions in date order: newest first (↓) or oldest first (↑) */
+type Order = 'newest' | 'oldest';
+const ORDER_KEY = 'sf.presetOrder';
+function useOrder() {
+  const [order, setOrder] = useState<Order>(() => {
+    try {
+      const v = localStorage.getItem(ORDER_KEY);
+      return v === 'oldest' ? 'oldest' : 'newest';
+    } catch {
+      return 'newest';
+    }
+  });
+  const set = (o: Order) => {
+    setOrder(o);
+    try {
+      localStorage.setItem(ORDER_KEY, o);
+    } catch {
+      /* private window: it just won't be remembered */
+    }
+  };
+  return [order, set] as const;
+}
+
 function MyFunctions() {
+  const [order, setOrder] = useOrder();
   const { functions, saveFunction, deleteFunction, importFunctions } = useLibrary();
   const track = useSelectedTrack();
   const plantFunction = useStore((s) => s.plantFunction);
@@ -75,6 +99,14 @@ function MyFunctions() {
         >
           <Icon name="folder" size={14} />
         </button>
+        <span className="mine-order" role="group" aria-label="Order My functions by date">
+          <button className={`icon-btn order-key ${order === 'newest' ? 'on' : ''}`} aria-pressed={order === 'newest'} onClick={() => setOrder('newest')} title="Newest first — the function you saved last at the top" aria-label="Newest first">
+            <Icon name="caret" size={13} />
+          </button>
+          <button className={`icon-btn order-key ${order === 'oldest' ? 'on' : ''}`} aria-pressed={order === 'oldest'} onClick={() => setOrder('oldest')} title="Oldest first — the function you saved first at the top" aria-label="Oldest first">
+            <Icon name="caretUp" size={13} />
+          </button>
+        </span>
         {folder.name && (
           <button className="icon-btn" title={`Stop keeping “${folder.name}” in step (its files stay)`} aria-label="Forget presets folder" onClick={() => void forgetPresetFolder()}>
             <Icon name="close" size={11} />
@@ -143,7 +175,7 @@ function MyFunctions() {
       )}
       <Fold id="my-functions" title="My functions" count={functions.length} defaultOpen>
         {functions.length === 0 && <p className="muted fold-empty">Nothing saved yet.</p>}
-        {functions.map((fn, i) => (
+        {[...functions].sort((a, b) => (order === 'newest' ? b.savedAt - a.savedAt : a.savedAt - b.savedAt)).map((fn, i) => (
         <div key={fn.id} className="mine-row">
           <button className="preset reveal" onClick={() => plantFunction(fn)} title={`Plant “${fn.name}” — ${fn.description}`}>
             <span className="preset-line">
@@ -188,6 +220,26 @@ function exportPreset(p: (typeof PRESETS)[number], i: number) {
   download(`${fileSafe(p.name)}.soundfunc-function.json`, JSON.stringify(functionFile([fn]), null, 2), 'application/json');
 }
 
+/** one built-in preset: plant it on click, export it on hover */
+function PresetRow({ p, i, onPlant }: { p: (typeof PRESETS)[number]; i: number; onPlant: (id: string) => void }) {
+  return (
+    <div className="mine-row">
+      <button className="preset reveal" onClick={() => onPlant(p.id)} title={p.description}>
+        <span className="preset-line">
+          <b>{p.name}</b>
+          <MiniScore id={`preset:${p.id}`} make={() => trackFromPreset(p, i)} color={TRACK_COLORS[i % TRACK_COLORS.length]} />
+        </span>
+        <code>{p.formula}</code>
+      </button>
+      <span className="mine-actions">
+        <button className="icon-btn" title={`Export “${p.name}” as a function file — Import puts it under My functions`} aria-label={`Export ${p.name}`} onClick={() => exportPreset(p, i)}>
+          <Icon name="download" size={12} />
+        </button>
+      </span>
+    </div>
+  );
+}
+
 /** One group of Function presets: a small header that folds, remembering whether you left it open. */
 function PresetGroupList({ group, onPlant }: { group: PresetGroup; onPlant: (id: string) => void }) {
   const items = PRESETS_BY_GROUP.get(group) ?? [];
@@ -220,23 +272,7 @@ function PresetGroupList({ group, onPlant }: { group: PresetGroup; onPlant: (id:
         <span>{label}</span>
         <small>{items.length}</small>
       </button>
-      {open &&
-        items.map(({ p, i }) => (
-          <div key={p.id} className="mine-row">
-            <button className="preset reveal" onClick={() => onPlant(p.id)} title={p.description}>
-              <span className="preset-line">
-                <b>{p.name}</b>
-                <MiniScore id={`preset:${p.id}`} make={() => trackFromPreset(p, i)} color={TRACK_COLORS[i % TRACK_COLORS.length]} />
-              </span>
-              <code>{p.formula}</code>
-            </button>
-            <span className="mine-actions">
-              <button className="icon-btn" title={`Export “${p.name}” as a function file — Import puts it under My functions`} aria-label={`Export ${p.name}`} onClick={() => exportPreset(p, i)}>
-                <Icon name="download" size={12} />
-              </button>
-            </span>
-          </div>
-        ))}
+      {open && items.map(({ p, i }) => <PresetRow key={p.id} p={p} i={i} onPlant={onPlant} />)}
     </div>
   );
 }
@@ -283,9 +319,12 @@ export function Sidebar() {
   const allLocked = project.tracks.length > 0 && project.tracks.every((t) => t.locked);
   const selected = useSelectedTrack();
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
-
+  // two halves that scroll on their own: the channels always in view above, kits and functions below
   return (
-    <aside className="panel">
+    <aside className="panel side-split">
+      <div className="side-half side-channels">
+      {/* the header and its keys stay put while a long list of channels scrolls under them */}
+      <div className="side-channels-head">
       <div className="eyebrow">Channels</div>
       <div className="tracks-head">
         {project.tracks.length > 0 && (
@@ -339,6 +378,7 @@ export function Sidebar() {
           )}
         </div>
       </div>
+      </div>
       {project.tracks.map((t) => (
         <div
           key={t.id}
@@ -383,7 +423,9 @@ export function Sidebar() {
         </div>
       ))}
       {project.tracks.length === 0 && <p className="muted serif">An empty track. Plant something below.</p>}
+      </div>
 
+      <div className="side-half side-plant">
       <KitPicker />
 
       <div className="eyebrow">Plant a function</div>
@@ -393,6 +435,7 @@ export function Sidebar() {
           <PresetGroupList key={g} group={g} onPlant={addTrack} />
         ))}
       </Fold>
+      </div>
     </aside>
   );
 }

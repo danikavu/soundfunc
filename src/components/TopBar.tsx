@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { exportMidi, exportNotesCsv, type MidiMode } from '../engine/midi';
-import { NOTE_NAMES, PROGRESSION_GROUPS, PROGRESSIONS, SCALE_GROUPS, SCALES, type ScaleGroup } from '../engine/music';
+import { NOTE_NAMES, PROGRESSION_GROUPS, PROGRESSIONS, SCALE_GROUPS, SCALES, spellDegree, type ScaleGroup } from '../engine/music';
 import { tryCompile } from '../engine/expr';
 import { useStore } from '../state/store';
 import { togglePlay } from '../state/transport';
@@ -287,11 +287,12 @@ export function TopBar() {
           <Dropdown
             compact
             label="Key"
-            value={<b>{NOTE_NAMES[song.root]}</b>}
+            // spelled the way the key spells it: D♭ major, C♯ minor
+            value={<b>{spellDegree(0, song.root, song.scale)}</b>}
             groups={[
               {
                 title: 'Key — the root note',
-                items: NOTE_NAMES.map((n, i) => ({ key: n, label: n, selected: song.root === i, onSelect: () => setSong({ root: i }) })),
+                items: NOTE_NAMES.map((n, i) => ({ key: n, label: spellDegree(0, i, song.scale), selected: song.root === i, onSelect: () => setSong({ root: i }) })),
               },
             ]}
           />
