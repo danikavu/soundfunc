@@ -3508,15 +3508,11 @@ aside.panel:last-of-type .info-pop {
   color: var(--accent);
 }
 
-/* ---------- the Score's functions, under the score ---------- */
-/* the strip takes its own row between the score and the nodes: the score keeps its full size */
-.center:has(> .score-math) {
-  grid-template-rows: minmax(180px, 40%) auto minmax(0, 1fr);
-}
+/* ---------- Functions: every channel you can hear as math, in the node board's place ---------- */
 .score-math {
   position: relative;
+  flex: 1;
   min-height: 0;
-  max-height: 30vh;
   display: flex;
   flex-direction: column;
   background: var(--paper);

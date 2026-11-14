@@ -22,6 +22,7 @@ import { nodeHeight, uid } from '../engine/presets';
 import { DEFAULT_CHAOS, useSelectedTrack, useStore } from '../state/store';
 import { FuncNode, GraphContext, CATEGORY_COLORS } from './FuncNode';
 import { Icon, Info, Seg, getRender } from './ui';
+import { ScoreMath, useScoreMath } from './ScoreMath';
 import { toast } from './TopBar';
 import { SlidersBar } from './SlidersBar';
 import { Dropdown } from './Dropdown';
@@ -367,6 +368,10 @@ function SelectionTools() {
 
 export function NodeEditor() {
   const track = useSelectedTrack();
+  // the area shows the node board, or every channel you can hear written as math (remembered)
+  const [math, setMath] = useScoreMath();
+  const onMathZoom = useCallback((zoom: number) => setMath({ zoom }), [setMath]);
+  const showMath = math.open;
   const song = useStore((s) => s.project.song);
   const setGraph = useStore((s) => s.setGraph);
   const checkpoint = useStore((s) => s.checkpoint);
@@ -490,6 +495,15 @@ export function NodeEditor() {
       }}
     >
       <div className="toolbar">
+        <Seg<'nodes' | 'math'>
+          value={showMath ? 'math' : 'nodes'}
+          onChange={(v) => setMath({ open: v === 'math' })}
+          options={[
+            { value: 'nodes', label: 'Nodes' },
+            { value: 'math', label: 'Functions' },
+          ]}
+        />
+        {!showMath && (
         <button
           className="btn"
           title="Add a node (or double-click the board)"
@@ -505,6 +519,7 @@ export function NodeEditor() {
         >
           <Icon name="plus" size={14} /> <span className="tb-label">Add node</span>
         </button>
+        )}
         <button className="btn" onClick={() => useStore.getState().setShowFunction(true)} title="See the whole channel as one function — math, SoundFunc, JavaScript, Python (F)" aria-label="Function">
           <Icon name="sigma" size={14} /> <span className="tb-label">Function</span>
         </button>
@@ -520,10 +535,12 @@ export function NodeEditor() {
           <Icon name="sliders" size={14} /> <span className="tb-label">Slider</span>
         </button>
         <Mutator />
-        <SelectionTools />
+        {!showMath && <SelectionTools />}
       </div>
       <SlidersBar track={track} />
-      <div className="nodes-canvas">
+      {/* Functions: the math takes the board's place; the board stays mounted underneath, so its view and selection survive */}
+      {showMath && <ScoreMath detail={math.detail} onDetail={(detail) => setMath({ detail })} zoom={math.zoom} onZoom={onMathZoom} />}
+      <div className="nodes-canvas" style={showMath ? { display: 'none' } : undefined}>
         <GraphContext.Provider value={{ trackId: track.id, traces: render.traces, errors: render.errors }}>
           <ReactFlow
             nodes={nodes}
@@ -548,7 +565,7 @@ export function NodeEditor() {
           </ReactFlow>
         </GraphContext.Provider>
       </div>
-      {!render.hasOutput && (
+      {!render.hasOutput && !showMath && (
         <div className="viz-tip" style={{ left: '50%', top: 70, transform: 'translateX(-50%)', color: 'var(--accent)' }}>
           Add a “Note Out” node — it decides what you hear.
         </div>

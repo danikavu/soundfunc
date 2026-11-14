@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { uid, type Kit } from '../engine/presets';
-import { NOTE_NAMES, SCALES } from '../engine/music';
+import { SCALES, spellDegree } from '../engine/music';
 import type { Block } from '../engine/graphEdit';
 import { DRUMS, normalizeProject, TRACK_DEFAULTS, WAVEFORMS, type Project, type Slider, type Song, type Track, type Waveform } from '../engine/project';
 
@@ -110,7 +110,7 @@ export function kitOf(project: Project, name: string): SavedKit {
   return {
     id: uid('kit'),
     name,
-    description: `${tracks.length} channel${tracks.length === 1 ? '' : 's'} · ${song.bpm} bpm · ${NOTE_NAMES[song.root]} ${scale}: ${tracks.map((t) => t.name).join(', ')}`,
+    description: `${tracks.length} channel${tracks.length === 1 ? '' : 's'} · ${song.bpm} bpm · ${spellDegree(0, song.root, song.scale)} ${scale}: ${tracks.map((t) => t.name).join(', ')}`,
     savedAt: Date.now(),
     song: { bpm: song.bpm, root: song.root, scale: song.scale, harmony: song.harmony, lengthMode: song.lengthMode, lengthBeats: song.lengthBeats, repeat: song.repeat, pitchRange: { ...song.pitchRange } },
     tracks,

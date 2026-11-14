@@ -233,10 +233,8 @@ body {
   border-radius: var(--radius);
   overflow: hidden;
 }
-/* the functions strip is a screen too; its body scrolls, so it holds every channel you can hear */
+/* Functions is a screen too, in the node board's place; its body scrolls, so it holds every channel you can hear */
 .score-math {
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
   overflow: hidden;
 }
 .viz,

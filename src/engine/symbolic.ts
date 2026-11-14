@@ -5,7 +5,7 @@
  */
 import { compileAst, parse, type Ast, type BinOp } from './expr';
 import { COMPARE_OPS, NODE_DEFS, curveRepeats, parseCurve, parseList, parsePattern, sectionLengths, type GNode, type Graph, type NodeData } from './graph';
-import { NOTE_NAMES, PITCH_MODES, SCALES } from './music';
+import { PITCH_MODES, SCALES, spellDegree } from './music';
 import { BEATS_PER_BAR, isDrum, scaleLength, stretchOf, voiceLabel, type Song, type Track } from './project';
 
 // ---------- tree helpers ----------
@@ -798,7 +798,7 @@ function barAst(track: Track): Ast {
 export function describeTrack(track: Track, song: Song): string {
   const scale = SCALES[song.scale] ?? SCALES.major;
   if (isDrum(track.waveform)) return `${voiceLabel(track.waveform)} drum · pitch tunes the hit in semitones`;
-  return `${NOTE_NAMES[song.root]} ${scale.label} · ${PITCH_MODES[track.pitchMode].toLowerCase()} · octave ${track.octave}${track.playMode === 'glide' ? ' · glide (continuous)' : ''}`;
+  return `${spellDegree(0, song.root, song.scale)} ${scale.label} · ${PITCH_MODES[track.pitchMode].toLowerCase()} · octave ${track.octave}${track.playMode === 'glide' ? ' · glide (continuous)' : ''}`;
 }
 
 /** LaTeX lines for one track: the outputs, the where-clause, then the clock and harmony. */
@@ -851,22 +851,22 @@ export function trackCode(cs: Composed[], song: Song, lang: Lang): string {
   const header =
     lang === 'js'
       ? [
-          `// SoundFunc — ${cs.length === 1 ? `"${cs[0].track.name}"` : 'track'} · ${NOTE_NAMES[song.root]} ${scale.label} · ${song.bpm} bpm`,
+          `// SoundFunc — ${cs.length === 1 ? `"${cs[0].track.name}"` : 'track'} · ${spellDegree(0, song.root, song.scale)} ${scale.label} · ${song.bpm} bpm`,
           '// Each channel function takes the step n (and loop k) and returns its Note Out inputs:',
           '// pitch (see `mode`), velocity 0..1 (0 = rest), length in steps.',
           '',
-          `export const song = { bpm: ${song.bpm}, root: ${song.root} /* ${NOTE_NAMES[song.root]} */, scale: [${scale.steps.join(', ')}] };`,
+          `export const song = { bpm: ${song.bpm}, root: ${song.root} /* ${spellDegree(0, song.root, song.scale)} */, scale: [${scale.steps.join(', ')}] };`,
           'const PHI = (1 + Math.sqrt(5)) / 2;',
         ]
       : [
-          `"""SoundFunc — ${cs.length === 1 ? `"${cs[0].track.name}"` : 'track'} · ${NOTE_NAMES[song.root]} ${scale.label} · ${song.bpm} bpm`,
+          `"""SoundFunc — ${cs.length === 1 ? `"${cs[0].track.name}"` : 'track'} · ${spellDegree(0, song.root, song.scale)} ${scale.label} · ${song.bpm} bpm`,
           '',
           'Each channel function takes the step n (and loop k) and returns its Note Out inputs:',
           'pitch (see `mode`), velocity 0..1 (0 = rest), length in steps.',
           '"""',
           'import math',
           '',
-          `SONG = {"bpm": ${song.bpm}, "root": ${song.root}, "scale": [${scale.steps.join(', ')}]}  # root ${NOTE_NAMES[song.root]}`,
+          `SONG = {"bpm": ${song.bpm}, "root": ${song.root}, "scale": [${scale.steps.join(', ')}]}  # root ${spellDegree(0, song.root, song.scale)}`,
           'PHI = (1 + math.sqrt(5)) / 2',
         ];
   if (anyHarmony) {

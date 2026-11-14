@@ -2,7 +2,7 @@ import { compileGraph, type Graph } from './graph';
 import { parse, renameVariable, tryCompile, type Compiled } from './expr';
 import { FIXED_LENGTHS, fixedLengthFor, type LengthMode } from './steps';
 import type { DrumParams, SynthParams } from './synth';
-import { chordTones, DEFAULT_PITCH_RANGE, limitPitch, midiToDegree, midiToFreq, midiToName, NOTE_NAMES, SCALES, valueToMidi, valueToPitch, type PitchMode, type PitchRange } from './music';
+import { chordTones, DEFAULT_PITCH_RANGE, limitPitch, midiToDegree, midiToFreq, midiToName, SCALES, spellDegree, valueToMidi, valueToPitch, type PitchMode, type PitchRange } from './music';
 
 export type DrumVoice = 'kick' | 'snare' | 'hat' | 'openhat' | 'clap' | 'rim' | 'tom' | 'crash';
 export type Waveform =
@@ -331,7 +331,7 @@ export interface TrackRender {
 }
 
 export function keyLabel(song: Song): string {
-  return `${NOTE_NAMES[song.root]} ${song.scale}`;
+  return `${spellDegree(0, song.root, song.scale)} ${song.scale}`;
 }
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
