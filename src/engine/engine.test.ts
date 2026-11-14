@@ -1780,3 +1780,25 @@ describe('custom waves and voices', () => {
     useLibrary.setState({ voices: [] });
   });
 });
+
+describe('the date a function joined My functions', () => {
+  it('an imported function joins now, whatever date its file carries — and a folder copy keeps the date the library had', async () => {
+    const { useLibrary, functionOf } = await import('../state/library');
+    const { mergeFunctions } = await import('../state/presetFolder');
+    const old = { ...functionOf(trackFromPreset(PRESETS[0], 0), 'Old export'), savedAt: 1_000 };
+    useLibrary.setState({ functions: [] });
+    const before = Date.now();
+    useLibrary.getState().importFunctions([old]);
+    const imported = useLibrary.getState().functions.find((f) => f.name === 'Old export')!;
+    expect(imported.savedAt).toBeGreaterThanOrEqual(before);
+
+    // the folder's copy of a function the library has: its content wins, its date stays
+    mergeFunctions([{ ...old, description: 'edited on disk', savedAt: 5 }]);
+    const again = useLibrary.getState().functions.find((f) => f.name === 'Old export')!;
+    expect(again.description).toBe('edited on disk');
+    expect(again.savedAt).toBe(imported.savedAt);
+    // …and one the library never had joins now
+    mergeFunctions([{ ...old, name: 'Dropped in Finder', savedAt: 7 }]);
+    expect(useLibrary.getState().functions.find((f) => f.name === 'Dropped in Finder')!.savedAt).toBeGreaterThanOrEqual(before);
+  });
+});

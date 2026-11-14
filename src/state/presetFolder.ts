@@ -105,9 +105,18 @@ interface Collection<T extends { name: string }> {
   files: Map<string, { file: string; text: string }>;
 }
 
-function mergeByName<T extends { id: string; name: string }>(have: T[], incoming: T[]): T[] {
+/**
+ * The folder's copy wins for a name both have — but an item keeps the date it joined the library,
+ * and one that is new to it joins now (a file copied in from elsewhere carries its old date, and
+ * "newest first" should still put it at the top).
+ */
+function mergeByName<T extends { id: string; name: string; savedAt: number }>(have: T[], incoming: T[]): T[] {
   const byName = new Map(have.map((x) => [x.name, x]));
-  const fromFolder = incoming.map((x) => ({ ...x, id: byName.get(x.name)?.id ?? x.id }));
+  const now = Date.now();
+  const fromFolder = incoming.map((x, i) => {
+    const had = byName.get(x.name);
+    return { ...x, id: had?.id ?? x.id, savedAt: had ? had.savedAt : now + i };
+  });
   const taken = new Set(fromFolder.map((x) => x.name));
   return [...have.filter((x) => !taken.has(x.name)), ...fromFolder];
 }
@@ -264,14 +273,46 @@ async function connect(root: DirHandle, label: string): Promise<{ functions: num
     const written = (await sync(functions, functions.merge(f.items))) + (await sync(kits, kits.merge(k.items))) + (await sync(voices, voices.merge(v.items)));
     const factory = await writeFactory(root).catch(() => 0);
     unsubscribe?.();
-    unsubscribe = useLibrary.subscribe((s, prev) => {
+    const off = useLibrary.subscribe((s, prev) => {
       if (s.functions !== prev.functions) void sync(functions, s.functions);
       if (s.kits !== prev.kits) void sync(kits, s.kits);
       if (s.voices !== prev.voices) void sync(voices, s.voices);
     });
+    // files dropped into the folder from outside (Finder, another machine) turn up when you come back to SoundFunc
+    const back = () => document.visibilityState === 'visible' && void rescan(root);
+    window.addEventListener('focus', back);
+    document.addEventListener('visibilitychange', back);
+    unsubscribe = () => {
+      off();
+      window.removeEventListener('focus', back);
+      document.removeEventListener('visibilitychange', back);
+    };
     return { functions: f.items.length, kits: k.items.length, voices: v.items.length, written, factory, skipped: f.skipped + k.skipped + v.skipped };
   } finally {
     usePresetFolder.setState({ busy: false });
+  }
+}
+
+/** read the folder again and bring in what appeared there since; nothing is removed from the library */
+let rescanning = false;
+async function rescan(root: DirHandle) {
+  if (rescanning || !functions.dir || usePresetFolder.getState().needsAccess) return;
+  rescanning = true;
+  try {
+    const before = useLibrary.getState();
+    const f = await load(functions, functions.dir, root);
+    const k = await load(kits, kits.dir!);
+    const v = await load(voices, voices.dir!);
+    const added = (xs: { name: string }[], have: { name: string }[]) => xs.filter((x) => !have.some((h) => h.name === x.name)).length;
+    const n = added(f.items, before.functions) + added(k.items, before.kits) + added(v.items, before.voices);
+    await sync(functions, functions.merge(f.items));
+    await sync(kits, kits.merge(k.items));
+    await sync(voices, voices.merge(v.items));
+    if (n) void import('../components/TopBar').then((m) => m.toast(`${n} new preset${n === 1 ? '' : 's'} from your presets folder — newest first in My functions`));
+  } catch {
+    usePresetFolder.setState({ needsAccess: true });
+  } finally {
+    rescanning = false;
   }
 }
 

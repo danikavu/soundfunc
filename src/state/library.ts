@@ -275,11 +275,13 @@ export const useLibrary = create<Library>()(
       deleteFunction: (id) => set((s) => ({ functions: s.functions.filter((f) => f.id !== id) })),
       importFunctions: (fns) => {
         const taken = new Set(get().functions.map((f) => f.name));
-        const added = fns.map((f) => {
-          let name = f.name, i = 2;
-          while (taken.has(name)) name = `${f.name} ${i++}`;
+        const now = Date.now();
+        const added = fns.map((f, i) => {
+          let name = f.name, n = 2;
+          while (taken.has(name)) name = `${f.name} ${n++}`;
           taken.add(name);
-          return { ...f, id: uid('fn'), name };
+          // it joins My functions now — "newest first" puts it at the top, whatever date the file carries
+          return { ...f, id: uid('fn'), name, savedAt: now + i };
         });
         set((s) => ({ functions: [...s.functions, ...added] }));
         return added.length;
