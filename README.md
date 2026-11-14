@@ -2,6 +2,14 @@
 
 Explore making music with math, and export to midi with automations
 
+![SoundFunc playing a rhythm kit: the score above, the bass line as nodes below](docs/walkthrough/app.png)
+
+Every channel is a function you can read back as math, typeset, while it plays:
+
+![Func View: every channel written as math](docs/walkthrough/func-view.png)
+
+See the [walkthrough](WALKTHROUGH.md) for a screenshot tour of every part of the app, and [USAGE.md](USAGE.md) for the full reference.
+
 TODO: MPE support
 
 ```sh
