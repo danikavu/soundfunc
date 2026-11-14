@@ -1325,7 +1325,7 @@ export const KITS: Kit[] = [
     tracks: [
       drum('Kick', 'kick', 32, 'bits(pick(floor(n / 16), 0x8120, 0x80A0), n)', { volume: 0.92, synth: { tone: 0.1, decay: 0.9, drive: 0.45 } }),
       voice('808', 'sine', `${ROOT} + L * (n % 32 >= 28)`, '0.92 * pick(n % 16, 1,1,1,1, 1,1,0,1, 1,1,1,1, 1,1,0,0)', {}, {
-        playMode: 'glide', quantize: true, glide: 0.1, steps: 32, octave: 1, volume: 0.88, release: 0.25, send: 0, synth: { drive: 0.55, sub: 0.25 },
+        playMode: 'glide', quantize: true, glide: 0.1, steps: 32, octave: 1, volume: 0.76, release: 0.25, send: 0, synth: { drive: 0.55, sub: 0.25 },
       }),
       drum('Clap', 'clap', 32, 'every(n, 16, 8) + 0.3 * (n == 31)', { volume: 0.9, send: 0.32, synth: { drive: 0.3, tone: 0.15 } }),
       drum('Snare', 'snare', 32, '0.55 * every(n, 16, 8)', { volume: 0.6, synth: { tone: 0.3, decay: 0.7 } }),
