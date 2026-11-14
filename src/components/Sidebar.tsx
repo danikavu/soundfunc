@@ -3,23 +3,23 @@ import { MiniScore } from './MiniScore';
 import { KitPicker } from './KitPicker';
 import { audibleTracks, stretchOf, voiceLabel } from '../engine/project';
 import { useSelectedTrack, useStore } from '../state/store';
-import { Icon, Seg, download, fileSafe } from './ui';
+import { Icon, download, fileSafe } from './ui';
 import { useRef, useState, type ReactNode } from 'react';
 import { functionFile, functionOf, readFunctionFile, useLibrary, type SavedFunction } from '../state/library';
 import { toast } from './TopBar';
 import { canLinkFolder, forgetPresetFolder, mergeFunctions, mergeKits, mergeVoices, openPresetFolder, readFolderFiles, usePresetFolder } from '../state/presetFolder';
 
 /** Functions you saved: whole tracks — every node with its values — to plant in any garden, or share as a file. */
-/** how the function lists are ordered — by group (as the presets were filed), or by when each was added */
-type Order = 'group' | 'newest' | 'oldest';
+/** My functions in date order: newest first (↓) or oldest first (↑) */
+type Order = 'newest' | 'oldest';
 const ORDER_KEY = 'sf.presetOrder';
 function useOrder() {
   const [order, setOrder] = useState<Order>(() => {
     try {
       const v = localStorage.getItem(ORDER_KEY);
-      return v === 'newest' || v === 'oldest' ? v : 'group';
+      return v === 'oldest' ? 'oldest' : 'newest';
     } catch {
-      return 'group';
+      return 'newest';
     }
   });
   const set = (o: Order) => {
@@ -33,7 +33,8 @@ function useOrder() {
   return [order, set] as const;
 }
 
-function MyFunctions({ order }: { order: Order }) {
+function MyFunctions() {
+  const [order, setOrder] = useOrder();
   const { functions, saveFunction, deleteFunction, importFunctions } = useLibrary();
   const track = useSelectedTrack();
   const plantFunction = useStore((s) => s.plantFunction);
@@ -98,6 +99,14 @@ function MyFunctions({ order }: { order: Order }) {
         >
           <Icon name="folder" size={14} />
         </button>
+        <span className="mine-order" role="group" aria-label="Order My functions by date">
+          <button className={`icon-btn order-key ${order === 'newest' ? 'on' : ''}`} aria-pressed={order === 'newest'} onClick={() => setOrder('newest')} title="Newest first — the function you saved last at the top" aria-label="Newest first">
+            <Icon name="caret" size={13} />
+          </button>
+          <button className={`icon-btn order-key ${order === 'oldest' ? 'on' : ''}`} aria-pressed={order === 'oldest'} onClick={() => setOrder('oldest')} title="Oldest first — the function you saved first at the top" aria-label="Oldest first">
+            <Icon name="caretUp" size={13} />
+          </button>
+        </span>
         {folder.name && (
           <button className="icon-btn" title={`Stop keeping “${folder.name}” in step (its files stay)`} aria-label="Forget presets folder" onClick={() => void forgetPresetFolder()}>
             <Icon name="close" size={11} />
@@ -166,7 +175,7 @@ function MyFunctions({ order }: { order: Order }) {
       )}
       <Fold id="my-functions" title="My functions" count={functions.length} defaultOpen>
         {functions.length === 0 && <p className="muted fold-empty">Nothing saved yet.</p>}
-        {(order === 'newest' ? [...functions].sort((a, b) => b.savedAt - a.savedAt) : order === 'oldest' ? [...functions].sort((a, b) => a.savedAt - b.savedAt) : functions).map((fn, i) => (
+        {[...functions].sort((a, b) => (order === 'newest' ? b.savedAt - a.savedAt : a.savedAt - b.savedAt)).map((fn, i) => (
         <div key={fn.id} className="mine-row">
           <button className="preset reveal" onClick={() => plantFunction(fn)} title={`Plant “${fn.name}” — ${fn.description}`}>
             <span className="preset-line">
@@ -310,8 +319,6 @@ export function Sidebar() {
   const allLocked = project.tracks.length > 0 && project.tracks.every((t) => t.locked);
   const selected = useSelectedTrack();
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
-  const [order, setOrder] = useOrder();
-
   // two halves that scroll on their own: the channels always in view above, kits and functions below
   return (
     <aside className="panel side-split">
@@ -422,25 +429,11 @@ export function Sidebar() {
       <KitPicker />
 
       <div className="eyebrow">Plant a function</div>
-      <MyFunctions order={order} />
+      <MyFunctions />
       <Fold id="function-presets" title="Function presets" count={PRESETS.length}>
-        <div className="preset-order">
-          <Seg<Order>
-            value={order}
-            onChange={setOrder}
-            options={[
-              { value: 'group', label: 'Groups' },
-              { value: 'newest', label: 'Newest' },
-              { value: 'oldest', label: 'Oldest' },
-            ]}
-          />
-        </div>
-        {order === 'group'
-          ? (Object.keys(PRESET_GROUPS) as PresetGroup[]).map((g) => <PresetGroupList key={g} group={g} onPlant={addTrack} />)
-          : // one list by when each preset joined SoundFunc: its place in the catalogue (the library is appended as it grows)
-            (order === 'newest' ? [...PRESETS].map((p, i) => ({ p, i })).reverse() : PRESETS.map((p, i) => ({ p, i }))).map(({ p, i }) => (
-              <PresetRow key={p.id} p={p} i={i} onPlant={addTrack} />
-            ))}
+        {(Object.keys(PRESET_GROUPS) as PresetGroup[]).map((g) => (
+          <PresetGroupList key={g} group={g} onPlant={addTrack} />
+        ))}
       </Fold>
       </div>
     </aside>

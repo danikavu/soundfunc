@@ -1607,11 +1607,16 @@ body,
   flex: 1 1 0;
   padding-bottom: var(--sp-8);
 }
-/* Groups · Newest · Oldest, at the top of Function presets */
-.preset-order {
-  display: flex;
-  justify-content: flex-end;
-  margin: 0 0 var(--sp-2);
+/* ↓ newest · ↑ oldest: My functions by date, at the right end of its tools — glyph keys like ‹ › */
+.track-tools .mine-order {
+  display: inline-flex;
+  margin-left: auto;
+}
+.app .track-tools .order-key {
+  color: var(--ink-3);
+}
+.app .track-tools .order-key.on {
+  color: var(--accent);
 }
 .side-channels-head {
   position: sticky;
