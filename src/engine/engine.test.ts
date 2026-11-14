@@ -140,8 +140,8 @@ describe('patterns & rhythm', () => {
     expect(parsePattern('X.x|o 9')).toEqual([1, 0, 0.75, 0.35, 1]);
   });
   it('ratchets and swing produce extra, shifted hits', () => {
-    const kit = KITS.find((k) => k.id === 'trap')!;
-    const hats = trackFromTemplate(kit.tracks[2], 'hats', 0);
+    const kit = KITS.find((k) => k.id === 'nightshift')!;
+    const hats = trackFromTemplate(kit.tracks.find((t) => t.name === 'Hats')!, 'hats', 0);
     const r = renderTrack(hats, defaultProject().song);
     expect(r.notes.length).toBeGreaterThan(hats.steps); // rolls add hits
     const swung = renderTrack({ ...hats, swing: 0.5 }, defaultProject().song);
@@ -162,7 +162,7 @@ describe('glide', () => {
     expect(r.curve.midi.every((m) => m === Math.round(m))).toBe(true);
   });
   it('exports glide as pitch bend and drums on channel 10', () => {
-    const kit = KITS.find((k) => k.id === 'dnb')!;
+    const kit = KITS.find((k) => k.id === 'liquidhour')!;
     const p: Project = { name: 'dnb', song: { ...defaultProject().song, ...kit.song }, tracks: kit.tracks.map((t, i) => trackFromTemplate(t, t.name, i)) };
     const bytes = exportMidi(p);
     const has = (status: number) => bytes.some((b, i) => b === status && i > 14);
@@ -1393,7 +1393,7 @@ describe('chords, bass and style kits', () => {
     expect([0, 1, 2, 3, 4, 5, 6, 7].map((b) => harmonyAt(song, b))).toEqual([0, 0, 5, 5, 1, 1, 4, 4]);
   });
   it('style kits plant at one fixed length, and their basses land on the chord roots', () => {
-    for (const id of ['jazz', 'bossa', 'salsa', 'funk', 'disco', 'deephouse', 'clicks', 'pocket', 'lofi', 'gfunk', 'dembow', 'amapiano', 'memphisdrift', 'hauntedmemphis', 'goldteeth', 'velour', 'velvet', 'bluenotehop', 'bristol', 'smokerings', 'afterglow', 'electroswing', 'lowrider', 'comptonkeys', 'longbeach', 'talkboxblvd', 'hyphy', 'ratchet']) {
+    for (const id of ['dustyfingers', 'cruisecontrol', 'nightshift', 'sundaypocket', 'fogline', 'afterhours', 'aguadecoco', 'liquidhour']) {
       const kit = KITS.find((k) => k.id === id)!;
       const lens = new Set(kit.tracks.map((t) => (t.steps ?? 16) * (t.stepBeats ?? 0.25) * (t.stretch ?? 1)));
       expect(lens.size, `${id}: every channel the same length`).toBe(1);
@@ -1419,9 +1419,10 @@ describe('chords, bass and style kits', () => {
         const rootPc = (song.root! + scale[((h % scale.length) + scale.length) % scale.length]) % 12;
         expect(pcs.has(rootPc), `${id} ${bass.name}: chord ${h} gets its root`).toBe(true);
       }
-      // …and the walking / bossa / funk / disco basses land right on the downbeat (tumbao anticipates, house sits on the offbeat)
-      if (id !== 'salsa' && id !== 'deephouse') {
-        const first = r.notes.find((n) => n.beat === 0)!;
+      // …and the basses land on the downbeat — a laid-back bass a little behind it (house sits on the offbeat)
+      if (id !== 'afterhours') {
+        const first = r.notes.find((n) => n.beat < 0.1)!;
+        expect(first, `${id} plays on the downbeat`).toBeTruthy();
         const h0 = harmonyAt(song, 0);
         expect(first.midi % 12, `${id} first note`).toBe((song.root! + scale[((h0 % scale.length) + scale.length) % scale.length]) % 12);
       }
@@ -1603,9 +1604,11 @@ describe('jam takes', () => {
   };
 
   it('records what plays from its bar line, cuts at its end, and keeps the tempo changes', () => {
-    const kit = KITS.find((k) => k.id === 'lowrider')!;
+    // the house kit's kick is four a bar; the West Coast kit's whistle glides
+    const kit = KITS.find((k) => k.id === 'afterhours')!;
     const song = { ...defaultProject().song, ...kit.song };
-    const tracks = kit.tracks.map((t, i) => trackFromTemplate(t, t.name, i));
+    const whistle = KITS.find((k) => k.id === 'cruisecontrol')!.tracks.find((t) => t.name === 'Whistle')!;
+    const tracks = [...kit.tracks, whistle].map((t, i) => trackFromTemplate(t, t.name, i));
     // the take is armed at beat 8 of the engine and ends at beat 24
     const take = new Take(8, 'Jam', song);
     for (let k = 0; k < 4; k++)
@@ -1619,20 +1622,20 @@ describe('jam takes', () => {
     take.end = 24;
     const jam = take.finish(24, 10, null);
     expect(jam.beats).toBe(16);
-    expect(jam.tempos).toEqual([{ beat: 0, bpm: 92 }, { beat: 8, bpm: 100 }]);
+    expect(jam.tempos).toEqual([{ beat: 0, bpm: 122 }, { beat: 8, bpm: 100 }]);
     const kick = jam.parts.find((p) => p.track.name === 'Kick')!;
     // the kick from engine beats 8 – 24 only, shifted to start at 0, nothing ringing past the end
     expect(kick.notes.every((n) => n.beat >= 0 && n.beat + n.duration <= 16 + 1e-9)).toBe(true);
     expect(kick.notes.length).toBe(16); // four a bar
-    expect(jam.parts.find((p) => p.track.name === 'G-funk whistle')!.glide.length).toBeGreaterThan(10);
+    expect(jam.parts.find((p) => p.track.name === 'Whistle')!.glide.length).toBeGreaterThan(10);
     const { tempos, ons } = scan(jamMidi(jam, 'standard'));
-    expect(tempos).toEqual([92, 100]);
+    expect(tempos).toEqual([122, 100]);
     expect(ons).toBeGreaterThan(20);
     expect(scan(jamMidi(jam, 'notes')).ons).toBeGreaterThan(20);
   });
 
   it('a silent glide closes its phrase, and channels that never sounded are left out', () => {
-    const tr = trackFromTemplate(KITS.find((k) => k.id === 'lowrider')!.tracks.find((t) => t.name === 'G-funk whistle')!, 'Whistle', 0);
+    const tr = trackFromTemplate(KITS.find((k) => k.id === 'cruisecontrol')!.tracks.find((t) => t.name === 'Whistle')!, 'Whistle', 0);
     const quiet = trackFromTemplate(KITS[0].tracks[0], 'Quiet', 1);
     const take = new Take(0, 'Jam', defaultProject().song);
     take.glide(tr, 0, 80, 0.5);
@@ -1677,10 +1680,12 @@ describe('stock voices', () => {
   });
 });
 
-describe('the hip-hop & lo-fi kits', () => {
-  it('every channel of Boom Bap, Tongue Clicks and Rainy Window plays notes', () => {
-    for (const id of ['boombap', 'clicks', 'lofi']) {
-      const kit = KITS.find((k) => k.id === id)!;
+describe('the rhythm kits', () => {
+  it('one kit per style, each in its own group, and every channel plays', () => {
+    const groups = KITS.map((k) => k.group);
+    expect(new Set(groups).size).toBe(KITS.length);
+    expect(KITS).toHaveLength(9);
+    for (const kit of KITS) {
       const song = { ...SONG_DEFAULTS, ...kit.song };
       kit.tracks.forEach((t, i) => {
         const r = renderTrack(trackFromTemplate(t, t.name, i), song, 0, true);
@@ -1714,7 +1719,7 @@ describe('the Sonic Menagerie', () => {
 
 describe('exporting one kit', () => {
   it('writes a built-in kit as a kits file that imports whole', () => {
-    const kit = KITS.find((k) => k.id === 'lowrider') ?? KITS[0];
+    const kit = KITS[0];
     const [back] = readKitFile(JSON.stringify(kitFile([savedKitOf(kit)])));
     expect(back.name).toBe(kit.name);
     expect(back.tracks.length).toBe(kit.tracks.length);
