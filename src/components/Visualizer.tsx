@@ -127,6 +127,23 @@ export function Visualizer() {
   const selected = useSelectedTrack();
   const [mode, setMode] = useState<Mode>('score');
   const [math, setMath] = useScoreMath();
+  /** the Score draws the notes in as the playhead reaches them — remembered between visits */
+  const [drawIn, setDrawIn] = useState(() => {
+    try {
+      return localStorage.getItem('sf.scoreDraw') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleDrawIn = () =>
+    setDrawIn((on) => {
+      try {
+        localStorage.setItem('sf.scoreDraw', on ? '0' : '1');
+      } catch {
+        /* private window: it just won't be remembered */
+      }
+      return !on;
+    });
   const onMathZoom = useCallback((zoom: number) => setMath({ zoom }), [setMath]);
   const [tip, setTip] = useState<{ x: number; y: number; text: string[] } | null>(null);
   /** Scope's look, remembered between visits */
@@ -256,7 +273,7 @@ export function Visualizer() {
   }, [theme]);
   useEffect(() => {
     dirty.current = true;
-  }, [score, fn, fnFull, mode, selected?.id]);
+  }, [score, fn, fnFull, mode, selected?.id, drawIn, playing]);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -392,6 +409,8 @@ export function Visualizer() {
         const my = (m: number) => padT + (hi - m) * rowH;
         const scale = (SCALES[project.song.scale] ?? SCALES.major).steps;
         const playBeat = pos === null ? null : pos % total;
+        /** draw-in: while playing, only what the playhead has reached this pass — the score is written as it plays */
+        const until = drawIn && playBeat !== null ? playBeat : Infinity;
         const placed: Placed[] = [];
 
         // raked sand: one line per in-scale pitch, the root a little darker
@@ -502,6 +521,7 @@ export function Visualizer() {
               run = [];
             };
             for (const [b, m, v] of glide) {
+              if (b > until) break;
               if (v < 0.01 || !visible(b, b)) {
                 flush();
                 continue;
@@ -512,8 +532,11 @@ export function Visualizer() {
             continue;
           }
           for (const note of notes) {
-            if (!visible(note.beat, note.beat + note.duration)) continue;
-            const x = bx(note.beat), w = Math.max(3, bx(note.beat + note.duration) - x - 1.5);
+            if (!visible(note.beat, note.beat + note.duration) || note.beat > until) continue;
+            const x = bx(note.beat);
+            // a note still being written grows from its start to the playhead, like a pen stroke
+            const end = Math.min(note.beat + note.duration, until);
+            const w = Math.max(3, bx(end) - x - (end < note.beat + note.duration ? 0 : 1.5));
             const h = Math.max(3, Math.min(rowH * 0.78, 14));
             stone(track, note, x, my(note.midi) + (rowH - h) / 2, w, h, isSel);
           }
@@ -534,7 +557,7 @@ export function Visualizer() {
           g.stroke();
           const h = Math.max(3, laneH * 0.62);
           for (const note of notes) {
-            if (!visible(note.beat, note.beat + note.duration)) continue;
+            if (!visible(note.beat, note.beat + note.duration) || note.beat > until) continue;
             const x = bx(note.beat);
             const w = Math.max(h * 0.8, Math.min(bx(note.beat + note.duration) - x - 1, h * 1.4));
             stone(track, note, x, y0 + (laneH - h) / 2, w, h, isSel);
@@ -761,7 +784,7 @@ export function Visualizer() {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [mode, score, fnFull, fnRange, selected, project.song, offset]);
+  }, [mode, score, fnFull, fnRange, selected, project.song, offset, drawIn]);
 
   const hit = (e: React.MouseEvent) => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -881,6 +904,17 @@ export function Visualizer() {
               <span className="muted">
                 bars {Math.floor((offset + view().start) / BEATS_PER_BAR) + 1}–{Math.ceil((offset + view().start + view().span) / BEATS_PER_BAR)}
               </span>
+            )}
+            {mode === 'score' && (
+              <button
+                className={`icon-btn ${drawIn ? 'on' : ''}`}
+                aria-pressed={drawIn}
+                onClick={toggleDrawIn}
+                title={drawIn ? 'Drawing the notes in as it plays — click to show the whole score' : 'Draw the notes in as the track plays (the whole score shows when stopped)'}
+                aria-label="Draw as it plays"
+              >
+                <Icon name="pen" size={13} />
+              </button>
             )}
             {mode === 'score' && (
               <button
