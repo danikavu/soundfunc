@@ -124,6 +124,46 @@ export function MidiImportSheet() {
               </button>
             ))}
           </div>
+          {/* Math: the melodic lines' pitch as sums of sines — off, nothing else changes */}
+          <div className="midi-options">
+            <span className="midi-option-label">Math</span>
+            <button
+              className={`btn small ${opts.math ? 'on' : ''}`}
+              aria-pressed={!!opts.math}
+              onClick={() => setOpts((o) => ({ ...o, math: o.math ? undefined : { terms: 'exact', glide: false } }))}
+              title="Write each melodic line's pitch as a sum of sines over the loop — c + A·sin(k·τ·x + φ)… — fitted where its notes play. A pure function, no list: it can be bent, mutated, read. Off: the lists, as ever."
+            >
+              Sum of sines
+            </button>
+            {opts.math && (
+              <>
+                <span className="midi-option-label" style={{ marginLeft: 'var(--sp-3)' }}>
+                  Terms
+                </span>
+                <span title="Exact: as many sines as it takes for every note to land. A number: at most that many — a simpler contour that keeps the line’s shape; each channel says how many of its notes still land.">
+                  <Seg<string>
+                    value={String(opts.math.terms)}
+                    onChange={(v) => setOpts((o) => ({ ...o, math: { ...o.math!, terms: v === 'exact' ? 'exact' : Number(v) } }))}
+                    options={[
+                      { value: 'exact', label: 'Exact' },
+                      { value: '1', label: '1' },
+                      { value: '2', label: '2' },
+                      { value: '4', label: '4' },
+                    ]}
+                  />
+                </span>
+                <button
+                  className={`btn small ${opts.math.glide ? 'on' : ''}`}
+                  aria-pressed={opts.math.glide}
+                  onClick={() => setOpts((o) => ({ ...o, math: { ...o.math!, glide: !o.math!.glide } }))}
+                  title="Play each line as a glide: one voice sliding from note to note along its curve, held for each note’s length (the series keeps to slow harmonics, so the line flows)"
+                  style={{ marginLeft: 'var(--sp-2)' }}
+                >
+                  Glide line
+                </button>
+              </>
+            )}
+          </div>
 
           <div className="midi-channels-head">
             <span className="midi-option-label">
@@ -158,6 +198,8 @@ export function MidiImportSheet() {
                 </label>
                 <span className="muted midi-meta">
                   {KIND[c.kind]} · {voiceLabel(c.template.waveform as Waveform)} · {c.grid} · {c.steps} steps · {c.notes} note{c.notes === 1 ? '' : 's'}
+                  {c.match !== undefined && c.kind !== 'drums' && ` · ${c.match === 1 ? 'every note exact' : `${Math.round(c.match * 100)}% of notes exact`}`}
+                  {c.template.playMode === 'glide' && ' · glide'}
                 </span>
                 <div className="midi-formulas">
                   {Object.entries(c.formulas).map(([port, f]) => (

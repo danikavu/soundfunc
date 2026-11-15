@@ -523,6 +523,89 @@ function modelFeel(vel: number[], shifts: number[], p: number, seed: number, gat
   return { velocity, shift };
 }
 
+/**
+ * A step list as a sum of sines in x (0 → 1 over the loop): c + Σ A_k·sin(k·τ·x + φ_k), fitted by
+ * least squares only where a note plays — between notes the curve is free. The harmonics are
+ * chosen greedily, the one that lands the most notes first, so a line needs only the few it uses
+ * (a line rocking between two notes is one sine, whatever its speed). `exact`: add harmonics until
+ * every note is within a third of a degree (the engine rounds to the degree, so each lands on its
+ * note); a number: at most that many, however close it gets. Null when exact can't be reached.
+ */
+export function fourierFit(vals: number[], at: boolean[], terms: 'exact' | number, smooth = false): { formula: string; matched: number; terms: number } | null {
+  const N = vals.length;
+  const pts = vals.flatMap((_, i) => (at[i] ? [i] : []));
+  if (!pts.length) return null;
+  const c0 = mean(pts.map((i) => vals[i]));
+  if (pts.every((i) => Math.abs(vals[i] - c0) < 0.3)) return { formula: num(Math.round(c0)), matched: 1, terms: 0 };
+  const TAU = Math.PI * 2;
+  const limit = terms === 'exact' ? Math.min(24, pts.length) : terms;
+
+  /** least squares on the constant and the chosen harmonics; returns the series as it will be written */
+  const solve = (ks: number[], d: number) => {
+    const cols = 1 + 2 * ks.length;
+    const row = (i: number) => [1, ...ks.flatMap((k) => [Math.cos(k * TAU * (i / N)), Math.sin(k * TAU * (i / N))])];
+    const A = Array.from({ length: cols }, () => new Array<number>(cols + 1).fill(0));
+    for (const i of pts) {
+      const r = row(i);
+      for (let a = 0; a < cols; a++) {
+        for (let b = 0; b < cols; b++) A[a][b] += r[a] * r[b];
+        A[a][cols] += r[a] * vals[i];
+      }
+    }
+    for (let a = 0; a < cols; a++) A[a][a] += 1e-7; // a whisker of ridge: never singular
+    for (let a = 0; a < cols; a++) {
+      let piv = a;
+      for (let b = a + 1; b < cols; b++) if (Math.abs(A[b][a]) > Math.abs(A[piv][a])) piv = b;
+      [A[a], A[piv]] = [A[piv], A[a]];
+      for (let b = 0; b < cols; b++) {
+        if (b === a || !A[a][a]) continue;
+        const f = A[b][a] / A[a][a];
+        for (let c = a; c <= cols; c++) A[b][c] -= f * A[a][c];
+      }
+    }
+    const w = A.map((r, a) => (r[a] ? r[cols] / r[a] : 0));
+    const r = (x: number) => Math.round(x * 10 ** d) / 10 ** d;
+    const c = r(w[0]);
+    const parts = ks
+      .map((k, j) => ({ k, amp: r(Math.hypot(w[1 + 2 * j], w[2 + 2 * j])), ph: r(Math.atan2(w[1 + 2 * j], w[2 + 2 * j])) }))
+      .filter((q) => q.amp > 0)
+      .sort((p, q) => p.k - q.k);
+    const at = (i: number) => c + parts.reduce((s, q) => s + q.amp * Math.sin(q.k * TAU * (i / N) + q.ph), 0);
+    const lands = pts.filter((i) => Math.abs(at(i) - vals[i]) < 0.34).length;
+    const sse = pts.reduce((s, i) => s + (at(i) - vals[i]) ** 2, 0);
+    const term = (q: { k: number; amp: number; ph: number }) => `${q.amp === 1 ? '' : `${num(q.amp, d)} * `}sin(${q.k > 1 ? `${q.k} * ` : ''}tau * x${q.ph ? ` ${q.ph < 0 ? '-' : '+'} ${num(Math.abs(q.ph), d)}` : ''})`;
+    const formula = [c ? num(c, d) : '', ...parts.map(term)].filter(Boolean).join(' + ') || '0';
+    return { formula, lands, sse, terms: parts.length };
+  };
+  /** as written with 2 decimals, or 3 when 2 would move a note */
+  const best2 = (ks: number[]) => {
+    const two = solve(ks, 2);
+    if (two.lands === pts.length) return two;
+    const three = solve(ks, 3);
+    return three.lands > two.lands ? three : two;
+  };
+
+  const chosen: number[] = [];
+  let cur = best2([]);
+  // a glide plays the curve between notes too: only slow harmonics, so the line flows rather than wobbles
+  const top = smooth ? Math.min(Math.floor(N / 2), Math.max(2, Math.ceil(pts.length / 2) + 1)) : Math.floor(N / 2);
+  const candidates = Array.from({ length: top }, (_, i) => i + 1);
+  while (chosen.length < limit && cur.lands < pts.length) {
+    let pick: { k: number; fit: ReturnType<typeof best2> } | null = null;
+    for (const k of candidates) {
+      if (chosen.includes(k)) continue;
+      const fit = best2([...chosen, k]);
+      // the most notes landed; on a near tie, the slower harmonic (candidates come low first)
+      if (!pick || fit.lands > pick.fit.lands || (fit.lands === pick.fit.lands && fit.sse < pick.fit.sse * 0.9 - 1e-9)) pick = { k, fit };
+    }
+    if (!pick) break;
+    chosen.push(pick.k);
+    cur = pick.fit;
+  }
+  if (terms === 'exact' && cur.lands < pts.length) return null;
+  return { formula: cur.formula, matched: cur.lands / pts.length, terms: cur.terms };
+}
+
 // ---------- the parts ----------
 
 /** GM drum notes onto the drum voices: which voice, a tuning, and a touch of sound design */
@@ -588,6 +671,12 @@ function voiceFor(program: number | null, median: number): Partial<Track> & { wa
 export type Feel = 'exact' | 'functions' | 'grid';
 export interface ImportOptions {
   feel: Feel;
+  /**
+   * Math: each melodic channel's pitch as a sum of sines over the loop (a Fourier series in x) —
+   * `exact` adds terms until every note lands, a number keeps that many for a simpler contour;
+   * `glide` plays the lines as a glide, sliding from note to note. Off (undefined): lists, as ever.
+   */
+  math?: { terms: 'exact' | number; glide: boolean };
   /** only these bars of the file (from inclusive, to exclusive; whole file when left out) */
   from?: number;
   to?: number;
@@ -602,6 +691,8 @@ export interface ImportedChannel {
   template: Partial<Track> & { name: string; graph: { nodes: GNode[]; edges: GEdge[] } };
   /** what the preview says about it */
   kind: 'drums' | 'melody' | 'chords' | 'voice';
+  /** Math: the share of notes the series lands exactly (1 when exact) */
+  match?: number;
   grid: string;
   steps: number;
   notes: number;
@@ -885,6 +976,7 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
       }
       const plus = (baseExpr: string, list: string) => (!baseExpr ? list : list === '0' ? baseExpr : list.startsWith('-') ? `${baseExpr} - ${list.slice(1)}` : `${baseExpr} + ${list}`);
       let pick: { pitch: number[]; inv: number[]; base: Base; cost: number } | null = null;
+      const tried: { pitch: number[]; base: Base }[] = [];
       for (const base of bases) {
         const pitch = fill(abs.map((a, s) => (Number.isNaN(a) ? NaN : a - base.f(hs2[s]))));
         const invl = fill(inv.map((a, s) => (Number.isNaN(a) ? NaN : a - (base.inv ? base.inv.f(hs2[s]) : 0))));
@@ -895,6 +987,7 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
           return f === '0' ? 0 : f.length;
         };
         const cost = (base.expr ? 6 : 0) + left(pitch) + (S > 1 ? left(invl) + (base.inv ? 2 : 0) : 0);
+        tried.push({ pitch, base });
         if (!pick || cost < pick.cost) pick = { pitch, inv: invl, base, cost };
       }
       const { base } = pick!;
@@ -921,13 +1014,46 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
       if (feel) {
         if (feel.shift) formulas.shift = feel.shift;
       } else if (cut(sh).some((x) => x > 0.02)) formulas.shift = listFormula(cut(sh).map((x) => Math.round(x * 100) / 100));
+      // Math: the pitch as a sum of sines over the loop, fitted where notes play (free in between)
+      let match: number | undefined;
+      const extra: Partial<Track> = {};
+      if (opts.math) {
+        // the base the series sits on: whichever needs the fewest terms (chords keep their voicing)
+        const hits = cut(gateList).map((v) => v > 0);
+        const options = kind === 'chords' ? [{ pitch: lists.pitch, base }] : tried.filter((t) => n % p === 0 && t.pitch.every((x, i) => i < p || Math.abs(x - t.pitch[i - p]) < 1e-6));
+        let won: { formula: string; matched: number; terms: number; base: Base } | null = null;
+        for (const o of options) {
+          const fit = fourierFit(o.pitch.slice(0, p), hits, opts.math.terms, opts.math.glide && kind !== 'chords');
+          if (!fit) continue;
+          const f = plus(o.base.expr, fit.formula);
+          if (!won || fit.matched > won.matched + 1e-9 || (fit.matched === won.matched && (fit.terms < won.terms || (fit.terms === won.terms && f.length < plus(won.base.expr, won.formula).length)))) won = { ...fit, base: o.base };
+        }
+        if (won) {
+          formulas.pitch = plus(won.base.expr, won.formula);
+          match = won.matched;
+        }
+        // a glide line: one voice sliding from note to note, held for each note's length
+        if (opts.math.glide && kind !== 'chords') {
+          const hold = new Array<number>(n).fill(0);
+          for (const [s0, c] of cells) {
+            const v = Math.max(0.01, Math.round((c.vel / 127) * 100) / 100);
+            const until = Math.min(n, s0 + Math.max(1, Math.round(c.len / g)));
+            for (let s = s0; s < until; s++) if (!cells.has(s) || s === s0) hold[s] = v;
+          }
+          const hp = cut(hold);
+          formulas.velocity = modelled ? modelFeel(hold, sh, p, channels.length + 1).velocity : velocityFormula(hp);
+          for (const k of ['length', 'shift', 'strum', 'ratchet', 'chord', 'inversion']) delete formulas[k];
+          Object.assign(extra, { playMode: 'glide', quantize: true, glide: 0.07 });
+        }
+      }
       channels.push({
-        template: template(name, { ...base0(g, swing, p), ...voice, octave, pitchMode: 'degree' }, formulas),
+        template: template(name, { ...base0(g, swing, p), ...voice, octave, pitchMode: 'degree', ...extra }, formulas),
         kind,
         grid: GRID_LABEL.get(g) ?? '',
         steps: p,
         notes,
         formulas,
+        match,
       });
     };
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { exportMidi } from './midi';
-import { IMPORT_DEFAULTS, midiToFunctions, parseMidi } from './midiImport';
+import { IMPORT_DEFAULTS, fourierFit, midiToFunctions, parseMidi, type ImportOptions } from './midiImport';
 import { KITS, defaultProject, trackFromTemplate } from './presets';
 import { isDrum, patternBeats, renderTrack, DRUMS, type Project, type Track, type Waveform } from './project';
 
@@ -13,9 +13,9 @@ function kitMidi(id: string, loops = 1) {
 }
 
 /** every note the imported channels play over the file's length, as the engine renders them */
-function rendered(bytes: Uint8Array) {
+function rendered(bytes: Uint8Array, extra: Partial<ImportOptions> = {}) {
   const file = parseMidi(bytes);
-  const r = midiToFunctions(file, { ...IMPORT_DEFAULTS, feel: 'exact' });
+  const r = midiToFunctions(file, { ...IMPORT_DEFAULTS, feel: 'exact', ...extra });
   const song = { ...defaultProject().song, ...r.song };
   const total = r.report.bars * 4;
   const out: { beat: number; midi: number; vel: number; who: string }[] = [];
@@ -157,4 +157,56 @@ describe('MIDI → functions', () => {
     // bars 3–4 of the progression: VII then v
     expect(r.song.harmony).toBe('pick(bar, 6, 4)');
   });
+
+  it('Math: pitch as a sum of sines — the right harmonics, few of them, every note exact', () => {
+    // a line rocking between two notes on every fourth step is one sine, at the 4th harmonic
+    const at = Array.from({ length: 32 }, (_, i) => i % 4 === 0);
+    const rock = Array.from({ length: 32 }, (_, i) => (Math.floor(i / 4) % 2 ? 4 : 0));
+    expect(fourierFit(rock, at, 'exact')).toEqual({ formula: '2 + 2 * sin(4 * tau * x - 1.57)', matched: 1, terms: 1 });
+    // a melody that rises and falls once: one sine, exact
+    const arc = Array.from({ length: 32 }, (_, i) => 3 * Math.sin((2 * Math.PI * i) / 32));
+    expect(fourierFit(arc, at, 'exact')!.terms).toBe(1);
+    // asked for one term where the line needs more: one term, as close as it gets, and says how close
+    const busy = arc.map((v, i) => v + (i % 8 === 4 ? 3 : 0));
+    const one = fourierFit(busy, at, 1)!;
+    expect(one.terms).toBe(1);
+    expect(one.matched).toBeLessThan(1);
+    expect(fourierFit(busy, at, 'exact')!.matched).toBe(1);
+  });
+
+  for (const id of ['cruisecontrol', 'aguadecoco', 'fogline', 'dustyfingers']) {
+    it(`Math round-trips the ${id} kit: every line a sum of sines, every note back`, () => {
+      const { r, out, want } = rendered(kitMidi(id), { math: { terms: 'exact', glide: false } });
+      const lines = r.channels.filter((c) => c.kind === 'melody' || c.kind === 'voice');
+      expect(lines.length).toBeGreaterThan(0);
+      for (const c of lines) {
+        expect(c.formulas.pitch, `${id}/${c.template.name}`).not.toMatch(/pick\(/);
+        expect(c.match, `${id}/${c.template.name}`).toBe(1);
+      }
+      const pool = sortNotes(out);
+      const misses = sortNotes(want).filter((w) => {
+        const i = pool.findIndex((g) => g.midi === w.midi && Math.abs(g.beat - w.beat) < 0.02);
+        if (i >= 0) pool.splice(i, 1);
+        return i < 0;
+      });
+      expect(misses.length, `${id}: notes missing`).toBe(0);
+    });
+  }
+
+  it('Math with a glide line: the line passes through every note, as a glide', () => {
+    const file = parseMidi(kitMidi('fogline'));
+    const r = midiToFunctions(file, { ...IMPORT_DEFAULTS, feel: 'exact', math: { terms: 'exact', glide: true } });
+    const song = { ...defaultProject().song, ...r.song };
+    const violin = r.channels.find((c) => c.template.name === 'Violin')!;
+    expect(violin.template.playMode).toBe('glide');
+    const t = trackFromTemplate(violin.template, 'Violin', 0) as Track;
+    const res = renderTrack(t, song, 0, false);
+    expect([...res.errors.values()]).toEqual([]);
+    const notes = file.parts.find((p) => p.name.includes('Violin'))!.notes;
+    for (const n of notes) {
+      const i = res.curve.beat.findIndex((b) => b >= n.beat - 1e-9);
+      expect(Math.round(res.curve.midi[i]), `at beat ${n.beat}`).toBe(n.midi);
+    }
+  });
 });
+
