@@ -34,24 +34,27 @@ const OPTION_HINTS: Record<'harmony' | 'exact', [string, string]> = {
   exact: ['Every note exact', 'Notes outside the key make the song use every semitone, so nothing moves. Off: the song keeps its key and those notes snap to the nearest note in it.'],
 };
 
+/** a position in beats as bar.beat (1-based), with the sixteenth when it isn't on a beat */
+function at(beat: number): string {
+  const bar = Math.floor(beat / 4 + 1e-9), b = beat - bar * 4, whole = Math.floor(b + 1e-9), frac = Math.round((b - whole) * 4);
+  return `${bar + 1}.${whole + 1}${frac ? `.${frac + 1}` : ''}`;
+}
+const beatsLabel = (beats: number) => (Math.abs(beats / 4 - Math.round(beats / 4)) < 1e-9 ? `${beats / 4} bar${beats === 4 ? '' : 's'}` : `${Math.round(beats * 100) / 100} beats`);
+
 /** MIDI → functions: what was found, what each channel becomes, and where it goes */
 export function MidiImportSheet() {
   const file = useMidiImport((s) => s.file);
   const plantImported = useStore((s) => s.plantImported);
   const [opts, setOpts] = useState(IMPORT_DEFAULTS);
   const fileBars = useMemo(() => (file ? barsOf(file.data) : 1), [file]);
-  // a long song opens on eight bars from where the music starts — a loop, not the whole thing
-  const [range, setRange] = useState<[number, number]>([0, 1]);
-  useEffect(() => {
-    if (!file) return;
-    const first = Math.floor(Math.min(...file.data.parts.flatMap((p) => p.notes.map((n) => n.beat))) / 4);
-    setRange(fileBars > 8 ? [first, Math.min(fileBars, first + 8)] : [0, fileBars]);
-  }, [file, fileBars]);
+  // nothing is worked out until you choose the stretch to bring in (in beats, on any grid division)
+  const [range, setRange] = useState<[number, number] | null>(null);
+  useEffect(() => setRange(null), [file]);
   const [skip, setSkip] = useState<Set<number>>(new Set());
   const [adoptSong, setAdoptSong] = useState(true);
   const close = () => useMidiImport.setState({ file: null });
 
-  const result = useMemo(() => (file ? midiToFunctions(file.data, { ...opts, from: range[0], to: range[1] }, file.name) : null), [file, opts, range]);
+  const result = useMemo(() => (file && range ? midiToFunctions(file.data, { ...opts, fromBeat: range[0], toBeat: range[1] }, file.name) : null), [file, opts, range]);
   useEffect(() => setSkip(new Set()), [file]);
   useEffect(() => {
     if (!file) return;
@@ -60,10 +63,12 @@ export function MidiImportSheet() {
     return () => window.removeEventListener('keydown', onKey);
   }, [file]);
 
-  if (!file || !result) return null;
-  const { report, song, channels } = result;
+  if (!file) return null;
+  const channels = result?.channels ?? [];
   const chosen = channels.filter((_, i) => !skip.has(i));
   const plant = (layer: boolean) => {
+    if (!result) return;
+    const { song } = result;
     plantImported(
       chosen.map((c) => c.template),
       song,
@@ -72,12 +77,16 @@ export function MidiImportSheet() {
     close();
     toast(`${layer ? 'Added' : 'Planted'} ${chosen.length} channel${chosen.length === 1 ? '' : 's'} from “${file.name}” — ⌘Z to undo`);
   };
+  const report = result?.report;
+  const song = result?.song;
   const notes: string[] = [];
+  if (report) {
   if (report.snapped) notes.push(`${report.snapped} note${report.snapped === 1 ? '' : 's'} outside ${report.keyName} snapped into the key`);
   if (report.truncatedBars) notes.push(`the last ${report.truncatedBars} bar${report.truncatedBars === 1 ? '' : 's'} didn’t fit the step limit and were left out`);
   if (report.tempoChanges > 1) notes.push(`the file changes tempo ${report.tempoChanges - 1} time${report.tempoChanges === 2 ? '' : 's'} — the first tempo is used`);
   if (report.timeSig[0] !== 4 || report.timeSig[1] !== 4) notes.push(`it is in ${report.timeSig[0]}/${report.timeSig[1]} — bars here are four beats`);
   if (report.dropped) notes.push(`${report.dropped} note${report.dropped === 1 ? '' : 's'} beyond six at once left out`);
+  }
 
   return (
     <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
@@ -89,11 +98,19 @@ export function MidiImportSheet() {
             </div>
             <h2 className="serif sheet-title">{file.name}</h2>
             <p className="muted midi-found">
-              {song.bpm} bpm · {report.keyName} · bars {report.from + 1}–{report.from + report.bars} of {report.fileBars} · {channels.length} channel{channels.length === 1 ? '' : 's'}
+              {!report || !song ? (
+                <>
+                  {file.data.bpm} bpm · {fileBars} bars · {file.data.parts.length} part{file.data.parts.length === 1 ? '' : 's'} — choose the stretch to bring in
+                </>
+              ) : (
+                <>
+              {song.bpm} bpm · {report.keyName} · {at(report.fromBeat)} → {at(report.fromBeat + report.beats)} ({beatsLabel(report.beats)}) · {channels.length} channel{channels.length === 1 ? '' : 's'}
               {song.harmony && song.harmony !== '0' && (
                 <>
                   {' '}
                   · harmony <code>{song.harmony}</code>
+                </>
+              )}
                 </>
               )}
             </p>
@@ -105,6 +122,11 @@ export function MidiImportSheet() {
 
         <div className="sheet-body">
           <BarPicker data={file.data} bars={fileBars} range={range} onRange={setRange} />
+          {!result && (
+            <p className="midi-choose">
+              <Icon name="info" size={13} /> Drag across the overview to choose the stretch to bring in — it snaps to the grid you pick (bars, beats, 1/8 or 1/16, or the notes themselves). Nothing is worked out until you do.
+            </p>
+          )}
           <div className="midi-options">
             <span className="midi-option-label">Feel</span>
             <span title={FEEL_HINT[opts.feel]}>
@@ -165,6 +187,8 @@ export function MidiImportSheet() {
             )}
           </div>
 
+          {result && (
+          <>
           <div className="midi-channels-head">
             <span className="midi-option-label">
               Channels <small>{chosen.length} of {channels.length}</small>
@@ -217,6 +241,8 @@ export function MidiImportSheet() {
               <Icon name="info" size={12} /> {notes.join(' · ')}.
             </p>
           )}
+          </>
+          )}
         </div>
 
         <footer className="sheet-foot">
@@ -252,24 +278,29 @@ export function MidiDropOverlay() {
   );
 }
 
+type Snap = 'bar' | 'beat' | 'eighth' | 'sixteenth' | 'note';
+const SNAP_BEATS: Record<Exclude<Snap, 'note'>, number> = { bar: 4, beat: 1, eighth: 0.5, sixteenth: 0.25 };
+
 /**
- * The whole file at a glance — every note on a strip of bars — and the bars to bring in: drag
- * across it (it snaps to bars), or take 4, 8 or 16 bars from where the selection starts.
+ * The whole file at a glance — every note on a strip of bars — and the stretch to bring in: drag
+ * across it; the ends snap to the grid you pick (bars, beats, 1/8, 1/16) or to the notes'
+ * own starts, so a part that begins off the bar comes in from where it begins.
  */
-function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: number; range: [number, number]; onRange: (r: [number, number]) => void }) {
+function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: number; range: [number, number] | null; onRange: (r: [number, number]) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [drag, setDrag] = useState<[number, number] | null>(null);
+  const [snap, setSnap] = useState<Snap>('bar');
+  const total = bars * 4;
   // what the strip shows, in bars: all of it, or zoomed in on a stretch
   const [view, setView] = useState({ start: 0, span: bars });
   const viewRef = useRef(view);
   viewRef.current = view;
   useEffect(() => setView({ start: 0, span: bars }), [bars, data]);
-  const minSpan = Math.min(bars, 2);
+  const minSpan = Math.min(bars, 1);
   const clampView = (start: number, span: number) => {
     span = Math.max(minSpan, Math.min(bars, span));
     return { start: Math.max(0, Math.min(bars - span, start)), span };
   };
-  /** zoom by a factor around a point of the strip (0 … 1 across it) */
   const zoom = (factor: number, at = 0.5) => {
     const v = viewRef.current;
     const span = Math.max(minSpan, Math.min(bars, v.span * factor));
@@ -280,7 +311,20 @@ function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: n
   const zoomToSelection = (factor: number) => {
     const v = viewRef.current;
     const span = Math.max(minSpan, Math.min(bars, v.span * factor));
-    setView(clampView((range[0] + range[1]) / 2 - span / 2, span));
+    const mid = range ? (range[0] + range[1]) / 8 : v.start + v.span / 2;
+    setView(clampView(mid - span / 2, span));
+  };
+  const onsets = useMemo(() => [...new Set(data.parts.flatMap((p) => p.notes.map((n) => Math.round(n.beat * 1000) / 1000)))].sort((a, b) => a - b), [data]);
+  /** a beat on the chosen grid: rounded to the division, or to the nearest note start */
+  const snapTo = (beat: number) => {
+    if (snap === 'note') {
+      if (!onsets.length) return beat;
+      let best = onsets[0];
+      for (const o of onsets) if (Math.abs(o - beat) < Math.abs(best - beat)) best = o;
+      return beat >= total - 0.01 ? total : best;
+    }
+    const d = SNAP_BEATS[snap];
+    return Math.max(0, Math.min(total, Math.round(beat / d) * d));
   };
   const [lo, hi] = useMemo(() => {
     const ms = data.parts.filter((p) => p.channel !== 9).flatMap((p) => p.notes.map((n) => n.midi));
@@ -323,7 +367,6 @@ function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: n
     const my = (m: number) => 14 + (1 - (m - lo) / Math.max(1, hi - lo)) * (H - 30 - drumH);
     g.fillStyle = v('--lcd');
     g.fillRect(0, 0, W, H);
-    // bars: a line each (beats too, zoomed in far enough), a number where there is room
     const ppbar = W / view.span;
     const every = Math.max(1, Math.ceil(28 / ppbar));
     g.font = '9px Doto, monospace';
@@ -332,11 +375,12 @@ function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: n
       g.fillStyle = v('--lcd-line');
       g.globalAlpha = b % 4 === 0 ? 0.9 : 0.45;
       g.fillRect(Math.round(x), 12, 1, H - 12);
-      if (ppbar > 60)
-        for (let q = 1; q < 4; q++) {
-          g.globalAlpha = 0.18;
-          g.fillRect(Math.round(bx(b * 4 + q)), 12, 1, H - 12);
-        }
+      // beats, and sixteenths when zoomed in far enough
+      const sub = ppbar > 240 ? 16 : ppbar > 60 ? 4 : 1;
+      for (let q = 1; q < sub; q++) {
+        g.globalAlpha = q % (sub / 4) === 0 ? 0.22 : 0.1;
+        g.fillRect(Math.round(bx(b * 4 + (q * 4) / sub)), 12, 1, H - 12);
+      }
       if (b % every === 0 && b < bars) {
         g.globalAlpha = 0.8;
         g.fillStyle = v('--lcd-ink-3');
@@ -344,7 +388,6 @@ function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: n
       }
     }
     g.globalAlpha = 1;
-    // the notes in view: melodic parts by pitch, drums as ticks along the bottom
     data.parts.forEach((p, i) => {
       g.fillStyle = CHANNEL_COLORS[i % CHANNEL_COLORS.length];
       for (const n of p.notes) {
@@ -353,24 +396,41 @@ function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: n
         else g.fillRect(bx(n.beat), my(n.midi), Math.max(1.2, bx(n.end) - bx(n.beat)), Math.max(2, Math.min(5, (H - 30) / Math.max(1, hi - lo))));
       }
     });
-    // what is outside the selection steps back
-    const sx0 = bx(shown[0] * 4), sx1 = bx(shown[1] * 4);
-    g.fillStyle = v('--lcd');
-    g.globalAlpha = 0.68;
-    if (sx0 > 0) g.fillRect(0, 12, Math.min(W, sx0), H - 12);
-    if (sx1 < W) g.fillRect(Math.max(0, sx1), 12, W - Math.max(0, sx1), H - 12);
-    g.globalAlpha = 1;
-    g.strokeStyle = v('--accent');
-    g.lineWidth = 1.5;
-    g.strokeRect(sx0 + 0.75, 12.75, sx1 - sx0 - 1.5, H - 13.5);
+    if (shown) {
+      // what is outside the selection steps back
+      const sx0 = bx(shown[0]), sx1 = bx(shown[1]);
+      g.fillStyle = v('--lcd');
+      g.globalAlpha = 0.68;
+      if (sx0 > 0) g.fillRect(0, 12, Math.min(W, sx0), H - 12);
+      if (sx1 < W) g.fillRect(Math.max(0, sx1), 12, W - Math.max(0, sx1), H - 12);
+      g.globalAlpha = 1;
+      g.strokeStyle = v('--accent');
+      g.lineWidth = 1.5;
+      g.strokeRect(sx0 + 0.75, 12.75, sx1 - sx0 - 1.5, H - 13.5);
+    }
   }, [data, bars, shown, lo, hi, view]);
 
-  const barAt = (e: React.PointerEvent) => {
+  const beatAt = (e: React.PointerEvent) => {
     const r = ref.current!.getBoundingClientRect();
-    return Math.max(0, Math.min(bars - 1, Math.floor(view.start + ((e.clientX - r.left) / r.width) * view.span)));
+    return Math.max(0, Math.min(total, (view.start + ((e.clientX - r.left) / r.width) * view.span) * 4));
   };
-  const span = shown[1] - shown[0];
-  const take = (n: number) => onRange([Math.min(range[0], Math.max(0, bars - n)), Math.min(bars, Math.max(range[0], 0) + n)]);
+  /** a drag from beat a to beat b as a stretch on the grid — at least one division long */
+  const stretch = (a: number, b: number): [number, number] => {
+    let s0 = snapTo(Math.min(a, b)), s1 = snapTo(Math.max(a, b));
+    if (s1 <= s0) {
+      const d = snap === 'note' ? 1 : SNAP_BEATS[snap];
+      s1 = Math.min(total, s0 + d);
+      if (s1 <= s0) s0 = Math.max(0, s1 - d);
+    }
+    return [s0, s1];
+  };
+  const len = shown ? shown[1] - shown[0] : 0;
+  const first = onsets.length ? onsets[0] : 0;
+  /** n bars from where the selection (or the music) starts */
+  const take = (n: number) => {
+    const s0 = range ? range[0] : snapTo(first);
+    onRange([Math.max(0, Math.min(s0, total - n * 4)), Math.min(total, Math.max(s0, 0) + n * 4)]);
+  };
   const zoomed = view.span < bars - 1e-9;
 
   return (
@@ -380,31 +440,51 @@ function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: n
         className="midi-overview"
         onPointerDown={(e) => {
           (e.target as HTMLElement).setPointerCapture(e.pointerId);
-          const b = barAt(e);
-          setDrag([b, b + 1]);
+          const b = beatAt(e);
           (e.currentTarget as HTMLCanvasElement).dataset.anchor = String(b);
+          setDrag(stretch(b, b));
         }}
         onPointerMove={(e) => {
           if (!drag) return;
-          const a = Number((e.currentTarget as HTMLCanvasElement).dataset.anchor), b = barAt(e);
-          setDrag([Math.min(a, b), Math.max(a, b) + 1]);
+          setDrag(stretch(Number((e.currentTarget as HTMLCanvasElement).dataset.anchor), beatAt(e)));
         }}
         onPointerUp={() => {
           if (drag) onRange(drag);
           setDrag(null);
         }}
-        onDoubleClick={() => setView(zoomed ? { start: 0, span: bars } : clampView((shown[0] + shown[1]) / 2 - Math.max(minSpan, span * 1.5) / 2, Math.max(minSpan, span * 1.5)))}
-        title="Drag across the bars to bring in · ⌘/Ctrl + scroll (or pinch) to zoom, scroll to move along · double-click to zoom to the selection"
+        onDoubleClick={() => setView(zoomed || !range ? { start: 0, span: bars } : clampView((range[0] + range[1]) / 8 - Math.max(minSpan, (len / 4) * 1.5) / 2, Math.max(minSpan, (len / 4) * 1.5)))}
+        title="Drag across to choose the stretch to bring in · ⌘/Ctrl + scroll (or pinch) to zoom, scroll to move along · double-click to zoom to the selection"
       />
       <div className="midi-bars-row">
         <span className="muted">
-          Bars {shown[0] + 1}–{shown[1]} <small>({span} of {bars})</small>
+          {shown ? (
+            <>
+              {at(shown[0])} → {at(shown[1])} <small>({beatsLabel(len)})</small>
+            </>
+          ) : (
+            'Nothing chosen yet'
+          )}
         </span>
         <span className="row" style={{ gap: 2 }}>
-          <button className="icon-btn" onClick={() => zoomToSelection(1 / 1.6)} disabled={view.span <= minSpan + 1e-9} title="Zoom in on the selected bars (⌘/Ctrl + scroll, or pinch, zooms where you point)" aria-label="Zoom in">
+          <span className="midi-option-label">Snap</span>
+          <span title="Where the ends of a drag land: on bars, beats, eighths or sixteenths — or on the notes’ own starts">
+            <Seg<Snap>
+              value={snap}
+              onChange={setSnap}
+              options={[
+                { value: 'bar', label: 'Bar' },
+                { value: 'beat', label: 'Beat' },
+                { value: 'eighth', label: '1/8' },
+                { value: 'sixteenth', label: '1/16' },
+                { value: 'note', label: 'Note' },
+              ]}
+            />
+          </span>
+          <span className="midi-bars-gap" />
+          <button className="icon-btn" onClick={() => zoomToSelection(1 / 1.6)} disabled={view.span <= minSpan + 1e-9} title="Zoom in on the selection (⌘/Ctrl + scroll, or pinch, zooms where you point)" aria-label="Zoom in">
             <Icon name="plus" size={12} />
           </button>
-          <button className="icon-btn" onClick={() => zoomToSelection(1.6)} disabled={!zoomed} title="Zoom out around the selected bars" aria-label="Zoom out">
+          <button className="icon-btn" onClick={() => zoomToSelection(1.6)} disabled={!zoomed} title="Zoom out around the selection" aria-label="Zoom out">
             <Icon name="minus" size={12} />
           </button>
           <button className="icon-btn" onClick={() => setView({ start: 0, span: bars })} disabled={!zoomed} title="Show the whole song" aria-label="Show the whole song">
@@ -412,11 +492,11 @@ function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: n
           </button>
           <span className="midi-bars-gap" />
           {[4, 8, 16].filter((n) => n < bars).map((n) => (
-            <button key={n} className={`btn small ${span === n ? 'on' : ''}`} onClick={() => take(n)}>
+            <button key={n} className={`btn small ${len === n * 4 ? 'on' : ''}`} onClick={() => take(n)} title={`${n} bars from where ${range ? 'the selection' : 'the music'} starts`}>
               {n} bars
             </button>
           ))}
-          <button className={`btn small ${span === bars ? 'on' : ''}`} onClick={() => onRange([0, bars])}>
+          <button className={`btn small ${shown && shown[0] === 0 && len === total ? 'on' : ''}`} onClick={() => onRange([0, total])}>
             All
           </button>
         </span>

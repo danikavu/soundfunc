@@ -677,6 +677,9 @@ export interface ImportOptions {
    * `glide` plays the lines as a glide, sliding from note to note. Off (undefined): lists, as ever.
    */
   math?: { terms: 'exact' | number; glide: boolean };
+  /** only these beats of the file (from inclusive, to exclusive) — any grid division, not just bars; wins over from / to */
+  fromBeat?: number;
+  toBeat?: number;
   /** only these bars of the file (from inclusive, to exclusive; whole file when left out) */
   from?: number;
   to?: number;
@@ -702,7 +705,7 @@ export interface ImportResult {
   name: string;
   song: Partial<Song>;
   channels: ImportedChannel[];
-  report: { fileBars: number; from: number; bars: number; truncatedBars: number; outside: number; snapped: number; tempoChanges: number; timeSig: [number, number]; keyName: string; dropped: number };
+  report: { fileBars: number; from: number; bars: number; fromBeat: number; beats: number; truncatedBars: number; outside: number; snapped: number; tempoChanges: number; timeSig: [number, number]; keyName: string; dropped: number };
 }
 
 /** the longest an imported part may be: the app's step limit */
@@ -731,11 +734,15 @@ function template(name: string, base: Partial<Track>, formulas: Record<string, s
  */
 export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPORT_DEFAULTS, fileName = ''): ImportResult {
   const fileBars = barsOf(whole);
-  const from = Math.max(0, Math.min(fileBars - 1, Math.floor(opts.from ?? 0)));
-  const to = Math.max(from + 1, Math.min(fileBars, Math.floor(opts.to ?? fileBars)));
-  const ranged = opts.from !== undefined || opts.to !== undefined;
-  // only the chosen bars, moved to the start (a note held past the end is cut there)
-  const a = from * BEATS_PER_BAR, z = to * BEATS_PER_BAR;
+  const fileBeats = fileBars * BEATS_PER_BAR;
+  const byBeat = opts.fromBeat !== undefined && opts.toBeat !== undefined;
+  const fromBar = Math.max(0, Math.min(fileBars - 1, Math.floor(opts.from ?? 0)));
+  const toBar = Math.max(fromBar + 1, Math.min(fileBars, Math.floor(opts.to ?? fileBars)));
+  // the chosen stretch in beats: on any grid division, so a part that starts off the bar comes in from where it starts
+  const a = byBeat ? Math.max(0, Math.min(fileBeats - 0.25, opts.fromBeat!)) : fromBar * BEATS_PER_BAR;
+  const z = byBeat ? Math.max(a + 0.25, Math.min(fileBeats, opts.toBeat!)) : toBar * BEATS_PER_BAR;
+  const ranged = byBeat || opts.from !== undefined || opts.to !== undefined;
+  const from = Math.floor(a / BEATS_PER_BAR);
   const file: MidiFileData = {
     ...whole,
     parts: whole.parts
@@ -754,16 +761,17 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
   const root = key.root;
 
   // a chosen range keeps its silent bars: the loop is as long as you chose
-  let bars = ranged ? to - from : barsOf(file);
+  let beats = ranged ? z - a : barsOf(file) * BEATS_PER_BAR;
   // the finest grid any part needs sets how many bars fit in the step limit
   // the swing the whole file plays with, for parts too sparse to show their own
   const songSwing = findGrid(file.parts.flatMap((p) => p.notes)).swing;
   const grids = new Map(file.parts.map((p) => [p, findGrid(p.notes, songSwing)]));
   const finest = Math.min(...[...grids.values()].map((x) => x.g), 0.25);
-  const maxBars = Math.max(1, Math.floor((MAX_STEPS * finest) / BEATS_PER_BAR));
-  const truncatedBars = Math.max(0, bars - maxBars);
-  bars = Math.min(bars, maxBars);
-  const total = bars * BEATS_PER_BAR;
+  const maxBeats = Math.max(BEATS_PER_BAR, Math.floor((MAX_STEPS * finest) / BEATS_PER_BAR) * BEATS_PER_BAR);
+  const truncatedBars = Math.max(0, Math.ceil((beats - maxBeats) / BEATS_PER_BAR));
+  beats = Math.min(beats, maxBeats);
+  const total = beats;
+  const bars = Math.max(1, Math.ceil(total / BEATS_PER_BAR - 1e-9));
 
   // the harmony, bar by bar — only in a seven-note key, where chords mean something
   const useHarmony = opts.harmony && steps.length === 7;
@@ -1090,6 +1098,8 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
       fileBars,
       from,
       bars,
+      fromBeat: a,
+      beats: total,
       truncatedBars,
       outside: Math.round(key.outside * 1000) / 10,
       snapped: exact ? 0 : snapped,

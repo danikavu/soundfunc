@@ -1813,3 +1813,26 @@ body,
   opacity: 0.4;
   cursor: default;
 }
+.midi-choose {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+  padding: var(--sp-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+.midi-bars-row .midi-option-label {
+  margin-right: var(--sp-1);
+}
+.midi-bars-row .seg button {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.app .sheet-foot .btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  filter: saturate(0.4);
+}
