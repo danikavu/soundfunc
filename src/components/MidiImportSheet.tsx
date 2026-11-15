@@ -85,6 +85,7 @@ export function MidiImportSheet() {
   if (report.truncatedBars) notes.push(`the last ${report.truncatedBars} bar${report.truncatedBars === 1 ? '' : 's'} didn’t fit the step limit and were left out`);
   if (report.tempoChanges > 1) notes.push(`the file changes tempo ${report.tempoChanges - 1} time${report.tempoChanges === 2 ? '' : 's'} — the first tempo is used`);
   if (report.timeSig[0] !== 4 || report.timeSig[1] !== 4) notes.push(`it is in ${report.timeSig[0]}/${report.timeSig[1]} — bars here are four beats`);
+  if (report.extraNotes) notes.push(`${report.extraNotes} note${report.extraNotes === 1 ? '' : 's'} no chord held (doublings, added tones, strays) kept on extra lines`);
   if (report.dropped) notes.push(`${report.dropped} note${report.dropped === 1 ? '' : 's'} beyond six at once left out`);
   }
 
@@ -145,6 +146,18 @@ export function MidiImportSheet() {
                 {OPTION_HINTS[k][0]}
               </button>
             ))}
+          </div>
+          {/* Chords: found chord by chord — off, nothing else changes */}
+          <div className="midi-options">
+            <span className="midi-option-label">Chords</span>
+            <button
+              className={`btn small ${opts.smartChords ? 'on' : ''}`}
+              aria-pressed={!!opts.smartChords}
+              onClick={() => setOpts((o) => ({ ...o, smartChords: !o.smartChords }))}
+              title="Keep chord parts together: the song keeps its key (a note outside it sounds exact through a semitone bend), chords are found chord by chord — stacks of thirds or fourths, octave doublings set aside, loosely played notes still one chord — and only what fits no chord goes to small extra lines. Off: a part is one chord channel only if every chord stacks in thirds, else every voice its own line."
+            >
+              Smart chords
+            </button>
           </div>
           {/* Math: the melodic lines' pitch as sums of sines — off, nothing else changes */}
           <div className="midi-options">

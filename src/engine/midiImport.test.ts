@@ -208,5 +208,54 @@ describe('MIDI → functions', () => {
       expect(Math.round(res.curve.midi[i]), `at beat ${n.beat}`).toBe(n.midi);
     }
   });
+
+  it('Smart chords: one chord channel where the old way split everything — and every note still exact', () => {
+    // C major piano: triads, one with its root doubled an octave up, a C add9, a G7, and a chromatic
+    // passing note (E♭) in the top voice — the old way: the key goes chromatic and every voice splits
+    const n = (beat: number, midi: number) => ({ beat, end: beat + 0.9, midi, vel: 90 });
+    const notes = [
+      ...[60, 64, 67].map((m) => n(0, m)),
+      ...[60, 64, 67, 72].map((m) => n(1, m)), // doubled root
+      ...[60, 64, 67, 74].map((m) => n(2, m)), // add9
+      ...[55, 59, 62, 65].map((m) => n(3, m)), // G7
+      ...[57, 60, 64].map((m) => n(4, m)),
+      n(4.5, 63), // E♭: a stray
+      ...[53, 57, 60].map((m) => n(5, m)),
+      ...[55, 59, 62].map((m) => n(6, m)),
+      ...[60, 64, 67].map((m) => n(7, m)),
+    ];
+    const file = { name: 'piano', bpm: 100, tempoChanges: 1, timeSig: [4, 4] as [number, number], keySig: null, parts: [{ name: 'Piano', channel: 0, program: 0, notes }] };
+    const old = midiToFunctions(file, { ...IMPORT_DEFAULTS, feel: 'exact' });
+    expect(old.song.scale).toBe('chromatic');
+    expect(old.channels.length).toBeGreaterThan(2);
+
+    const smart = midiToFunctions(file, { ...IMPORT_DEFAULTS, feel: 'exact', smartChords: true });
+    expect(smart.song.scale).toBe('major');
+    expect(smart.channels[0].kind).toBe('chords');
+    expect(smart.channels[0].template.name).toBe('Piano');
+    // only the doubled C, the 9th and the E♭ are left over: one small extra line
+    expect(smart.channels).toHaveLength(2);
+    expect(smart.report.extraNotes).toBe(3);
+    expect(smart.channels[1].formulas.bend).toBeDefined();
+
+    // every note comes back, the stray through its bend
+    const song = { ...defaultProject().song, ...smart.song };
+    const got: [number, number][] = [];
+    smart.channels.forEach((c, i) => {
+      const t = trackFromTemplate(c.template, c.template.name, i) as Track;
+      for (const x of renderTrack(t, song, 0, false).notes) got.push([Math.round(x.beat * 100) / 100, x.midi + Math.round(x.expr?.bend[0] ?? 0)]);
+    });
+    const want = notes.map((x) => [x.beat, x.midi] as [number, number]);
+    const key = (xs: [number, number][]) => xs.map(([b, m]) => `${b}:${m}`).sort();
+    expect(key(got)).toEqual(key(want));
+  });
+
+  for (const id of ['sundaypocket', 'afterhours', 'aguadecoco']) {
+    it(`Smart chords round-trips the ${id} kit note for note`, () => {
+      const { out, want, errors } = rendered(kitMidi(id), { smartChords: true });
+      expect(errors).toEqual([]);
+      expect(out.length, id).toBe(want.length);
+    });
+  }
 });
 

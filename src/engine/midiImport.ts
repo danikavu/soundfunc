@@ -15,7 +15,7 @@
  */
 import { NODE_DEFS, type GEdge, type GNode, type NodeData } from './graph';
 import { euclid } from './expr';
-import { degreeToMidi, midiToDegree, SCALES, spellDegree } from './music';
+import { chordTones, degreeToMidi, midiToDegree, SCALES, spellDegree } from './music';
 import { BEATS_PER_BAR, type DrumVoice, type Song, type Track, type Waveform } from './project';
 import type { SynthParams } from './synth';
 import { WAVE_VOICES } from './timbre';
@@ -289,11 +289,11 @@ function place(beat: number, g: number) {
  * chord on one step.
  */
 const STRIKE = 0.06;
-function strikes(notes: MidiNote[]): { beat: number; notes: MidiNote[] }[] {
+function strikes(notes: MidiNote[], within = STRIKE): { beat: number; notes: MidiNote[] }[] {
   const out: { beat: number; notes: MidiNote[] }[] = [];
   for (const n of notes.slice().sort((a, b) => a.beat - b.beat)) {
     const last = out[out.length - 1];
-    if (last && n.beat - last.beat < STRIKE && !last.notes.some((m) => m.midi === n.midi)) last.notes.push(n);
+    if (last && n.beat - last.beat < within && !last.notes.some((m) => m.midi === n.midi)) last.notes.push(n);
     else out.push({ beat: n.beat, notes: [n] });
   }
   return out;
@@ -677,6 +677,13 @@ export interface ImportOptions {
    * `glide` plays the lines as a glide, sliding from note to note. Off (undefined): lists, as ever.
    */
   math?: { terms: 'exact' | number; glide: boolean };
+  /**
+   * Smart chords: the song keeps its key even when notes stray from it (each stray note sounds
+   * exact through a bend of a semitone), chords are found chord by chord — thirds or fourths,
+   * octave doublings set aside, loosely struck notes still one chord — and only what doesn't fit
+   * a chord goes to small extra lines. Off: as before.
+   */
+  smartChords?: boolean;
   /** only these beats of the file (from inclusive, to exclusive) — any grid division, not just bars; wins over from / to */
   fromBeat?: number;
   toBeat?: number;
@@ -705,7 +712,7 @@ export interface ImportResult {
   name: string;
   song: Partial<Song>;
   channels: ImportedChannel[];
-  report: { fileBars: number; from: number; bars: number; fromBeat: number; beats: number; truncatedBars: number; outside: number; snapped: number; tempoChanges: number; timeSig: [number, number]; keyName: string; dropped: number };
+  report: { extraNotes: number; fileBars: number; from: number; bars: number; fromBeat: number; beats: number; truncatedBars: number; outside: number; snapped: number; tempoChanges: number; timeSig: [number, number]; keyName: string; dropped: number };
 }
 
 /** the longest an imported part may be: the app's step limit */
@@ -755,7 +762,10 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
   // the key is the whole song's, even when only a few bars of it come in
   const keyNotes = whole.parts.filter((p) => p.channel !== 9).flatMap((p) => p.notes);
   const key = findKey(keyNotes.length ? keyNotes : [{ beat: 0, end: 1, midi: 60, vel: 100 }], file.keySig);
-  const exact = opts.exact && key.outside > 0.0005;
+  // smart chords keep a seven-note key (stray notes are bent into place instead)
+  const keepKey = !!opts.smartChords && SCALES[key.scale].steps.length === 7;
+  const bendStrays = keepKey && opts.exact;
+  const exact = opts.exact && key.outside > 0.0005 && !keepKey;
   const scale = exact ? 'chromatic' : key.scale;
   const steps = SCALES[scale].steps;
   const root = key.root;
@@ -782,13 +792,14 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
 
   let snapped = 0;
   let dropped = 0;
+  let extraNotes = 0;
   const channels: ImportedChannel[] = [];
 
   /** shared by every channel: place notes, keep the feel, cut the loop */
-  const lay = (notes: MidiNote[], g: number, swing: number) => {
+  const lay = (notes: MidiNote[], g: number, swing: number, within = STRIKE) => {
     const n = Math.round(total / g);
     const at = new Map<number, { notes: MidiNote[]; shift: number; ratchet: number }>();
-    for (const strike of strikes(notes)) {
+    for (const strike of strikes(notes, within)) {
       if (strike.beat >= total) continue;
       const { step, shift } = place(strike.beat, g);
       if (step < 0 || step >= n) continue;
@@ -899,16 +910,18 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
     const octave = Math.max(0, Math.min(8, Math.floor(median / 12) - 1));
     const deg = (midi: number) => {
       const d = midiToDegree(midi, root, steps, octave);
-      if (degreeToMidi(d, root, steps, octave) !== midi) snapped++;
+      if (degreeToMidi(d, root, steps, octave) !== midi && !bendStrays) snapped++;
       return d;
     };
+    /** a stray note's bend: how far it sits from the scale note it is written as (0 in the key, or when strays snap) */
+    const bendOf = (midi: number) => (bendStrays ? midi - degreeToMidi(midiToDegree(midi, root, steps, octave), root, steps, octave) : 0);
     const voice = voiceFor(part.program, median);
-    const { n, at, shifts } = lay(part.notes, g, swing);
+    const { n, at, shifts } = lay(part.notes, g, swing, opts.smartChords ? 0.12 : STRIKE);
 
     // chords: does every group of notes struck together stack as a scale chord?
     const groups = [...at.entries()].sort((a, b) => a[0] - b[0]);
     const poly = groups.some(([, c]) => c.notes.length > 1);
-    let asChords = poly && steps.length === 7;
+    let asChords = poly && steps.length === 7 && !opts.smartChords;
     const chordOf = new Map<number, { degree: number; size: number; inversion: number; strum: number }>();
     if (asChords) {
       for (const [s, c] of groups) {
@@ -936,10 +949,11 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
     }
 
     /** write one line (a voice of the part, or its chords) as a channel */
-    const emit = (name: string, cells: Map<number, { midi: number; vel: number; len: number; chord?: { degree: number; size: number; inversion: number; strum: number }; ratchet: number }>, kind: ImportedChannel['kind']) => {
+    type Cell = { midi: number; vel: number; len: number; chord?: { degree: number; size: number; inversion: number; strum: number; stack?: number }; ratchet: number };
+    const emit = (name: string, cells: Map<number, Cell>, kind: ImportedChannel['kind']) => {
       const NaNs = () => new Array<number>(n).fill(NaN);
       const vel = new Array<number>(n).fill(0), rat = new Array<number>(n).fill(1), sh = new Array<number>(n).fill(0);
-      const abs = NaNs(), len = NaNs(), size = NaNs(), inv = NaNs(), strum = NaNs(), hs2 = NaNs();
+      const abs = NaNs(), len = NaNs(), size = NaNs(), inv = NaNs(), strum = NaNs(), hs2 = NaNs(), stk = NaNs(), bnd = NaNs();
       let notes = 0;
       for (const [s, c] of cells) {
         vel[s] = Math.max(0.01, Math.round((c.vel / 127) * 100) / 100);
@@ -951,6 +965,8 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
         size[s] = c.chord ? c.chord.size : 1;
         inv[s] = c.chord ? c.chord.inversion : 0;
         strum[s] = c.chord ? c.chord.strum : 0;
+        stk[s] = c.chord?.stack ?? 2;
+        bnd[s] = c.chord ? 0 : bendOf(c.midi);
         notes++;
       }
       if (opts.feel === 'grid') tidy(vel);
@@ -999,14 +1015,14 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
         if (!pick || cost < pick.cost) pick = { pitch, inv: invl, base, cost };
       }
       const { base } = pick!;
-      const lists = { pitch: pick!.pitch, inv: pick!.inv, len: fill(len), size: fill(size), strum: fill(strum) };
+      const lists = { pitch: pick!.pitch, inv: pick!.inv, len: fill(len), size: fill(size), strum: fill(strum), stack: fill(stk), bend: fill(bnd) };
       const lens = cells.size ? [...cells.values()].map((c) => Math.round((c.len / g) * 100) / 100) : [1];
       // the length most notes share (a few cut short at the end don't count)
       const lenMean = lens.slice().sort((a, b) => a - b)[Math.floor(lens.length / 2)];
       const evenLength = modelled && lens.filter((x) => Math.abs(x - lenMean) <= Math.max(0.15, lenMean * 0.08)).length >= lens.length * 0.85;
       const gateList = vel.map((v) => (v > 0 ? 1 : 0));
       // a length that is one constant doesn't hold the loop open
-      const p = loopOf(modelled ? [lists.pitch, gateList, ...(evenLength ? [] : [lists.len]), rat, lists.size, lists.inv, lists.strum] : [lists.pitch, vel, lists.len, rat, lists.size, lists.inv, lists.strum, sh], n);
+      const p = loopOf(modelled ? [lists.pitch, gateList, ...(evenLength ? [] : [lists.len]), rat, lists.size, lists.inv, lists.strum, lists.stack, lists.bend] : [lists.pitch, vel, lists.len, rat, lists.size, lists.inv, lists.strum, sh, lists.stack, lists.bend], n);
       const cut = (xs: number[]) => xs.slice(0, p);
       const feel = modelled ? modelFeel(vel, sh, p, channels.length + 1) : null;
       const formulas: Record<string, string> = {
@@ -1018,6 +1034,8 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
       const invF = plus(base.inv?.expr ?? '', listFormula(cut(lists.inv), (x) => String(x)));
       if (invF !== '0') formulas.inversion = invF;
       if (cut(lists.strum).some((x) => x > 0)) formulas.strum = listFormula(cut(lists.strum), (x) => num(x, 3));
+      if (cut(lists.size).some((x) => x > 1) && cut(lists.stack).some((x) => x !== 2)) formulas.stack = listFormula(cut(lists.stack), (x) => String(x));
+      if (cut(lists.bend).some((x) => x !== 0)) formulas.bend = listFormula(cut(lists.bend), (x) => String(x));
       if (cut(rat).some((x) => x > 1)) formulas.ratchet = listFormula(cut(rat), (x) => String(x));
       if (feel) {
         if (feel.shift) formulas.shift = feel.shift;
@@ -1065,8 +1083,74 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
       });
     };
 
-    if (asChords || !poly) {
-      const cells = new Map<number, { midi: number; vel: number; len: number; chord?: { degree: number; size: number; inversion: number; strum: number }; ratchet: number }>();
+    if (opts.smartChords && poly && steps.length === 7) {
+      // chord by chord: the largest stack of thirds (or fourths) in what was struck becomes the chord;
+      // octave doublings, stray notes and what fits no stack go to small extra lines
+      const chordCells = new Map<number, Cell>();
+      const rest = new Map<number, { notes: MidiNote[]; ratchet: number }>();
+      for (const [s, c] of groups) {
+        const byMidi = new Map<number, MidiNote>();
+        for (const x of c.notes) if (!byMidi.has(x.midi)) byMidi.set(x.midi, x);
+        const ms = [...byMidi.keys()].sort((a, b) => a - b);
+        const left: MidiNote[] = [];
+        const inKey: number[] = [];
+        const pcs = new Set<number>();
+        for (const m of ms) {
+          if (bendStrays && bendOf(m) !== 0) left.push(byMidi.get(m)!);
+          else if (pcs.has(m % 12)) left.push(byMidi.get(m)!); // an octave doubling
+          else (pcs.add(m % 12), inKey.push(m));
+        }
+        let found: { tones: number[]; degree: number; size: number; inversion: number; stack: number } | null = null;
+        const k = inKey.length;
+        if (k <= 8)
+          for (let mask = (1 << k) - 1; mask > 0; mask--) {
+            const sub = inKey.filter((_, i) => mask & (1 << i));
+            if (sub.length < 2 || (found && sub.length <= found.size)) continue;
+            const low = deg(sub[0]);
+            search: for (const stack of [2, 3])
+              for (let inv = 0; inv < sub.length; inv++)
+                for (let d = low - stack * sub.length - 7; d <= low + 7; d++) {
+                  const t = chordTones(d, sub.length, stack, inv, root, scale, octave).slice().sort((a, b) => a - b);
+                  if (t.every((m, i) => m === sub[i])) {
+                    found = { tones: sub, degree: d, size: sub.length, inversion: inv, stack };
+                    break search;
+                  }
+                }
+          }
+        const chordNotes = found ? found.tones.map((m) => byMidi.get(m)!) : inKey.length ? [byMidi.get(inKey[0])!] : [];
+        for (const m of inKey) if (!found?.tones.includes(m) && m !== (found ? -1 : inKey[0])) left.push(byMidi.get(m)!);
+        if (chordNotes.length) {
+          const ons = chordNotes.map((x) => x.beat / g).sort((a, b) => a - b);
+          const gaps = ons.slice(1).map((x, i) => x - ons[i]);
+          const strum = keepFeel && gaps.length && gaps.every((x) => x > 0.005 && Math.abs(x - gaps[0]) < 0.02) ? Math.round(gaps[0] * 1000) / 1000 : 0;
+          const lead = chordNotes.reduce((a, b) => (b.vel > a.vel ? b : a));
+          chordCells.set(s, {
+            midi: chordNotes[0].midi,
+            vel: lead.vel,
+            len: Math.max(...chordNotes.map((x) => x.end - x.beat)),
+            chord: found ? { degree: found.degree, size: found.size, inversion: found.inversion, strum, stack: found.stack } : undefined,
+            ratchet: c.ratchet,
+          });
+        }
+        if (left.length) rest.set(s, { notes: left, ratchet: c.ratchet });
+      }
+      if (chordCells.size) emit(part.name, chordCells, 'chords');
+      // what no chord held: as few lines as there are notes at once, top down
+      const voices = Math.min(6, Math.max(0, ...[...rest.values()].map((r) => r.notes.length)));
+      for (let v = 0; v < voices; v++) {
+        const cells = new Map<number, Cell>();
+        for (const [s, r] of rest) {
+          const ms = r.notes.slice().sort((a, b) => b.midi - a.midi);
+          const note = ms[v];
+          if (!note) continue;
+          cells.set(s, { midi: note.midi, vel: note.vel, len: note.end - note.beat, ratchet: r.ratchet });
+          extraNotes++;
+          if (v === voices - 1) dropped += Math.max(0, ms.length - voices);
+        }
+        if (cells.size) emit(`${part.name} · extra${voices > 1 ? ` ${v + 1}` : ''}`, cells, 'voice');
+      }
+    } else if (asChords || !poly) {
+      const cells = new Map<number, Cell>();
       for (const [s, c] of groups) {
         const lead = c.notes.reduce((a, b) => (b.vel > a.vel ? b : a));
         const ch = chordOf.get(s);
@@ -1077,7 +1161,7 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
       // not stacked chords: one line per voice, top down
       const voices = Math.min(6, Math.max(...groups.map(([, c]) => c.notes.length)));
       for (let v = 0; v < voices; v++) {
-        const cells = new Map<number, { midi: number; vel: number; len: number; ratchet: number }>();
+        const cells = new Map<number, Cell>();
         for (const [s, c] of groups) {
           const ms = c.notes.slice().sort((a, b) => b.midi - a.midi);
           const note = ms[v];
@@ -1095,6 +1179,7 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
     song: { bpm: Math.max(20, Math.min(300, Math.round(file.bpm))), root, scale, harmony },
     channels,
     report: {
+      extraNotes,
       fileBars,
       from,
       bars,
