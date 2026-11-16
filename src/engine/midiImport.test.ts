@@ -259,3 +259,31 @@ describe('MIDI → functions', () => {
   }
 });
 
+
+describe('the song’s Length is the user’s', () => {
+  it('no import changes it: MIDI (add or replace), kits (layer or replace), kit channels, presets', async () => {
+    const { useStore } = await import('../state/store');
+    const st = () => useStore.getState();
+    const check = (what: string) => {
+      const s = st().project.song;
+      expect([s.lengthMode, s.lengthBeats], what).toEqual(['fixed', 64]);
+      for (const t of st().project.tracks) expect(t.steps * t.stepBeats, `${what}: ${t.name}`).toBeCloseTo(64, 6);
+    };
+    st().resetProject();
+    st().setSongLength(64);
+    check('start');
+    const r = midiToFunctions(parseMidi(kitMidi('afterhours')), { ...IMPORT_DEFAULTS, math: { terms: 'exact', glide: false } });
+    st().plantImported(r.channels.map((c) => c.template), r.song, { layer: true, adoptSong: true, name: 'x' });
+    check('MIDI added');
+    st().plantImported(r.channels.map((c) => c.template), r.song, { layer: false, adoptSong: true, name: 'x' });
+    check('MIDI replacing');
+    st().addKit(KITS[0], true);
+    check('kit layered');
+    st().addKit(KITS[1], false);
+    check('kit replacing');
+    st().addKitTracks(KITS[2], [0, 1], true);
+    check('kit channels with the kit’s song');
+    st().addTrack('fib');
+    check('a function preset');
+  });
+});

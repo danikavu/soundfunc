@@ -1055,7 +1055,9 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
           if (!won || fit.matched > won.matched + 1e-9 || (fit.matched === won.matched && (fit.terms < won.terms || (fit.terms === won.terms && f.length < plus(won.base.expr, won.formula).length)))) won = { ...fit, base: o.base };
         }
         if (won) {
-          formulas.pitch = plus(won.base.expr, won.formula);
+          // in beats over the loop (t), not x: fitted into a longer song, the curve keeps its speed and repeats
+          const B = num(p * g, 4);
+          formulas.pitch = plus(won.base.expr, won.formula.replace(/tau \* x\b/g, `tau * t / ${B}`));
           match = won.matched;
         }
         // a glide line: one voice sliding from note to note, held for each note's length

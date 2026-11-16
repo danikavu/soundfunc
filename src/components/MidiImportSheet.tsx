@@ -45,6 +45,7 @@ const beatsLabel = (beats: number) => (Math.abs(beats / 4 - Math.round(beats / 4
 export function MidiImportSheet() {
   const file = useMidiImport((s) => s.file);
   const plantImported = useStore((s) => s.plantImported);
+  const songLength = useStore((s) => (s.project.song.lengthMode === 'free' ? null : s.project.song.lengthBeats));
   const [opts, setOpts] = useState(IMPORT_DEFAULTS);
   const fileBars = useMemo(() => (file ? barsOf(file.data) : 1), [file]);
   // nothing is worked out until you choose the stretch to bring in (in beats, on any grid division)
@@ -85,6 +86,12 @@ export function MidiImportSheet() {
   if (report.truncatedBars) notes.push(`the last ${report.truncatedBars} bar${report.truncatedBars === 1 ? '' : 's'} didn’t fit the step limit and were left out`);
   if (report.tempoChanges > 1) notes.push(`the file changes tempo ${report.tempoChanges - 1} time${report.tempoChanges === 2 ? '' : 's'} — the first tempo is used`);
   if (report.timeSig[0] !== 4 || report.timeSig[1] !== 4) notes.push(`it is in ${report.timeSig[0]}/${report.timeSig[1]} — bars here are four beats`);
+  if (songLength !== null && Math.abs(report.beats - songLength) > 1e-6)
+    notes.push(
+      report.beats > songLength
+        ? `your song is ${songLength} beats (its Length is yours — an import never changes it): only the first ${songLength} of these ${Math.round(report.beats * 100) / 100} beats will play`
+        : `your song is ${songLength} beats (its Length is yours — an import never changes it): these ${Math.round(report.beats * 100) / 100} beats loop to fill it`,
+    );
   if (report.extraNotes) notes.push(`${report.extraNotes} note${report.extraNotes === 1 ? '' : 's'} no chord held (doublings, added tones, strays) kept on extra lines`);
   if (report.dropped) notes.push(`${report.dropped} note${report.dropped === 1 ? '' : 's'} beyond six at once left out`);
   }
