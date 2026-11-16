@@ -2,12 +2,12 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { GEdge, GNode, Graph, NodeData } from '../engine/graph';
 import type { EditResult } from '../engine/graphEdit';
-import { applyGrid, fixedLengthFor, gridOf, type Grid } from '../engine/steps';
+import { applyGrid, gridOf, type Grid } from '../engine/steps';
 import type { SavedFunction } from './library';
 import { defaultProject, KITS, pickColor, PRESETS, trackFromPreset, trackFromTemplate, uid, type Kit } from '../engine/presets';
 import { mutateHarmony, mutateOneNode, mutateTrack } from '../engine/mutate';
 import { blockFromSelection, insertBlock, type Block } from '../engine/graphEdit';
-import { formulaNames, harmonyCycleBars, isDrum, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
+import { formulaNames, isDrum, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
 import { CONSTANTS, FUNCTIONS, renameVariable } from '../engine/expr';
 import { ctxVars } from '../engine/graph';
 
@@ -63,6 +63,11 @@ interface State {
   /** plant a multi-track kit (and its tempo/key); replaces the current tracks unless layering */
   /** a kit by id (built in), or the kit itself (a saved one) */
   addKit: (kit: string | Kit, layer?: boolean) => void;
+  /**
+   * plant channels read from a file (MIDI): never re-gridded — the song is fixed only when every
+   * channel is the same allowed length, otherwise free, so each loops on its own as it was found
+   */
+  plantImported: (channels: (Partial<Track> & { name: string; graph: Graph })[], song: Partial<Song>, opts: { layer: boolean; adoptSong: boolean; name: string }) => void;
   /** add some of a kit's tracks (e.g. just its drums) to the current garden */
   addKitTracks: (kit: string | Kit, trackIndexes: number[], adoptSong?: boolean) => void;
   duplicateTrack: (id: string) => void;
@@ -144,6 +149,20 @@ export const useStore = create<State>()(
           commit((p) => ({ ...p, tracks: [...p.tracks, track] }));
           set({ selectedTrackId: track.id });
         },
+        plantImported: (channels, fileSong, { layer, adoptSong, name }) => {
+          const start = layer ? get().project.tracks.length : 0;
+          const tracks = withNewColors(
+            channels.map((t, i) => trackFromTemplate(t, t.name, start + i)),
+            layer ? colorsIn(get().project) : [],
+          );
+          const cur = get().project.song;
+          // the song's Length is yours: an import never changes it — the channels fit into it
+          const song: Song = { ...cur, ...withoutLength(adoptSong || !layer ? fileSong : {}), ...lengthOf(cur) };
+          const fitted = tracks.map((t) => fitToSong(t, song));
+          commit((p) => ({ ...p, name: layer ? p.name : name, song, tracks: layer ? [...p.tracks, ...fitted] : fitted }));
+          if (!layer) set({ currentProjectId: null });
+          set({ selectedTrackId: tracks[0]?.id ?? get().selectedTrackId });
+        },
         addKit: (which, layer = false) => {
           const kit = typeof which === 'string' ? KITS.find((k) => k.id === which) : which;
           if (!kit) return;
@@ -153,17 +172,8 @@ export const useStore = create<State>()(
             layer ? colorsIn(get().project) : [],
           );
           const cur = get().project.song;
-          // replacing the garden: tracks that share a length make a fixed song, long enough for
-          // the progression too; tracks of different lengths (polyrhythms) make a free song
-          let song: Song = { ...cur, ...kit.song };
-          if (!layer) {
-            const lengths = tracks.map((t) => t.steps * t.stepBeats);
-            const same = lengths.every((l) => Math.abs(l - lengths[0]) < 1e-9);
-            const cycle = harmonyCycleBars(song);
-            song = same
-              ? { ...song, lengthMode: 'fixed', lengthBeats: fixedLengthFor(Math.max(lengths[0], cycle < 16 ? cycle * 4 : 0)) }
-              : { ...song, lengthMode: 'free', lengthBeats: fixedLengthFor(Math.max(...lengths)) };
-          } else song = { ...song, lengthMode: cur.lengthMode, lengthBeats: cur.lengthBeats };
+          // the song's Length is yours: a kit never changes it — its channels fit into it
+          const song: Song = { ...cur, ...withoutLength(kit.song ?? {}), ...lengthOf(cur) };
           const fitted = tracks.map((t) => fitToSong(t, song));
           commit((p) => ({
             ...p,
@@ -236,7 +246,7 @@ export const useStore = create<State>()(
             colorsIn(get().project),
           );
           commit((p) => {
-            const song = adoptSong ? { ...p.song, ...kit.song } : p.song;
+            const song = adoptSong ? { ...p.song, ...withoutLength(kit.song ?? {}), ...lengthOf(p.song) } : p.song;
             return { ...p, song, tracks: [...p.tracks, ...tracks.map((t) => fitToSong(t, song))] };
           });
           set({ selectedTrackId: tracks[0].id });
@@ -398,6 +408,15 @@ export const useStore = create<State>()(
     },
   ),
 );
+
+/** the song's Length — set only by the user, never by an import */
+const lengthOf = (s: Song) => ({ lengthMode: s.lengthMode, lengthBeats: s.lengthBeats });
+function withoutLength(s: Partial<Song>): Partial<Song> {
+  const { lengthMode: _m, lengthBeats: _b, ...rest } = s;
+  void _m;
+  void _b;
+  return rest;
+}
 
 /** with a fixed song length, a track is re-gridded to fill it exactly; a free song leaves it as it is */
 /** a track re-gridded to the song's Length, as planting it does */

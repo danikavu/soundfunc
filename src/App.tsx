@@ -13,6 +13,7 @@ import { NodeEditor, copySelected, pasteInto, runMutate, toggleLockSelected } fr
 import { Inspector } from './components/Inspector';
 import { FunctionSheet } from './components/FunctionSheet';
 import { ImportSheet } from './components/ImportSheet';
+import { MidiDropOverlay, MidiImportSheet, isMidiFile, openMidiFile, useMidiImport } from './components/MidiImportSheet';
 import { saveGarden } from './components/GardenMenu';
 import { paintOverlays } from './components/overlays';
 
@@ -78,6 +79,42 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // a MIDI file dropped anywhere on the window becomes channels of functions
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+    let depth = 0;
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth++;
+      useMidiImport.setState({ dragging: true });
+    };
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (!depth) useMidiImport.setState({ dragging: false });
+    };
+    const over = (e: DragEvent) => hasFiles(e) && e.preventDefault();
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      useMidiImport.setState({ dragging: false });
+      const f = [...(e.dataTransfer?.files ?? [])].find(isMidiFile);
+      if (f) void openMidiFile(f);
+      else if (e.dataTransfer?.files.length) void import('./components/TopBar').then((m) => m.toast('Drop a MIDI file (.mid) to turn it into functions'));
+    };
+    window.addEventListener('dragenter', enter);
+    window.addEventListener('dragleave', leave);
+    window.addEventListener('dragover', over);
+    window.addEventListener('drop', drop);
+    return () => {
+      window.removeEventListener('dragenter', enter);
+      window.removeEventListener('dragleave', leave);
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('drop', drop);
+    };
+  }, []);
+
   return (
     <div className="app">
       <TitleStrip />
@@ -94,6 +131,8 @@ export function App() {
       </div>
       <FunctionSheet />
       <ImportSheet />
+      <MidiImportSheet />
+      <MidiDropOverlay />
     </div>
   );
 }

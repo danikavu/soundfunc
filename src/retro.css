@@ -1633,3 +1633,206 @@ body,
 .side-channels-head .tracks-head {
   margin-bottom: 0;
 }
+
+/* ---------- MIDI → functions: the import sheet, and the drop target ---------- */
+.midi-sheet {
+  width: min(980px, calc(100vw - var(--sp-8)));
+}
+.midi-found {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-sm);
+}
+.midi-found code {
+  color: var(--ink);
+}
+.midi-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3);
+}
+.app .midi-options .btn.on {
+  background: var(--key-on);
+  color: var(--key-on-ink);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.midi-channels {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.midi-channels li {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: var(--sp-1) var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--paper-2);
+}
+.midi-channels li.off {
+  opacity: 0.45;
+}
+.midi-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+}
+.midi-pick b {
+  font-weight: 700;
+}
+.midi-meta {
+  font-size: var(--fs-sm);
+  align-self: center;
+}
+.midi-formulas {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.midi-formula {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  gap: var(--sp-2);
+  font: var(--fs-sm) / 1.4 var(--mono);
+  min-width: 0;
+}
+.midi-formula span {
+  color: var(--ink-3);
+}
+.midi-formula code {
+  padding: 1px var(--sp-1);
+  border-radius: var(--radius-sm);
+  background: var(--lcd);
+  color: var(--lcd-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.midi-notes {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-sm);
+}
+.midi-adopt {
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+/* a file over the window: one quiet target, the whole screen */
+.midi-drop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--paper) 72%, transparent);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+.midi-drop > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-6) var(--sp-8);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+}
+.midi-drop b {
+  font: 700 var(--fs-xl) / 1 var(--sans);
+}
+/* the bar picker: the whole file on a strip, the chosen bars outlined */
+.midi-bars {
+  margin-bottom: var(--sp-3);
+}
+.midi-overview {
+  display: block;
+  width: 100%;
+  height: 104px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: var(--window);
+  cursor: col-resize;
+  touch-action: none;
+}
+.midi-bars-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  font-size: var(--fs-sm);
+}
+.app .midi-bars-row .btn.on {
+  background: var(--key-on);
+  color: var(--key-on-ink);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.midi-options {
+  align-items: center;
+}
+.midi-option-label {
+  font: 700 var(--fs-xs) / 1 var(--sans);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-right: var(--sp-1);
+}
+.midi-options > span + .btn {
+  margin-left: var(--sp-3);
+}
+.midi-bars-gap {
+  width: var(--sp-2);
+}
+.midi-bars-row .icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.midi-channels-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: var(--sp-1) 0 var(--sp-2);
+}
+.midi-channels-head small {
+  margin-left: var(--sp-1);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.midi-channels-head .btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.midi-choose {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+  padding: var(--sp-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+.midi-bars-row .midi-option-label {
+  margin-right: var(--sp-1);
+}
+.midi-bars-row .seg button {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.app .sheet-foot .btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  filter: saturate(0.4);
+}

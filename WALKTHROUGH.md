@@ -1,6 +1,6 @@
 # SoundFunc walkthrough
 
-A tour of the core of SoundFunc: you plant functions, shape them as nodes, watch and hear them as a score, read them back as math, and export MIDI. Every screenshot is the app in dark mode, playing the **Dusty Fingers** rhythm kit. [USAGE.md](USAGE.md) has the full reference.
+A tour of the core of SoundFunc: you plant functions, shape them as nodes, watch and hear them as a score, read them back as math, bring MIDI in as functions, and export MIDI or record a jam. Every screenshot is the app in dark mode, playing the **Dusty Fingers** rhythm kit. [USAGE.md](USAGE.md) has the full reference.
 
 ![SoundFunc playing the Dusty Fingers kit](docs/walkthrough/app.png)
 
@@ -30,9 +30,32 @@ One finished groove per style: hip-hop, G-funk, trap and phonk, neo-soul, trip h
 
 ### Paste a function
 
-Paste LaTeX straight from Desmos, plain math, `\begin{cases}` piecewise functions, or several lines with helper definitions. SoundFunc shows how it read the function and plots exactly what the channel will play. If the function's length doesn't match the song, it asks how to fit it.
+Paste LaTeX straight from Desmos, plain math, `\begin{cases}` piecewise functions, or several lines with helper definitions. SoundFunc shows how it read the function and plots exactly what the channel will play. If the function is longer or shorter than the song's Length, it is cut to it or runs on to fill it; an import never changes the Length.
 
 ![Pasting a Desmos function](docs/walkthrough/paste.png)
+
+### Import MIDI
+
+Drop a `.mid` file anywhere on the window, or use **Export → Import MIDI…**. Every part of the file becomes a channel of functions.
+
+![Drop a MIDI file](docs/walkthrough/midi-drop.png)
+
+The sheet opens on an overview of the whole file and works nothing out until you choose the stretch to bring in. Drag across the overview; the ends snap to bars, beats, 1/8, 1/16, or the notes' own starts, so a part that begins on a pickup comes in from where it begins. Zoom in with − / + to pick bars in a long song.
+
+![The MIDI import sheet before a stretch is chosen](docs/walkthrough/midi-choose.png)
+
+Once you choose, it finds each part's grid and swing, the key, and the chord of every bar, and writes each part as compact formulas: rhythms as `every()`, `euclid()` or `bits()` masks, pitches against the chord. The options on the sheet choose how:
+
+- **Feel:** *Functions* models the feel (accents, ghost notes as `chance()`, a measured `rand()` for the hand). *Exact* keeps every note as played. *Grid* puts everything on the grid.
+- **Smart chords** keeps chord parts as one chord channel even with doublings, added tones or notes outside the key.
+
+Tick the channels you want, then **Replace track** or **Add to track**. Your song's Length never changes: the channels fit into it.
+
+![A chosen stretch: four bars, written as functions](docs/walkthrough/midi-import.png)
+
+With **Sum of sines** under *Math*, a line's pitch becomes a pure function: a few sines over the loop that land every note. *Glide line* plays it as one voice sliding along the curve.
+
+![A bass line as a sum of sines](docs/walkthrough/midi-math.png)
 
 ### Channels
 
@@ -117,6 +140,16 @@ Mix, then the voice: a stock patch, one of the ten **Sonic Menagerie** voices, o
 
 ## 6 · Take it out
 
-**Export** writes MIDI with notes only, or with automation (glides and bends as pitch bend, volume as expression, pressure, CC74). It also writes CSV note data, or the whole project to reopen later. The ● record key beside play captures a jam as MIDI and audio.
+**Export** writes MIDI with notes only, or with automation (glides and bends as pitch bend, volume as expression, pressure, CC74). It also writes CSV note data, or the whole project to reopen later.
 
 ![The Export menu](docs/walkthrough/export.png)
+
+### Jam
+
+The ● key beside play (or **J**) records a jam: everything you play and change, every channel, starting on the next bar. Mutate, mute and solo, change the tempo or the harmony while it runs; it is all in the take. The clock beside the key counts while it records. Press it again and the take ends on the next bar.
+
+![Recording a jam](docs/walkthrough/jam-recording.png)
+
+The finished take shows its length, bars, channels and tempos. Export it as **Audio** (WAV), **MIDI**, or **MIDI + automation**, or all three at once with **Export all**. Every file starts on bar 1, ready to drop into a DAW.
+
+![The jam take](docs/walkthrough/jam-take.png)

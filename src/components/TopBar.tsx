@@ -8,6 +8,7 @@ import { GardenMenu } from './GardenMenu';
 import { FIXED_LENGTHS, shortBeats } from '../engine/steps';
 import { Dropdown } from './Dropdown';
 import { HARMONY_VARS, isDrum, patternBeats } from '../engine/project';
+import { openMidiFile } from './MidiImportSheet';
 import { Icon, Seg, Stepper, TextField, download, fileSafe, isProject } from './ui';
 import { JamRecorder } from './JamRecorder';
 import { clock } from '../engine/jam';
@@ -51,6 +52,7 @@ function FileMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const midiRef = useRef<HTMLInputElement>(null);
   const { project, loadProject } = useStore();
   const jam = useJam((s) => s.jam);
 
@@ -114,12 +116,27 @@ function FileMenu() {
             Project <small>Everything, to re-open later</small>
           </button>
           <hr />
+          <button onClick={() => midiRef.current?.click()}>
+            Import MIDI… <small>Turn a .mid file into channels of functions (or drop it on the window)</small>
+          </button>
           <button onClick={() => fileRef.current?.click()}>
             Import project… <small>Load a .soundfunc.json file</small>
           </button>
 
         </div>
       )}
+      <input
+        ref={midiRef}
+        type="file"
+        accept=".mid,.midi,audio/midi,audio/x-midi"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          setOpen(false);
+          if (f) void openMidiFile(f);
+        }}
+      />
       <input
         ref={fileRef}
         type="file"

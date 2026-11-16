@@ -10,7 +10,7 @@ import { toast } from './TopBar';
 import { Icon, NumberField, Seg, TextField } from './ui';
 import { Tex, useKatex } from './tex';
 import { StepPicker } from './StepPicker';
-import { fixedLengthFor, shortBeats } from '../engine/steps';
+import { shortBeats } from '../engine/steps';
 
 type XMeans = 'beats' | 'steps' | 'loop';
 
@@ -40,7 +40,7 @@ export function ImportSheet() {
   /** slider starting values the user typed, by name */
   const [paramEdits, setParamEdits] = useState<Record<string, number>>({});
   /** when the function's length isn't the song's: free (each channel loops on its own), grow the song, or fit the song */
-  const [fit, setFit] = useState<'free' | 'grow' | 'song'>('free');
+
   /** fit y into a span of octaves: null = decide from the function (on when it can't be played as written) */
   const [fitChoice, setFitChoice] = useState<boolean | null>(null);
   const [fitOctaves, setFitOctaves] = useState(3);
@@ -87,8 +87,8 @@ export function ImportSheet() {
   const ownLength = steps * stepBeats;
   const songFixed = song.lengthMode !== 'free';
   const mismatch = songFixed && Math.abs(ownLength - song.lengthBeats) > 1e-6;
-  const grown = fixedLengthFor(ownLength);
-  const heard = !mismatch || fit === 'free' ? ownLength : fit === 'grow' ? grown : song.lengthBeats;
+  // the song's Length is yours: the function is cut to it, or runs on to fill it
+  const heard = !mismatch ? ownLength : song.lengthBeats;
 
   // sample the function across exactly what the channel will play
   const range = song.pitchRange ?? DEFAULT_PITCH_RANGE;
@@ -165,10 +165,7 @@ export function ImportSheet() {
       nodes: Object.entries(nodes).map(([id, [type, data]]) => ({ id, type, position: { x: 0, y: 0 }, data })),
       edges: edges.map(([source, sourceHandle, target, targetHandle]) => ({ id: `${source}.${sourceHandle}-${target}.${targetHandle}`, source, sourceHandle, target, targetHandle })),
     });
-    const { project, plantTrack, setSongLength } = useStore.getState();
-    // make room first, so the channel plays exactly what the preview shows
-    if (mismatch && fit === 'free') setSongLength('free');
-    if (mismatch && fit === 'grow') setSongLength(grown);
+    const { project, plantTrack } = useStore.getState();
     // the function's parameters become the new track's own sliders
     const sliders: Slider[] = params.map(({ name: n, value: v }) => ({ name: n, value: v, ...(v > 0 ? { min: 0, max: v * 2 } : v < 0 ? { min: v * 2, max: 0 } : { min: -1, max: 1 }) }));
     const made = sliders.map((sl) => sl.name);
@@ -193,7 +190,7 @@ export function ImportSheet() {
     };
     plantTrack(track);
     setOpen(false);
-    const room = !mismatch ? '' : fit === 'free' ? ' · the song is now Free' : fit === 'grow' ? ` · the song is now ${grown} beats` : '';
+    const room = !mismatch ? '' : ownLength > song.lengthBeats ? ` · cut to the song’s ${shortBeats(song.lengthBeats)}` : ` · run on to the song’s ${shortBeats(song.lengthBeats)}`;
     toast(`Planted “${track.name}” — ${shortBeats(heard)}, ${glide ? 'glide' : 'notes'}${fitting ? `, fitted into ${fitOctaves} octaves` : ''}${room}${made.length ? ` · new slider${made.length > 1 ? 's' : ''}: ${made.join(', ')}` : ''}`);
   };
 
@@ -361,25 +358,12 @@ export function ImportSheet() {
               {mismatch && (
                 <div className="import-fit">
                   <span>
-                    The song is <b>{shortBeats(song.lengthBeats)}</b> long; this function lasts <b>{shortBeats(ownLength)}</b>. The preview shows what you will hear:
+                    The song is <b>{shortBeats(song.lengthBeats)}</b> long; this function lasts <b>{shortBeats(ownLength)}</b>. The preview shows what you will hear.
                   </span>
-                  <Seg<'free' | 'grow' | 'song'>
-                    value={fit}
-                    onChange={setFit}
-                    options={[
-                      { value: 'free', label: `Play all ${shortBeats(ownLength)} — song becomes Free` },
-                      ...(grown !== song.lengthBeats ? [{ value: 'grow' as const, label: `Make the song ${grown} beats` }] : []),
-                      { value: 'song', label: ownLength > song.lengthBeats ? `Cut to ${shortBeats(song.lengthBeats)}` : `Run on to ${shortBeats(song.lengthBeats)}` },
-                    ]}
-                  />
                   <small className="muted">
-                    {fit === 'free'
-                      ? 'Free: every channel loops on its own length — the others don’t change.'
-                      : fit === 'grow'
-                        ? `Every channel is re-gridded to fill ${grown} beats.`
-                        : ownLength > song.lengthBeats
-                          ? 'Only the start plays — like the song’s other channels, it fills the song’s Length.'
-                          : 'The function carries on past its length to fill the song.'}
+                    {ownLength > song.lengthBeats
+                      ? `Only the first ${shortBeats(song.lengthBeats)} play — the song’s Length is yours to change (top bar), an import never changes it.`
+                      : `The function carries on past its length to fill the song’s ${shortBeats(song.lengthBeats)}.`}
                   </small>
                 </div>
               )}
