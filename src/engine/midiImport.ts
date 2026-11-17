@@ -16,7 +16,7 @@
 import { NODE_DEFS, type GEdge, type GNode, type NodeData } from './graph';
 import { euclid } from './expr';
 import { chordTones, degreeToMidi, midiToDegree, SCALES, spellDegree } from './music';
-import { BEATS_PER_BAR, type DrumVoice, type Song, type Track, type Waveform } from './project';
+import { BEATS_PER_BAR, CHANNEL_COLORS, type DrumVoice, type Song, type Track, type Waveform } from './project';
 import type { SynthParams } from './synth';
 import { WAVE_VOICES } from './timbre';
 import { layoutGraph, voicedInversion, voicedPitch } from './presets';
@@ -697,10 +697,20 @@ export interface ImportOptions {
 }
 export const IMPORT_DEFAULTS: ImportOptions = { feel: 'functions', harmony: true, exact: true };
 
+export type Role = 'drums' | 'bass' | 'chords' | 'lead';
+export const ROLES: Record<Role, string> = { drums: 'Drums', bass: 'Bass', chords: 'Chords', lead: 'Lead' };
+/** a file part's colour: the same in the preview and on the channels it becomes */
+export const partColor = (i: number) => CHANNEL_COLORS[i % CHANNEL_COLORS.length];
+
 export interface ImportedChannel {
   template: Partial<Track> & { name: string; graph: { nodes: GNode[]; edges: GEdge[] } };
   /** what the preview says about it */
   kind: 'drums' | 'melody' | 'chords' | 'voice';
+  /** what it plays, for choosing whole groups at once: drums, bass, chords (and the voices of split chords), or lead lines */
+  role: Role;
+  /** the file part it came from (its index in the file), and that part's colour in the preview */
+  part: number;
+  color: string;
   /** Math: the share of notes the series lands exactly (1 when exact) */
   match?: number;
   grid: string;
@@ -750,10 +760,16 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
   const z = byBeat ? Math.max(a + 0.25, Math.min(fileBeats, opts.toBeat!)) : toBar * BEATS_PER_BAR;
   const ranged = byBeat || opts.from !== undefined || opts.to !== undefined;
   const from = Math.floor(a / BEATS_PER_BAR);
+  // each part keeps its place in the whole file — its colour in the preview
+  const partIndex = new Map<MidiPart, number>();
   const file: MidiFileData = {
     ...whole,
     parts: whole.parts
-      .map((p) => ({ ...p, notes: p.notes.filter((n) => n.beat >= a - 1e-6 && n.beat < z - 1e-6).map((n) => ({ ...n, beat: n.beat - a, end: Math.min(n.end, z) - a })) }))
+      .map((p, i) => {
+        const cut = { ...p, notes: p.notes.filter((n) => n.beat >= a - 1e-6 && n.beat < z - 1e-6).map((n) => ({ ...n, beat: n.beat - a, end: Math.min(n.end, z) - a })) };
+        partIndex.set(cut, i);
+        return cut;
+      })
       .filter((p) => p.notes.length),
   };
   const keepFeel = opts.feel !== 'grid';
@@ -830,6 +846,8 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
 
   for (const part of file.parts) {
     const { g, swing } = grids.get(part)!;
+    const pi = Math.max(0, partIndex.get(part) ?? 0);
+    const color = partColor(pi);
     if (part.channel === 9) {
       // drums: one channel per voice
       const byVoice = new Map<string, MidiNote[]>();
@@ -893,8 +911,11 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
         } else if (shifts.slice(0, p).some((x) => x > 0.02)) formulas.shift = listFormula(shifts.slice(0, p).map((x) => Math.round(x * 100) / 100));
         const synth = GM_DRUMS[notes[0].midi]?.synth;
         channels.push({
-          template: template(name, { ...base0(g, swing, p), waveform: voice, ...(synth ? { synth } : {}) }, formulas),
+          template: template(name, { ...base0(g, swing, p), waveform: voice, color, ...(synth ? { synth } : {}) }, formulas),
           kind: 'drums',
+          role: 'drums',
+          part: pi,
+          color,
           grid: GRID_LABEL.get(g) ?? '',
           steps: p,
           notes: notes.length,
@@ -1075,8 +1096,12 @@ export function midiToFunctions(whole: MidiFileData, opts: ImportOptions = IMPOR
         }
       }
       channels.push({
-        template: template(name, { ...base0(g, swing, p), ...voice, octave, pitchMode: 'degree', ...extra }, formulas),
+        template: template(name, { ...base0(g, swing, p), ...voice, octave, pitchMode: 'degree', color, ...extra }, formulas),
         kind,
+        // a line down in the bass register is bass; chords and the voices of split chords are chords
+        role: octave <= 2 && kind !== 'chords' ? 'bass' : kind === 'chords' || kind === 'voice' ? 'chords' : 'lead',
+        part: pi,
+        color,
         grid: GRID_LABEL.get(g) ?? '',
         steps: p,
         notes,

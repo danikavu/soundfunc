@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { IMPORT_DEFAULTS, barsOf, midiToFunctions, parseMidi, type Feel, type MidiFileData } from '../engine/midiImport';
-import { CHANNEL_COLORS } from '../engine/project';
+import { IMPORT_DEFAULTS, ROLES, barsOf, midiToFunctions, parseMidi, partColor, type Feel, type MidiFileData, type Role } from '../engine/midiImport';
 import { voiceLabel, type Waveform } from '../engine/project';
 import { useStore } from '../state/store';
 import { toast } from './TopBar';
@@ -51,7 +50,8 @@ export function MidiImportSheet() {
   // nothing is worked out until you choose the stretch to bring in (in beats, on any grid division)
   const [range, setRange] = useState<[number, number] | null>(null);
   useEffect(() => setRange(null), [file]);
-  const [skip, setSkip] = useState<Set<number>>(new Set());
+  // channels left out, by part and name — kept when the options re-make the channels
+  const [skip, setSkip] = useState<Set<string>>(new Set());
   const [adoptSong, setAdoptSong] = useState(true);
   const close = () => useMidiImport.setState({ file: null });
 
@@ -66,7 +66,23 @@ export function MidiImportSheet() {
 
   if (!file) return null;
   const channels = result?.channels ?? [];
-  const chosen = channels.filter((_, i) => !skip.has(i));
+  const keyOf = (c: (typeof channels)[number]) => `${c.part}|${c.template.name}`;
+  const chosen = channels.filter((c) => !skip.has(keyOf(c)));
+  const roles = (Object.keys(ROLES) as Role[]).map((r) => {
+    const of = channels.filter((c) => c.role === r);
+    return { r, of, on: of.filter((c) => !skip.has(keyOf(c))).length };
+  }).filter((x) => x.of.length);
+  /** leave a whole group out, or bring it back */
+  const toggleRole = (r: Role) =>
+    setSkip((s) => {
+      const of = channels.filter((c) => c.role === r).map(keyOf);
+      const allOn = of.every((k) => !s.has(k));
+      const next = new Set(s);
+      for (const k of of) allOn ? next.add(k) : next.delete(k);
+      return next;
+    });
+  /** only these groups */
+  const only = (rs: Role[]) => setSkip(new Set(channels.filter((c) => !rs.includes(c.role)).map(keyOf)));
   const plant = (layer: boolean) => {
     if (!result) return;
     const { song } = result;
@@ -214,34 +230,62 @@ export function MidiImportSheet() {
               Channels <small>{chosen.length} of {channels.length}</small>
             </span>
             <span className="row" style={{ gap: 2 }}>
-              <button className="btn small" disabled={!skip.size} onClick={() => setSkip(new Set())}>
+              <button className="btn small" disabled={chosen.length === channels.length} onClick={() => setSkip(new Set())}>
                 Select all
               </button>
-              <button className="btn small" disabled={skip.size === channels.length} onClick={() => setSkip(new Set(channels.map((_, i) => i)))}>
+              <button className="btn small" disabled={!chosen.length} onClick={() => setSkip(new Set(channels.map(keyOf)))}>
                 Select none
               </button>
             </span>
           </div>
+          {/* whole groups at once: click a group to leave it out or bring it back, double-click for only that group */}
+          <div className="midi-roles">
+            {roles.map(({ r, of, on }) => (
+              <button
+                key={r}
+                className={`btn small midi-role ${on === of.length ? 'on' : on ? 'some' : ''}`}
+                aria-pressed={on === of.length}
+                onClick={() => toggleRole(r)}
+                onDoubleClick={() => only([r])}
+                title={`${ROLES[r]}: ${of.length} channel${of.length === 1 ? '' : 's'} — click to ${on === of.length ? 'leave them out' : 'bring them in'}, double-click for only ${ROLES[r].toLowerCase()}`}
+              >
+                {ROLES[r]} <small>{on}/{of.length}</small>
+              </button>
+            ))}
+            {roles.some((x) => x.r === 'drums') && roles.length > 1 && (
+              <>
+                <span className="midi-bars-gap" />
+                <button className="btn small ghost" onClick={() => only(['drums'])} title="Only the drums and percussion">
+                  Drums only
+                </button>
+                <button className="btn small ghost" onClick={() => only(roles.map((x) => x.r).filter((r) => r !== 'drums'))} title="Everything but the drums and percussion">
+                  No drums
+                </button>
+              </>
+            )}
+          </div>
           <ul className="midi-channels">
             {channels.map((c, i) => (
-              <li key={`${c.template.name}-${i}`} className={skip.has(i) ? 'off' : ''}>
+              <li key={`${keyOf(c)}-${i}`} className={skip.has(keyOf(c)) ? 'off' : ''}>
                 <label className="midi-pick">
                   <input
                     type="checkbox"
-                    checked={!skip.has(i)}
+                    checked={!skip.has(keyOf(c))}
                     onChange={() =>
                       setSkip((s) => {
                         const next = new Set(s);
-                        if (next.has(i)) next.delete(i);
-                        else next.add(i);
+                        const k = keyOf(c);
+                        if (next.has(k)) next.delete(k);
+                        else next.add(k);
                         return next;
                       })
                     }
                   />
+                  <i className="midi-swatch" style={{ background: c.color }} />
                   <b>{c.template.name}</b>
                 </label>
                 <span className="muted midi-meta">
-                  {KIND[c.kind]} · {voiceLabel(c.template.waveform as Waveform)} · {c.grid} · {c.steps} steps · {c.notes} note{c.notes === 1 ? '' : 's'}
+                  {c.kind === 'drums' ? ROLES.drums : `${ROLES[c.role]} · ${KIND[c.kind]}`} · {voiceLabel(c.template.waveform as Waveform)} · {c.grid} · {c.steps} steps · {c.notes} note{c.notes === 1 ? '' : 's'}
                   {c.match !== undefined && c.kind !== 'drums' && ` · ${c.match === 1 ? 'every note exact' : `${Math.round(c.match * 100)}% of notes exact`}`}
                   {c.template.playMode === 'glide' && ' · glide'}
                 </span>
@@ -409,7 +453,7 @@ function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: n
     }
     g.globalAlpha = 1;
     data.parts.forEach((p, i) => {
-      g.fillStyle = CHANNEL_COLORS[i % CHANNEL_COLORS.length];
+      g.fillStyle = partColor(i);
       for (const n of p.notes) {
         if (n.end < a || n.beat > z) continue;
         if (p.channel === 9) g.fillRect(bx(n.beat), H - drumH + 2, Math.max(1.2, ppbar / 64), drumH - 4);
