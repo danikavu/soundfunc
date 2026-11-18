@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { IMPORT_DEFAULTS, barsOf, midiToFunctions, parseMidi, type Feel, type MidiFileData } from '../engine/midiImport';
-import { CHANNEL_COLORS } from '../engine/project';
+import { IMPORT_DEFAULTS, ROLES, barsOf, drumChannelName, midiToFunctions, parseMidi, partColor, type Feel, type MidiFileData, type Role } from '../engine/midiImport';
 import { voiceLabel, type Waveform } from '../engine/project';
 import { useStore } from '../state/store';
 import { toast } from './TopBar';
@@ -51,7 +50,8 @@ export function MidiImportSheet() {
   // nothing is worked out until you choose the stretch to bring in (in beats, on any grid division)
   const [range, setRange] = useState<[number, number] | null>(null);
   useEffect(() => setRange(null), [file]);
-  const [skip, setSkip] = useState<Set<number>>(new Set());
+  // channels left out, by part and name — kept when the options re-make the channels
+  const [skip, setSkip] = useState<Set<string>>(new Set());
   const [adoptSong, setAdoptSong] = useState(true);
   const close = () => useMidiImport.setState({ file: null });
 
@@ -66,7 +66,34 @@ export function MidiImportSheet() {
 
   if (!file) return null;
   const channels = result?.channels ?? [];
-  const chosen = channels.filter((_, i) => !skip.has(i));
+  const keyOf = (c: (typeof channels)[number]) => `${c.part}|${c.template.name}`;
+  const chosen = channels.filter((c) => !skip.has(keyOf(c)));
+  const roles = (Object.keys(ROLES) as Role[]).map((r) => {
+    const of = channels.filter((c) => c.role === r);
+    return { r, of, on: of.filter((c) => !skip.has(keyOf(c))).length };
+  }).filter((x) => x.of.length);
+  /** leave a whole group out, or bring it back */
+  const toggleRole = (r: Role) =>
+    setSkip((s) => {
+      const of = channels.filter((c) => c.role === r).map(keyOf);
+      const allOn = of.every((k) => !s.has(k));
+      const next = new Set(s);
+      for (const k of of) allOn ? next.add(k) : next.delete(k);
+      return next;
+    });
+  /** in the overview: is this note left out? (a drum note by its voice's channel; a part's notes when none of its channels come in) */
+  const dimKey = result ? `${[...skip].sort().join(',')}#${channels.length}` : '';
+  const dim = (part: number, midi: number, drum: boolean) => {
+    if (!result) return false;
+    const mine = channels.filter((c) => c.part === part);
+    if (!mine.length) return false;
+    if (drum) return skip.has(`${part}|${drumChannelName(midi)}`);
+    return mine.every((c) => skip.has(keyOf(c)));
+  };
+  /** the channels coming in first, then the ones left out — each in the file's order */
+  const ordered = [...channels].sort((p, q) => Number(skip.has(keyOf(p))) - Number(skip.has(keyOf(q))));
+  /** only these groups */
+  const only = (rs: Role[]) => setSkip(new Set(channels.filter((c) => !rs.includes(c.role)).map(keyOf)));
   const plant = (layer: boolean) => {
     if (!result) return;
     const { song } = result;
@@ -129,7 +156,7 @@ export function MidiImportSheet() {
         </header>
 
         <div className="sheet-body">
-          <BarPicker data={file.data} bars={fileBars} range={range} onRange={setRange} />
+          <BarPicker data={file.data} bars={fileBars} range={range} onRange={setRange} dim={dim} dimKey={dimKey} />
           {!result && (
             <p className="midi-choose">
               <Icon name="info" size={13} /> Drag across the overview to choose the stretch to bring in — it snaps to the grid you pick (bars, beats, 1/8 or 1/16, or the notes themselves). Nothing is worked out until you do.
@@ -214,34 +241,65 @@ export function MidiImportSheet() {
               Channels <small>{chosen.length} of {channels.length}</small>
             </span>
             <span className="row" style={{ gap: 2 }}>
-              <button className="btn small" disabled={!skip.size} onClick={() => setSkip(new Set())}>
+              <button className="btn small" disabled={chosen.length === channels.length} onClick={() => setSkip(new Set())}>
                 Select all
               </button>
-              <button className="btn small" disabled={skip.size === channels.length} onClick={() => setSkip(new Set(channels.map((_, i) => i)))}>
+              <button className="btn small" disabled={!chosen.length} onClick={() => setSkip(new Set(channels.map(keyOf)))}>
                 Select none
               </button>
             </span>
           </div>
+          {/* whole groups at once: click a group to leave it out or bring it back, double-click for only that group */}
+          <div className="midi-roles">
+            {roles.map(({ r, of, on }) => (
+              <button
+                key={r}
+                className={`btn small midi-role ${on === of.length ? 'on' : on ? 'some' : ''}`}
+                aria-pressed={on === of.length}
+                onClick={() => toggleRole(r)}
+                onDoubleClick={() => only([r])}
+                title={`${ROLES[r]}: ${of.length} channel${of.length === 1 ? '' : 's'} — click to ${on === of.length ? 'leave them out' : 'bring them in'}, double-click for only ${ROLES[r].toLowerCase()}`}
+              >
+                {ROLES[r]} <small>{on}/{of.length}</small>
+              </button>
+            ))}
+            {roles.some((x) => x.r === 'drums') && roles.length > 1 && (
+              <>
+                <span className="midi-bars-gap" />
+                <button className="btn small ghost" onClick={() => only(['drums'])} title="Only the drums and percussion">
+                  Drums only
+                </button>
+                <button className="btn small ghost" onClick={() => only(roles.map((x) => x.r).filter((r) => r !== 'drums'))} title="Everything but the drums and percussion">
+                  No drums
+                </button>
+              </>
+            )}
+            <label className="row midi-adopt" title="The channels are written in the file’s key and against its chords; without them their notes follow your song instead (the song’s Length never changes)">
+              <input type="checkbox" checked={adoptSong} onChange={(e) => setAdoptSong(e.target.checked)} /> Use the file’s tempo, key &amp; chords
+            </label>
+          </div>
           <ul className="midi-channels">
-            {channels.map((c, i) => (
-              <li key={`${c.template.name}-${i}`} className={skip.has(i) ? 'off' : ''}>
+            {ordered.map((c, i) => (
+              <li key={`${keyOf(c)}-${i}`} className={skip.has(keyOf(c)) ? 'off' : ''}>
                 <label className="midi-pick">
                   <input
                     type="checkbox"
-                    checked={!skip.has(i)}
+                    checked={!skip.has(keyOf(c))}
                     onChange={() =>
                       setSkip((s) => {
                         const next = new Set(s);
-                        if (next.has(i)) next.delete(i);
-                        else next.add(i);
+                        const k = keyOf(c);
+                        if (next.has(k)) next.delete(k);
+                        else next.add(k);
                         return next;
                       })
                     }
                   />
+                  <i className="midi-swatch" style={{ background: c.color }} />
                   <b>{c.template.name}</b>
                 </label>
                 <span className="muted midi-meta">
-                  {KIND[c.kind]} · {voiceLabel(c.template.waveform as Waveform)} · {c.grid} · {c.steps} steps · {c.notes} note{c.notes === 1 ? '' : 's'}
+                  {ROLES[c.role] === KIND[c.kind] ? ROLES[c.role] : `${ROLES[c.role]} · ${KIND[c.kind]}`} · {voiceLabel(c.template.waveform as Waveform)} · {c.grid} · {c.steps} steps · {c.notes} note{c.notes === 1 ? '' : 's'}
                   {c.match !== undefined && c.kind !== 'drums' && ` · ${c.match === 1 ? 'every note exact' : `${Math.round(c.match * 100)}% of notes exact`}`}
                   {c.template.playMode === 'glide' && ' · glide'}
                 </span>
@@ -266,9 +324,7 @@ export function MidiImportSheet() {
         </div>
 
         <footer className="sheet-foot">
-          <label className="row midi-adopt" title="The channels are written in the file’s key and against its chords; without them their notes follow your song instead">
-            <input type="checkbox" checked={adoptSong} onChange={(e) => setAdoptSong(e.target.checked)} /> Use the file’s tempo, key &amp; chords when adding
-          </label>
+          <span />
           <div className="row" style={{ gap: 6 }}>
             <button className="btn" disabled={!chosen.length} onClick={() => plant(true)} title="Add these channels to the track you’re working on">
               <Icon name="plus" size={13} /> Add to track
@@ -306,7 +362,7 @@ const SNAP_BEATS: Record<Exclude<Snap, 'note'>, number> = { bar: 4, beat: 1, eig
  * across it; the ends snap to the grid you pick (bars, beats, 1/8, 1/16) or to the notes'
  * own starts, so a part that begins off the bar comes in from where it begins.
  */
-function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: number; range: [number, number] | null; onRange: (r: [number, number]) => void }) {
+function BarPicker({ data, bars, range, onRange, dim, dimKey }: { data: MidiFileData; bars: number; range: [number, number] | null; onRange: (r: [number, number]) => void; dim: (part: number, midi: number, drum: boolean) => boolean; dimKey: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [drag, setDrag] = useState<[number, number] | null>(null);
   const [snap, setSnap] = useState<Snap>('bar');
@@ -409,13 +465,18 @@ function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: n
     }
     g.globalAlpha = 1;
     data.parts.forEach((p, i) => {
-      g.fillStyle = CHANNEL_COLORS[i % CHANNEL_COLORS.length];
+      const drum = p.channel === 9;
       for (const n of p.notes) {
         if (n.end < a || n.beat > z) continue;
+        // a note left out of the import steps back into grey
+        const off = dim(i, n.midi, drum);
+        g.fillStyle = off ? v('--lcd-ink-3') : partColor(i);
+        g.globalAlpha = off ? 0.28 : 1;
         if (p.channel === 9) g.fillRect(bx(n.beat), H - drumH + 2, Math.max(1.2, ppbar / 64), drumH - 4);
         else g.fillRect(bx(n.beat), my(n.midi), Math.max(1.2, bx(n.end) - bx(n.beat)), Math.max(2, Math.min(5, (H - 30) / Math.max(1, hi - lo))));
       }
     });
+    g.globalAlpha = 1;
     if (shown) {
       // what is outside the selection steps back
       const sx0 = bx(shown[0]), sx1 = bx(shown[1]);
@@ -428,7 +489,7 @@ function BarPicker({ data, bars, range, onRange }: { data: MidiFileData; bars: n
       g.lineWidth = 1.5;
       g.strokeRect(sx0 + 0.75, 12.75, sx1 - sx0 - 1.5, H - 13.5);
     }
-  }, [data, bars, shown, lo, hi, view]);
+  }, [data, bars, shown, lo, hi, view, dimKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const beatAt = (e: React.PointerEvent) => {
     const r = ref.current!.getBoundingClientRect();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { exportMidi } from './midi';
-import { IMPORT_DEFAULTS, fourierFit, midiToFunctions, parseMidi, type ImportOptions } from './midiImport';
+import { IMPORT_DEFAULTS, fourierFit, midiToFunctions, parseMidi, partColor, type ImportOptions } from './midiImport';
 import { KITS, defaultProject, trackFromTemplate } from './presets';
 import { isDrum, patternBeats, renderTrack, DRUMS, type Project, type Track, type Waveform } from './project';
 
@@ -286,4 +286,21 @@ describe('the song’s Length is the user’s', () => {
     st().addTrack('fib');
     check('a function preset');
   });
+
+  it('groups and colours: every channel says what it plays and wears its part’s preview colour', () => {
+    const file = parseMidi(kitMidi('sundaypocket'));
+    const r = midiToFunctions(file, IMPORT_DEFAULTS);
+    const role = (name: string) => r.channels.find((c) => c.template.name === name)!.role;
+    expect([role('Kick'), role('Snare'), role('Hats')]).toEqual(['drums', 'drums', 'drums']);
+    expect(role('Bass')).toBe('bass');
+    expect(role('Rhodes')).toBe('chords');
+    for (const c of r.channels) {
+      expect(c.color, c.template.name).toBe(partColor(c.part));
+      expect(c.template.color, c.template.name).toBe(c.color);
+    }
+    // a chosen stretch keeps each part's colour, even where earlier parts have no notes in it
+    const later = midiToFunctions(file, { ...IMPORT_DEFAULTS, fromBeat: 8, toBeat: 12 });
+    for (const c of later.channels) expect(c.color).toBe(partColor(c.part));
+  });
 });
+

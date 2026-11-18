@@ -10,7 +10,35 @@ import { docFor } from './nodeDocs';
 import { exportMidi, collectNotes, simplifyCurve, CURVE_TOLERANCE } from './midi';
 import { patternBeats, songWindows, stretchOf } from './project';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
-import { CHANNEL_PALETTE, KITS, PRESETS, defaultProject, pickColor, trackFromPreset, trackFromTemplate, voicedInversion, voicedPitch } from './presets';
+import { CHANNEL_PALETTE, KITS, PRESETS, defaultProject, pickColor, trackFromPreset, trackFromTemplate, voicedInversion, voicedPitch, wire, type Preset } from './presets';
+
+/** two shapes the tests lean on that are no longer shipped as presets: an arpeggio on the chord, and a drawn riser that glides */
+const FIXTURES: Preset[] = [
+  {
+    id: 'arp',
+    name: 'Arpeggio',
+    description: 'test fixture',
+    formula: '',
+    track: {
+      waveform: 'triangle', pitchMode: 'degree', steps: 16, stepBeats: 0.25, octave: 4, volume: 0.5,
+      graph: wire({ p: ['expr', { formula: 'h + pick(n, 0, 2, 4, L, 4, 2)' }], v: ['expr', { formula: '0.4 + 0.4 * every(n, 3)' }], out: ['output'] }, ['p.out>out.pitch', 'v.out>out.velocity']),
+    },
+  },
+  {
+    id: 'riser',
+    name: 'Riser',
+    description: 'test fixture',
+    formula: '',
+    track: {
+      waveform: 'sawtooth', pitchMode: 'degree', playMode: 'glide', quantize: false, glide: 0.02, steps: 16, stepBeats: 1, octave: 3, volume: 0.5, attack: 0.05, release: 0.4, send: 0.6,
+      graph: wire(
+        { up: ['curve', { points: '0:0:0.6 1:1:0', repeats: 1, lo: 0, hi: 14 }], vol: ['curve', { points: '0:0.2:0.5 1:1:0', repeats: 1, lo: 0, hi: 0.85 }], out: ['output'] },
+        ['up.out>out.pitch', 'vol.out>out.velocity'],
+      ),
+    },
+  },
+];
+const ALL_PRESETS = [...PRESETS, ...FIXTURES];
 import { HARMONY_VARS, SONG_DEFAULTS, harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
 import { chordName, chordTones, limitPitch, PROGRESSIONS, spellDegree } from './music';
 import { mulberry32, mutateFormula, mutateOneNode, mutateTimbre, mutateTrack, musicalScore } from './mutate';
@@ -150,7 +178,7 @@ describe('patterns & rhythm', () => {
 });
 
 describe('glide', () => {
-  const theremin = () => trackFromPreset(PRESETS.find((p) => p.id === 'theremin')!, 0);
+  const theremin = () => trackFromPreset(ALL_PRESETS.find((p) => p.id === 'theremin')!, 0);
   it('produces a continuous, unquantized curve and no notes', () => {
     const r = renderTrack(theremin(), defaultProject().song);
     expect(r.notes).toHaveLength(0);
@@ -217,12 +245,12 @@ describe('chords & harmony', () => {
   it('evaluates the progression per bar and feeds h to tracks', () => {
     const song = { ...defaultProject().song, root: 0, scale: 'major', harmony: 'pick(bar, 0, 4, 5, 3)' };
     expect([0, 4, 8, 12, 16].map((b) => harmonyAt(song, b))).toEqual([0, 4, 5, 3, 0]);
-    const pad = trackFromPreset(PRESETS.find((p) => p.id === 'chordPad')!, 0);
+    const pad = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'chordPad')!, 0);
     const notes = renderTrack(pad, song, 1).notes; // loop 1 = bar 1 = V
     expect(notes.map((n) => n.midi % 12).sort((a, b) => a - b)).toEqual([2, 5, 7, 11]); // G B D F
   });
   it('strums chords across time', () => {
-    const strum = trackFromPreset(PRESETS.find((p) => p.id === 'strum')!, 0);
+    const strum = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'strum')!, 0);
     const notes = renderTrack(strum, defaultProject().song).notes.filter((n) => n.step === 0);
     expect(notes).toHaveLength(3);
     expect(notes[1].beat).toBeGreaterThan(notes[0].beat);
@@ -260,7 +288,7 @@ describe('randomizer', () => {
     }
   });
   it('is deterministic per seed and actually changes something', () => {
-    const t = trackFromPreset(PRESETS.find((p) => p.id === 'fib')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'fib')!, 0);
     const song = defaultProject().song;
     const a = mutateTrack(t, song, 0.3, 42);
     const b = mutateTrack(t, song, 0.3, 42);
@@ -268,13 +296,13 @@ describe('randomizer', () => {
     expect(JSON.stringify(a.track.graph)).not.toBe(JSON.stringify(t.graph));
   });
   it('respects locked nodes', () => {
-    const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'pond')!, 0);
     t.graph.nodes = t.graph.nodes.map((n) => ({ ...n, data: { ...n.data, locked: true } }));
     expect(mutateTrack(t, defaultProject().song, 0.9, 7).track.graph).toEqual(t.graph);
   });
   it('harmonious mode stays closer to chord tones than experimental', () => {
     const song = { ...defaultProject().song, root: 0, scale: 'major', harmony: 'pick(bar, 0, 3, 4, 0)' };
-    const t = trackFromPreset(PRESETS.find((p) => p.id === 'arp')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'arp')!, 0);
     const avgNovelty = (chaos: number) => {
       let total = 0;
       for (let s = 0; s < 12; s++) {
@@ -302,7 +330,7 @@ describe('symbolic: the written-out function equals the graph', () => {
     for (const kit of KITS) kit.tracks.forEach((t, i) => out.push({ label: `${kit.id}/${t.name}`, track: trackFromTemplate(t, t.name, i), song: { ...base, ...kit.song } }));
     // channels driven by Curve nodes: every starter curve, into Note Out, plus one curve read through another phase
     for (const id of ['duck', 'ramp', 'swell', 'bentsaw']) {
-      const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+      const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'pond')!, 0);
       const b = BLOCKS.find((x) => x.id === id)!;
       const out = t.graph.nodes.find((n) => n.type === 'output')!;
       const port = id === 'ramp' ? 'pitch' : (b.toOutput?.[0]?.port ?? 'pitch');
@@ -310,7 +338,7 @@ describe('symbolic: the written-out function equals the graph', () => {
       outs.push({ label: `curve/${id}`, track: { ...t, graph: g }, song });
     }
     {
-      const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+      const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'pond')!, 0);
       const out = t.graph.nodes.find((n) => n.type === 'output')!;
       t.graph = {
         nodes: [...t.graph.nodes, { id: 'ph', type: 'expr', position: { x: 0, y: 0 }, data: { formula: 'fract(t / 3) * 0.9 + 0.05' } }, { id: 'cv', type: 'curve', position: { x: 0, y: 0 }, data: { points: '0.1:0.2:0.8 0.4:1:-0.7 0.4:0.3:0 0.85:0.6:0.3', repeats: 2, lo: -3, hi: 9 } }],
@@ -385,7 +413,7 @@ describe('symbolic: the written-out function equals the graph', () => {
   }, 30_000);
 
   it('prints readable formulas and LaTeX', () => {
-    const pond = compose(trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0));
+    const pond = compose(trackFromPreset(ALL_PRESETS.find((p) => p.id === 'pond')!, 0));
     expect(toSource(pond.math.outputs[0].ast)).toBe('4 * sine(x)');
     expect(toTex(pond.math.outputs[0].ast)).toBe('4\\,\\operatorname{sine}\\left(x\\right)');
     // a formula printed as source parses back to the same value
@@ -408,7 +436,7 @@ describe('library', () => {
     expect(projectKey(edited)).not.toBe(projectKey(p));
   });
   it('voices capture and recognise a track’s sound', () => {
-    const t = { ...trackFromPreset(PRESETS.find((x) => x.id === 'wavetable')!, 0) };
+    const t = { ...trackFromPreset(ALL_PRESETS.find((x) => x.id === 'wavetable')!, 0) };
     const v = voiceOf(t, 'Folded');
     expect(v).toMatchObject({ name: 'Folded', waveform: 'custom', timbre: t.timbre });
     expect(wearsVoice(t, v)).toBe(true);
@@ -416,7 +444,7 @@ describe('library', () => {
   });
   it('saved functions keep every node, value and the track’s sliders', () => {
     const song = defaultProject().song;
-    const t = trackFromPreset(PRESETS.find((x) => x.id === 'desmos')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((x) => x.id === 'desmos')!, 0);
     const expr = t.graph.nodes.find((n) => n.type === 'expr');
     expect(expr).toBeTruthy();
     expr!.data = { ...expr!.data, formula: `${expr!.data.formula} + depth/12` };
@@ -516,7 +544,7 @@ describe('graph editing keeps the music', () => {
     for (const kit of KITS) kit.tracks.forEach((t, i) => out.push({ label: `${kit.id}/${t.name}`, track: trackFromTemplate(t, t.name, i), song: { ...base, ...kit.song } }));
     // channels driven by Curve nodes: every starter curve, into Note Out, plus one curve read through another phase
     for (const id of ['duck', 'ramp', 'swell', 'bentsaw']) {
-      const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+      const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'pond')!, 0);
       const b = BLOCKS.find((x) => x.id === id)!;
       const out = t.graph.nodes.find((n) => n.type === 'output')!;
       const port = id === 'ramp' ? 'pitch' : (b.toOutput?.[0]?.port ?? 'pitch');
@@ -524,7 +552,7 @@ describe('graph editing keeps the music', () => {
       outs.push({ label: `curve/${id}`, track: { ...t, graph: g }, song });
     }
     {
-      const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+      const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'pond')!, 0);
       const out = t.graph.nodes.find((n) => n.type === 'output')!;
       t.graph = {
         nodes: [...t.graph.nodes, { id: 'ph', type: 'expr', position: { x: 0, y: 0 }, data: { formula: 'fract(t / 3) * 0.9 + 0.05' } }, { id: 'cv', type: 'curve', position: { x: 0, y: 0 }, data: { points: '0.1:0.2:0.8 0.4:1:-0.7 0.4:0.3:0 0.85:0.6:0.3', repeats: 2, lo: -3, hi: 9 } }],
@@ -566,7 +594,7 @@ describe('graph editing keeps the music', () => {
   });
 
   it('conditions, comparisons, logic and any call explode into nodes', () => {
-    const blank = trackFromPreset(PRESETS.find((p) => p.id === 'blank')!, 0);
+    const blank = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'blank')!, 0);
     const f = blank.graph.nodes.find((n) => n.type === 'expr')!;
     const cases: [string, string][] = [
       ['n % 4 == 0 ? h + 2 : h - 1', 'switch'],
@@ -632,7 +660,7 @@ describe('graph editing keeps the music', () => {
   });
 
   it('blocks insert cleanly and wire into Note Out', () => {
-    const blank = trackFromPreset(PRESETS.find((p) => p.id === 'blank')!, 0);
+    const blank = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'blank')!, 0);
     for (const b of BLOCKS) {
       const r = insertBlock(blank.graph, b, { x: 0, y: 300 });
       expect(r.ids.length, b.id).toBeGreaterThan(0);
@@ -643,18 +671,18 @@ describe('graph editing keeps the music', () => {
   });
 
   it('saves a selection as a block and plants it again', () => {
-    const t = trackFromPreset(PRESETS.find((p) => p.id === 'fib')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'fib')!, 0);
     const ids = t.graph.nodes.filter((n) => n.type !== 'output').map((n) => n.id);
     const b = blockFromSelection(t.graph, ids, 'Fib groove');
     if ('error' in b) throw new Error(b.error);
-    const blank = trackFromPreset(PRESETS.find((p) => p.id === 'blank')!, 0);
+    const blank = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'blank')!, 0);
     const empty = { ...blank, graph: { nodes: blank.graph.nodes.filter((n) => n.type === 'output'), edges: [] } };
     const r = insertBlock(empty.graph, b, { x: 0, y: 0 });
     sameSound('block round-trip', t, { ...t, graph: r.graph }, defaultProject().song);
   });
 
   it('auditions a node as pitch, stretching small ranges', () => {
-    const t = trackFromPreset(PRESETS.find((p) => p.id === 'fib')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'fib')!, 0);
     const eu = t.graph.nodes.find((n) => n.type === 'euclid')!;
     const g = auditionGraph(t.graph, eu.id, { asVelocity: false, lo: 0, hi: 1, span: 7 });
     const r = renderTrack({ ...t, graph: g }, defaultProject().song);
@@ -663,7 +691,7 @@ describe('graph editing keeps the music', () => {
 
   it('Sections and sliders: the written-out function and exported code still match', () => {
     const song = { ...defaultProject().song, harmony: 'pick(bar, 0, 3)' };
-    const t = trackFromPreset(PRESETS.find((p) => p.id === 'form')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'form')!, 0);
     t.sliders = [{ name: 'lift', value: 2, min: 0, max: 5 }];
     const formula = t.graph.nodes.find((n) => n.data.formula === 'h + round(3 * sin(tau * x * 2))')!;
     formula.data.formula = 'h + round(3 * sin(tau * x * 2)) + lift';
@@ -682,7 +710,7 @@ describe('graph editing keeps the music', () => {
   it('each track has its own sliders: same name, different values, no crosstalk', () => {
     const song = defaultProject().song;
     const make = (v: number) => {
-      const t = trackFromPreset(PRESETS.find((p) => p.id === 'form')!, 0);
+      const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'form')!, 0);
       t.graph.nodes.find((n) => n.data.formula === 'h + round(3 * sin(tau * x * 2))')!.data.formula = 'h + round(3 * sin(tau * x * 2)) + lift';
       t.sliders = [{ name: 'lift', value: v, min: -5, max: 5 }];
       return t;
@@ -696,7 +724,7 @@ describe('graph editing keeps the music', () => {
   });
   it('old gardens: song sliders move to the tracks that read them; the harmony keeps their values', () => {
     const p = defaultProject();
-    const t = trackFromPreset(PRESETS.find((x) => x.id === 'form')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((x) => x.id === 'form')!, 0);
     t.graph.nodes.find((n) => n.data.formula === 'h + round(3 * sin(tau * x * 2))')!.data.formula = 'h + round(3 * sin(tau * x * 2)) + lift';
     const { sliders: _a, ...plain } = t;
     const { sliders: _b, ...other } = p.tracks[0];
@@ -714,7 +742,7 @@ describe('the Kick, Zap & Hook preset', () => {
     const latex =
       'y = \\begin{cases} -2 + 3e^{-20\\operatorname{frac}(x)} & \\text{if } \\operatorname{frac}(x) < \\frac{1}{4} \\\\ \\frac{3}{5} + \\frac{\\operatorname{round}\\left(\\frac{12(\\lfloor 4x \\rfloor \\bmod 7)}{7}\\right)}{12} - \\frac{8}{5}\\operatorname{frac}(4x) & \\text{if } \\lfloor 4x \\rfloor \\bmod 3 = 0 \\\\ -1 + \\frac{e^{-12\\operatorname{frac}(4x)}}{6} & \\text{if } \\operatorname{frac}(4x) < 0.8 \\end{cases}';
     const imported = importMath(latex);
-    const preset = trackFromPreset(PRESETS.find((p) => p.id === 'zap')!, 0);
+    const preset = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'zap')!, 0);
     const y = compile(String(preset.graph.nodes.find((n) => n.id === 'y')!.data.formula), ['t']).fn;
     const gate = compile(String(preset.graph.nodes.find((n) => n.id === 'gate')!.data.formula), ['t']).fn;
     const iv = compileAst(imported.value), ig = compileAst(imported.gate!);
@@ -815,7 +843,7 @@ describe('the song length rules every track', () => {
 
 describe('negative octaves', () => {
   it('play lower, stay inside MIDI, and still export', () => {
-    const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'pond')!, 0);
     // raw octave behaviour, with the pitch range switched off
     const song = { ...defaultProject().song, pitchRange: { mode: 'off' as const, low: 24, high: 96 } };
     const at = (octave: number) => renderTrack({ ...t, octave }, song).notes.map((n) => n.midi);
@@ -830,7 +858,7 @@ describe('negative octaves', () => {
 
 describe('pitch range', () => {
   const extreme = () => {
-    const blank = trackFromPreset(PRESETS.find((p) => p.id === 'blank')!, 0);
+    const blank = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'blank')!, 0);
     const f = blank.graph.nodes.find((n) => n.type === 'expr')!;
     // wildly out-of-range values, like a formula gone astray
     f.data.formula = 'pick(n, -8373, 0, 4000, 2, -50, 61)';
@@ -959,7 +987,7 @@ describe('importing: Greek letters, subscripts, parameters, any time variable', 
 describe('each pass: evolve or repeat exactly', () => {
   const evolving = () => {
     const p = defaultProject();
-    const t = trackFromPreset(PRESETS.find((x) => x.id === 'evolve')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((x) => x.id === 'evolve')!, 0);
     return { ...p, song: { ...p.song, lengthBeats: 4, exportLoops: 3 }, tracks: [t] } as Project;
   };
   const passes = (p: Project) => {
@@ -1035,7 +1063,7 @@ describe('duplicate, copy & paste, and one-node mutation', () => {
     expect(renderTrack(after, useStore.getState().project.song).errors.size).toBe(0);
   });
   it('the node dice changes only that node', () => {
-    const t = trackFromPreset(PRESETS.find((x) => x.id === 'evolve')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((x) => x.id === 'evolve')!, 0);
     const target = t.graph.nodes.find((n) => n.type === 'expr')!;
     const r = mutateOneNode(t, defaultProject().song, target.id, 0.5, 1234);
     expect(r.track).not.toBe(t);
@@ -1059,7 +1087,7 @@ describe('duplicate, copy & paste, and one-node mutation', () => {
 });
 
 describe('stretch: a channel played out over more or less time', () => {
-  const base = () => trackFromPreset(PRESETS.find((x) => x.id === 'fib')!, 0);
+  const base = () => trackFromPreset(ALL_PRESETS.find((x) => x.id === 'fib')!, 0);
   const song = { ...defaultProject().song, harmony: 'pick(bar, 0, 3, 4, 5)' };
   it('same notes, same order — every time and length scaled; one pass lasts stretch × as long', () => {
     const t = base();
@@ -1090,7 +1118,7 @@ describe('stretch: a channel played out over more or less time', () => {
     expect(stretchOf({ ...t, stretch: 100 })).toBe(16);
   });
   it('the written-out code still matches the engine when stretched', () => {
-    const t = trackFromPreset(PRESETS.find((p) => p.id === 'form')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'form')!, 0);
     t.stretch = 1.5;
     const code = trackCode([compose(t)], song, 'js').replace(/^export /gm, '');
     const fn = new Function(`${code}\nreturn songForm;`)() as (n: number, k: number) => Record<string, number>;
@@ -1142,7 +1170,7 @@ describe('Curve node', () => {
     for (const x of [0.1, 0.33, 0.6]) expect(run(d, x)).toBeCloseTo(run(d, x + 0.25 > 1 ? x - 0.25 : x + 0.25), 12);
   });
   it('“Write as a formula” sounds exactly the same', () => {
-    const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'pond')!, 0);
     const out = t.graph.nodes.find((n) => n.type === 'output')!;
     t.graph = {
       nodes: [...t.graph.nodes, { id: 'cv', type: 'curve', position: { x: 0, y: 0 }, data: { points: '0:0.2:0.7 0.5:1:-0.5 1:0:0', repeats: 2, lo: -2, hi: 6 } }],
@@ -1155,7 +1183,7 @@ describe('Curve node', () => {
     expect(renderTrack({ ...t, graph: r.graph }, song, 0, false).pitchCurve).toEqual(renderTrack(t, song, 0, false).pitchCurve.map((v) => expect.closeTo(v, 9)));
   });
   it('the dice keeps the corners in place and the values in range', () => {
-    const t = trackFromPreset(PRESETS.find((p) => p.id === 'pond')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((p) => p.id === 'pond')!, 0);
     const b = BLOCKS.find((x) => x.id === 'duck')!;
     t.graph = insertBlock(t.graph, b, { x: 0, y: 400 }).graph;
     const id = t.graph.nodes.find((n) => n.type === 'curve')!.id;
@@ -1194,7 +1222,7 @@ describe('exporting curves: simplified', () => {
   });
   it('the MIDI file shrinks; "every sample" keeps all of it', () => {
     const p = defaultProject();
-    const riser = trackFromPreset(PRESETS.find((x) => x.id === 'riser')!, 0);
+    const riser = trackFromPreset(ALL_PRESETS.find((x) => x.id === 'riser')!, 0);
     const project = { ...p, tracks: [riser] };
     const simple = { raw: 0, kept: 0 }, full = { raw: 0, kept: 0 };
     const a = exportMidi(project, simple);
@@ -1247,11 +1275,11 @@ describe('curves on pitch & MPE', () => {
   };
   const project = (presetId: string, midi: 'standard' | 'mpe') => {
     const p = defaultProject();
-    return { ...p, song: { ...p.song, exportMidi: midi, exportLoops: 1 }, tracks: [trackFromPreset(PRESETS.find((x) => x.id === presetId)!, 0)] };
+    return { ...p, song: { ...p.song, exportMidi: midi, exportLoops: 1 }, tracks: [trackFromPreset(ALL_PRESETS.find((x) => x.id === presetId)!, 0)] };
   };
 
   it('a bend Curve on np scoops into every note, however long', () => {
-    const t = trackFromPreset(PRESETS.find((x) => x.id === 'scooplead')!, 0);
+    const t = trackFromPreset(ALL_PRESETS.find((x) => x.id === 'scooplead')!, 0);
     const r = renderTrack(t, defaultProject().song, 0, false);
     expect(r.notes.length).toBeGreaterThan(4);
     for (const n of r.notes) {
@@ -1261,7 +1289,7 @@ describe('curves on pitch & MPE', () => {
     }
   });
   it('channels without bend / pressure / slide wired carry no expression (and cost nothing)', () => {
-    const r = renderTrack(trackFromPreset(PRESETS.find((x) => x.id === 'pond')!, 0), defaultProject().song, 0, false);
+    const r = renderTrack(trackFromPreset(ALL_PRESETS.find((x) => x.id === 'pond')!, 0), defaultProject().song, 0, false);
     expect(r.notes.every((n) => n.expr === undefined)).toBe(true);
   });
   it('MPE: a zone of 15 members, chord notes on their own channels, each with its own bend and pressure', () => {
@@ -1489,7 +1517,7 @@ describe('the synth: patches, sauce and surprises', () => {
     expect(drumOf()).toEqual({ tone: 0, decay: 1, drive: 0, sauce: 0 });
   });
   it('a saved voice keeps the whole patch, and recognises it', () => {
-    const t = { ...trackFromPreset(PRESETS.find((x) => x.id === 'pond')!, 0), synth: { cutoff: 0.3, sauce: 0.6 } };
+    const t = { ...trackFromPreset(ALL_PRESETS.find((x) => x.id === 'pond')!, 0), synth: { cutoff: 0.3, sauce: 0.6 } };
     const v = voiceOf(t, 'Dark pond');
     expect(v.synth).toEqual({ cutoff: 0.3, sauce: 0.6 });
     expect(wearsVoice(t, v)).toBe(true);

@@ -151,10 +151,12 @@ export const useStore = create<State>()(
         },
         plantImported: (channels, fileSong, { layer, adoptSong, name }) => {
           const start = layer ? get().project.tracks.length : 0;
-          const tracks = withNewColors(
+          // channels that bring a colour (the MIDI preview's) keep it; the rest get a fresh one
+          const fresh = withNewColors(
             channels.map((t, i) => trackFromTemplate(t, t.name, start + i)),
             layer ? colorsIn(get().project) : [],
           );
+          const tracks = fresh.map((t, i) => (channels[i].color ? { ...t, color: channels[i].color! } : t));
           const cur = get().project.song;
           // the song's Length is yours: an import never changes it — the channels fit into it
           const song: Song = { ...cur, ...withoutLength(adoptSong || !layer ? fileSong : {}), ...lengthOf(cur) };

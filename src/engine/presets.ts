@@ -119,27 +119,25 @@ export interface Preset {
 }
 
 /** the Function presets list, in this order */
-export type PresetGroup = 'start' | 'math' | 'melodies' | 'harmony' | 'bass' | 'westcoast' | 'curves' | 'rave' | 'fx';
+export type PresetGroup = 'start' | 'math' | 'melodies' | 'harmony' | 'bass' | 'westcoast' | 'curves' | 'rave';
 export const PRESET_GROUPS: Record<PresetGroup, { label: string; hint: string }> = {
   start: { label: 'Start here', hint: 'the simplest functions' },
   math: { label: 'Math & nature', hint: 'sequences, fractals, chaos and constants' },
   melodies: { label: 'Melodies & leads', hint: 'tunes and lines to play over the harmony' },
-  harmony: { label: 'Chords & keys', hint: 'chords, comps and arpeggios on the song’s harmony' },
+  harmony: { label: 'Chords & keys', hint: 'chords and comps on the song’s harmony' },
   bass: { label: 'Bass', hint: 'roots, walks and wobbles under the chords' },
   westcoast: { label: 'G-funk & West Coast', hint: 'whistles, Moog bass, talkbox and Rhodes ninths' },
   curves: { label: 'Glide curves', hint: 'wild shapes, followed continuously' },
   rave: { label: 'Rave & piecewise', hint: 'kicks, riffs and drops written as one piecewise function' },
-  fx: { label: 'Risers & FX', hint: 'builds and swells' },
 };
 /** the built-in presets' groups (library presets carry their own) */
 const GROUP_OF: Record<string, PresetGroup> = {
   pond: 'start', blank: 'start',
   fib: 'math', chaos: 'math', golden: 'math', pi: 'math', collatz: 'math', lissajous: 'math', recaman: 'math', sierpinski: 'math', lorenzGlide: 'math', evolve: 'math',
   theremin: 'melodies', desmos: 'melodies', drawn: 'melodies', scooplead: 'melodies', wavetable: 'melodies', form: 'melodies',
-  chordPad: 'harmony', strum: 'harmony', arp: 'harmony', quartal: 'harmony', bloomchords: 'harmony', pump: 'harmony', pumppad: 'harmony', discostrings: 'harmony', housestabs: 'harmony', rhodes: 'harmony', bossaguitar: 'harmony', montuno: 'harmony', clav: 'harmony',
+  chordPad: 'harmony', strum: 'harmony', quartal: 'harmony', bloomchords: 'harmony', pumppad: 'harmony', discostrings: 'harmony', housestabs: 'harmony', rhodes: 'harmony', bossaguitar: 'harmony', montuno: 'harmony', clav: 'harmony',
   bass: 'bass', wobble: 'bass', slide808: 'bass', walking: 'bass', bossabass: 'bass', tumbao: 'bass', slap: 'bass', discobass: 'bass',
   zap: 'rave',
-  riser: 'fx',
 };
 export const groupOf = (p: Preset): PresetGroup => p.group ?? GROUP_OF[p.id] ?? 'math';
 
@@ -209,15 +207,44 @@ const TUMBAO = voice('Tumbao bass', 'triangle', `${ROOT} + (n % 16 == 6) * 4`, '
 const SLAP_BASS = voice('Slap bass', 'pluck', `${ROOT} - L + pick(n % 16, 0, 0, 0, 0, 0, 0, L, 0, 0, 0, L - 1, 0, 0, 0, L, 0)`, 'bits(0x92A6, n) * (0.68 + 0.27 * bits(0x0202, n))', {
   length: 0.8,
 }, { steps: 32, octave: 3, release: 0.1, volume: 0.8, send: 0.05 });
-const CLAV = voice('Clav', 'square', voicedPitch(3), '0.42 * bits(0x2452, n)', { chord: 3, inversion: voicedInversion(3), length: 0.5 }, {
-  steps: 32, octave: 4, attack: 0.003, release: 0.06, volume: 0.4, send: 0.15,
-});
+/** funk clavinet: a two-note riff (a third apart) that climbs the chord on the sixteenths, muted between the accents */
+const CLAV = voice(
+  'Clav',
+  'square',
+  'wrap(h, -2, 5) + pick(n % 16, 4, 0, 4, 2, 0, 4, 2, 0, 4, 0, 2, 4, 5, 4, 2, 0)',
+  'bits(0xB6AD, n) * (0.2 + 0.32 * bits(0x2452, n))',
+  { chord: 2, length: 0.35 },
+  { steps: 32, octave: 4, attack: 0.002, release: 0.05, volume: 0.42, send: 0.12, swing: 0.08, synth: { filter: 'lowpass', cutoff: 0.5, resonance: 0.32, envAmount: 0.55, envDecay: 0.06 } },
+);
 const DISCO_BASS = voice('Octave bass', 'sawtooth', `${ROOT} - L + L * (floor(n / 2) % 2)`, '0.8 * every(n, 2)', { length: 1.4 }, {
   steps: 16, octave: 3, attack: 0.004, release: 0.08, volume: 0.6,
 });
-const DISCO_STRINGS = voice('Strings', 'pad', voicedPitch(3), '0.5 * every(n, 16)', { chord: 3, inversion: voicedInversion(3), length: 16 }, {
-  steps: 16, octave: 4, attack: 0.3, release: 1, volume: 0.45, send: 0.8,
-});
+/** a string section in open voicing: root, fifth and ninth stacked wide (stack 4) on the chord, the top lifting every other bar, swelling in each bar */
+const DISCO_STRINGS: Template & { name: string } = {
+  name: 'Strings',
+  waveform: 'pad',
+  steps: 16,
+  stepBeats: 0.25,
+  octave: 3,
+  attack: 0.3,
+  release: 1.2,
+  volume: 0.45,
+  send: 0.8,
+  graph: wire(
+    {
+      pitch: ['expr', { formula: 'wrap(h, -3, 4)' }],
+      vel: ['expr', { formula: '0.5 * every(n, 16)' }],
+      chord: ['number', { value: 3, min: 1, max: 8 }],
+      stack: ['number', { value: 4, min: 1, max: 7 }],
+      inv: ['expr', { formula: 'pick(k % 2, 0, 1)' }],
+      length: ['number', { value: 16, min: 0, max: 64 }],
+      beats: ['expr', { formula: 'x' }],
+      swell: ['curve', { points: '0:0.35:-0.5 0.55:1:0.5 1:0.6:0', repeats: 1, lo: 0, hi: 1 }],
+      out: ['output'],
+    },
+    ['pitch.out>out.pitch', 'vel.out>out.velocity', 'chord.out>out.chord', 'stack.out>out.stack', 'inv.out>out.inversion', 'length.out>out.length', 'beats.out>swell.p', 'swell.out>out.pressure'],
+  ),
+};
 const HOUSE_STABS = voice('Organ stabs', 'custom', voicedPitch(5), '0.5 * bits(0x1224, n)', { chord: 5, inversion: voicedInversion(5), length: 0.8 }, {
   steps: 16, octave: 4, attack: 0.005, release: 0.25, volume: 0.42, send: 0.55, swing: 0.12,
 });
@@ -267,10 +294,6 @@ const TALKBOX = voice('Talkbox', 'sawtooth', 'h + pick(floor(n / 2), 4, 4, 5, 4,
   playMode: 'glide', quantize: true, glide: 0.05, steps: 32, octave: 4, volume: 0.32, send: 0.3, pan: -0.15,
   synth: { cutoff: 0.42, resonance: 0.55, vibrato: 0.25, chorus: 0.2 },
 });
-/** chicken-scratch guitar: muted chord chops on the off-sixteenths, an accent before each backbeat */
-const SCRATCH_GUITAR = voice('Chicken scratch', 'pluck', voicedPitch(3), 'every(n, 2, 1) * (0.22 + 0.25 * bits(0x0404, n) + 0.06 * rand(n + 32k, 14))', {
-  chord: 3, inversion: voicedInversion(3), length: 0.15, strum: 0.008,
-}, { steps: 32, octave: 4, volume: 0.36, release: 0.04, swing: 0.1, send: 0.18, pan: 0.3 });
 /** staccato piano triads on the eighths, the voicing rocking up on the second half of each beat pair */
 const PIANO_STABS = voice('Piano stabs', 'keys', voicedPitch(3), 'every(n, 2) * (0.38 + 0.14 * every(n, 4) + 0.05 * rand(n + 32k, 15))', {
   chord: 3, inversion: `${voicedInversion(3)} + (n % 8 >= 4)`, length: 0.35,
@@ -815,28 +838,6 @@ export const PRESETS: Preset[] = [
     },
   },
   {
-    id: 'arp',
-    name: 'Arpeggiator',
-    description: 'Walks up and down the current chord: h + 0, 2, 4 (root, third, fifth) and L (the octave).',
-    formula: 'pitch = h + pick(n, 0, 2, 4, L, 4, 2)',
-    track: {
-      waveform: 'triangle',
-      pitchMode: 'degree',
-      steps: 16,
-      stepBeats: 0.25,
-      octave: 4,
-      volume: 0.5,
-      graph: wire(
-        {
-          p: ['expr', { formula: 'h + pick(n, 0, 2, 4, L, 4, 2)' }],
-          v: ['expr', { formula: '0.4 + 0.4 * every(n, 3)' }],
-          out: ['output'],
-        },
-        ['p.out>out.pitch', 'v.out>out.velocity'],
-      ),
-    },
-  },
-  {
     id: 'quartal',
     name: 'Quartal Mist',
     description: 'Chords stacked in fourths (stack = 3) instead of thirds — open, modal, very zen.',
@@ -872,9 +873,9 @@ export const PRESETS: Preset[] = [
   part('montuno', MONTUNO, 'Salsa piano montuno: chord tones in octaves, eighth notes with the offbeats leaning in.', 'octaves on h + 0 4 2 4'),
   part('tumbao', TUMBAO, 'Salsa tumbao: the bass anticipates — the fifth on the and-of-2, the next root on four.', 'fifth on 6, root on 12'),
   part('slap', SLAP_BASS, 'Funk slap bass: thumbed roots, octave pops and a flat-seven, syncopated sixteenths.', 'root · pops on L · bits(0x92A6)'),
-  part('clav', CLAV, 'Funk clavinet: short voice-led triads on the offbeat sixteenths.', 'chord of 3 · bits(0x2452)'),
+  part('clav', CLAV, 'Funk clavinet: a two-note riff a third apart climbing the chord on the sixteenths, muted between the accents, a snappy filter on every hit.', 'dyad on h + 4 0 4 2 0 4 2 0… · bits(0xB6AD)'),
   part('discobass', DISCO_BASS, 'Disco octave bass: root, octave, root, octave — eighth notes that never sit still.', 'root ± L, every eighth'),
-  part('discostrings', DISCO_STRINGS, 'Disco strings: a voice-led triad held through every bar.', 'chord of 3, held'),
+  part('discostrings', DISCO_STRINGS, 'A string section in open voicing — root, fifth and ninth stacked wide — held through each bar and swelling in, the top lifting every other pass.', 'chord of 3 · stack 4 · pressure = swell(x)'),
   part('housestabs', HOUSE_STABS, 'Deep house organ stabs: minor ninth chords on a syncopated swing.', 'chord of 5 · bits(0x1224)'),
   part('pumppad', PUMP_PAD, 'A pad held through each bar, pumped on every beat by a pressure Curve — sidechain without a compressor.', 'chord of 4 · pressure = duck(t)'),
   // ---------- G-funk & West Coast ----------
@@ -882,75 +883,10 @@ export const PRESETS: Preset[] = [
   part('moogbass', MOOG_BASS, 'Minimoog-style bass: one voice that slides from the root up to the octave and back through the leading tone, filtered and fat.', 'glide · root, L, −1', 'westcoast'),
   part('gkeys', G_KEYS, 'Rhodes ninth chords on the backbeats, voice-led and chorused — the warm bed under every West Coast record.', 'chord of 5 · bits(0x0808 / 0x082A)', 'westcoast'),
   part('talkbox', TALKBOX, 'Talkbox lead: a resonant saw that talks through a two-bar phrase on the chord, then leaves space for the answer.', 'glide · h + 4 4 5 4 2 4 0…', 'westcoast'),
-  part('chickenscratch', SCRATCH_GUITAR, 'Funk chicken-scratch guitar: short muted triads on every off-sixteenth, leaning into the backbeat.', 'chord of 3 · every(n, 2, 1)', 'westcoast'),
   part('pianostabs', PIANO_STABS, 'Staccato piano triads on the eighths, the voicing rocking up and back — the hard, bare West Coast piano.', 'chord of 3 · inversion + (n % 8 ≥ 4)', 'westcoast'),
   part('ratchetpluck', RATCHET_PLUCK, '2010s LA pluck: a bright riff on the chord bouncing through a dotted rhythm, with a short delay.', 'h + 7 4 7 9 7 4 2 4 · bits(0xB6B6)', 'westcoast'),
 
   // ---------- drawn with Curve nodes: automation as music ----------
-  {
-    id: 'riser',
-    name: 'Riser',
-    description: 'A drawn Curve climbs two octaves — slow, then urgent — while a second one swells the volume. A build-up you can reshape by dragging.',
-    formula: 'pitch = 14 · bend(x, 0.6) · volume = bend(x, 0.5)',
-    track: {
-      waveform: 'sawtooth',
-      pitchMode: 'degree',
-      playMode: 'glide',
-      quantize: false,
-      glide: 0.02,
-      steps: 16,
-      stepBeats: 1,
-      octave: 3,
-      volume: 0.5,
-      attack: 0.05,
-      release: 0.4,
-      send: 0.6,
-      graph: graph(
-        [
-          ['time', 'step', 0, 80],
-          ['up', 'curve', 260, 0, { points: '0:0:0.6 1:1:0', repeats: 1, lo: 0, hi: 14 }],
-          ['vol', 'curve', 260, 300, { points: '0:0.2:0.5 1:1:0', repeats: 1, lo: 0, hi: 0.85 }],
-          ['out', 'output', OUT_X, 100],
-        ],
-        [
-          ['up', 'out', 'out', 'pitch'],
-          ['vol', 'out', 'out', 'velocity'],
-        ],
-      ),
-    },
-  },
-  {
-    id: 'pump',
-    name: 'Ducking Pad',
-    description: 'A pad on the song’s chord, ducked by a Curve on every beat — the sidechain pump, drawn instead of compressed.',
-    formula: 'pitch = h · volume = duck curve × 4 per loop',
-    track: {
-      waveform: 'pad',
-      pitchMode: 'degree',
-      playMode: 'glide',
-      quantize: true,
-      glide: 0.08,
-      steps: 16,
-      stepBeats: 0.25,
-      octave: 4,
-      volume: 0.6,
-      attack: 0.02,
-      release: 0.3,
-      send: 0.7,
-      graph: graph(
-        [
-          ['time', 'step', 0, 80],
-          ['p', 'expr', 260, 20, { formula: 'h + pick(floor(x * 2), 0, 2)' }],
-          ['duck', 'curve', 260, 200, { points: '0:0.1:0.7 0.9:1:0 1:0.1:0', repeats: 4, lo: 0, hi: 0.85 }],
-          ['out', 'output', OUT_X, 100],
-        ],
-        [
-          ['p', 'out', 'out', 'pitch'],
-          ['duck', 'out', 'out', 'velocity'],
-        ],
-      ),
-    },
-  },
   {
     id: 'drawn',
     name: 'Drawn Melody',
@@ -981,8 +917,8 @@ export const PRESETS: Preset[] = [
   {
     id: 'wobble',
     name: 'Bent Wobble',
-    description: 'A Reese bass on the chord root, its volume cut by a bent Curve eight times a loop — the wobble, with a shape you can drag.',
-    formula: 'pitch = h · volume = bend(1 − u, −0.7), 8 per loop',
+    description: 'A Reese bass on the chord root, its volume cut by a bent Curve eight times a loop — the wobble — while its pitch dives three semitones and springs back twice a loop. Both shapes are yours to drag.',
+    formula: 'pitch = h · bend = dive 0 → −3, 2 per loop · volume = wob, 8 per loop',
     track: {
       waveform: 'reese',
       pitchMode: 'degree',
@@ -1000,11 +936,13 @@ export const PRESETS: Preset[] = [
           ['time', 'step', 0, 80],
           ['p', 'expr', 260, 20, { formula: 'h' }],
           ['wob', 'curve', 260, 200, { points: '0:1:-0.7 1:0.05:0', repeats: 8, lo: 0.1, hi: 0.9 }],
+          ['dive', 'curve', 260, 380, { points: '0:1:0.6 0.8:0:-0.4 1:1:0', repeats: 2, lo: -3, hi: 0 }],
           ['out', 'output', OUT_X, 100],
         ],
         [
           ['p', 'out', 'out', 'pitch'],
           ['wob', 'out', 'out', 'velocity'],
+          ['dive', 'out', 'out', 'bend'],
         ],
       ),
     },
