@@ -1863,3 +1863,6 @@ body,
   border-radius: var(--radius-sm);
   flex: none;
 }
+.midi-roles .midi-adopt {
+  margin-left: auto;
+}

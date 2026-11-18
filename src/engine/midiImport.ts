@@ -625,6 +625,8 @@ const GM_DRUMS: Record<number, { voice: DrumVoice; name: string; tune?: number; 
   60: { voice: 'tom', name: 'Bongos', tune: 14 }, 61: { voice: 'tom', name: 'Bongos', tune: 10 },
   62: { voice: 'tom', name: 'Congas', tune: 9 }, 63: { voice: 'tom', name: 'Congas', tune: 7 }, 64: { voice: 'tom', name: 'Congas', tune: 3 },
 };
+/** the channel a GM drum note goes to on import (Kick, Snare, Hats, Toms…) */
+export const drumChannelName = (midi: number) => drumOf(midi).name;
 const drumOf = (midi: number) => GM_DRUMS[midi] ?? { voice: (midi < 41 ? 'kick' : midi < 60 ? 'hat' : 'tom') as DrumVoice, name: 'Percussion', tune: midi < 60 ? 0 : (midi - 60) / 2 };
 
 /** a GM program onto a voice */
