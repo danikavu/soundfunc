@@ -458,7 +458,7 @@ body {
 
 /* ---------- the sketches: faint math ink over the chrome (src/components/overlays.ts) ----------
    One sheet, pinned to the window (fixed), so the drawing runs on across the plates and panels as
-   if they were cut from the same paper. Never on the screens: the score / function / ripple view
+   if they were cut from the same paper. Never on the screens: the score / function view
    and the node board keep their own backgrounds. */
 body,
 .title-plate,

@@ -5,25 +5,35 @@ import { BEATS_PER_BAR, audibleTracks, harmonyAt, isDrum, patternBeats, renderTr
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Seg, getRender } from './ui';
 import { RangeControl } from './RangeControl';
-import { RIPPLE_DEFAULTS, RIPPLE_STYLES, RippleMemory, drawRipple, type RippleOptions, type RippleStyle } from './ripple';
+import { Pixelator } from './pixelate';
+import { BACKDROP_STYLES, BackdropMemory, drawBackdrop, type BackdropStyle } from './backdrop';
 
-/** the header's height: Scope centres its figure in the space below it */
-const RIPPLE_TOP = 40;
-/** …and the options bar's, at the bottom */
-const RIPPLE_BOTTOM = 46;
-const RIPPLE_KEY = 'sf-ripple';
-function loadRipple(): RippleOptions {
+type Mode = 'score' | 'function';
+
+/** the backdrop: the live sound as a figure filling the view behind the Score and Function — remembered */
+const BACKDROP_KEY = 'sf.scoreBackdrop';
+function loadBackdrop(): BackdropStyle {
   try {
-    const saved = { ...RIPPLE_DEFAULTS, ...JSON.parse(localStorage.getItem(RIPPLE_KEY) ?? '{}') };
-    // a style that has since been retired falls back to Pond
-    if (!RIPPLE_STYLES.some((r) => r.value === saved.style)) saved.style = RIPPLE_DEFAULTS.style;
-    return saved;
+    const v = localStorage.getItem(BACKDROP_KEY);
+    return BACKDROP_STYLES.some((b) => b.value === v) ? (v as BackdropStyle) : 'off';
   } catch {
-    return RIPPLE_DEFAULTS;
+    return 'off';
   }
 }
-
-type Mode = 'score' | 'function' | 'ripple';
+/** how strongly the backdrop shows through at most, so the notes always read first */
+const BACKDROP_ALPHA = 0.5;
+/** the backdrop's level, 0 … 1 of that most — remembered */
+const BACKDROP_LEVEL_KEY = 'sf.scoreBackdropLevel';
+function loadBackdropLevel(): number {
+  try {
+    const v = Number(localStorage.getItem(BACKDROP_LEVEL_KEY));
+    return localStorage.getItem(BACKDROP_LEVEL_KEY) !== null && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+  } catch {
+    return 1;
+  }
+}
+/** the effects are a dot matrix: one cell is this many CSS px */
+const PIXEL = 4;
 
 interface Placed {
   track: Track;
@@ -143,21 +153,33 @@ export function Visualizer() {
       return !on;
     });
   const [tip, setTip] = useState<{ x: number; y: number; text: string[] } | null>(null);
-  /** Scope's look, remembered between visits */
-  const [ripple, setRippleState] = useState<RippleOptions>(loadRipple);
-  const rippleRef = useRef(ripple);
-  rippleRef.current = ripple;
-  const rippleMem = useRef(new RippleMemory());
-  const rippleHeard = useRef(false);
-  const [rippleLive, setRippleLive] = useState(false);
-  const setRipple = (patch: Partial<RippleOptions>) =>
-    setRippleState((r) => {
-      const next = { ...r, ...patch };
+  const [backdrop, setBackdropState] = useState<BackdropStyle>(loadBackdrop);
+  const backdropRef = useRef(backdrop);
+  backdropRef.current = backdrop;
+  const backdropMem = useRef(new BackdropMemory());
+  const [backdropLevel, setBackdropLevelState] = useState(loadBackdropLevel);
+  const backdropLevelRef = useRef(backdropLevel);
+  backdropLevelRef.current = backdropLevel;
+  const setBackdropLevel = (v: number) => {
+    setBackdropLevelState(v);
+    try {
+      localStorage.setItem(BACKDROP_LEVEL_KEY, String(v));
+    } catch {
+      /* just not remembered */
+    }
+  };
+  const pixels = useRef<Pixelator | null>(null);
+  /** the next backdrop round the list: Off → Halo → Phase → Off */
+  const cycleBackdrop = () =>
+    setBackdropState((b) => {
+      const next = BACKDROP_STYLES[(BACKDROP_STYLES.findIndex((x) => x.value === b) + 1) % BACKDROP_STYLES.length].value;
       try {
-        localStorage.setItem(RIPPLE_KEY, JSON.stringify(next));
+        localStorage.setItem(BACKDROP_KEY, next);
       } catch {
         /* just not remembered */
       }
+      backdropMem.current = new BackdropMemory();
+      dirty.current = true;
       return next;
     });
 
@@ -317,7 +339,6 @@ export function Visualizer() {
   useEffect(() => {
     const canvas = canvasRef.current!;
     const onWheel = (e: WheelEvent) => {
-      if (mode === 'ripple') return;
       const r = canvas.getBoundingClientRect();
       const fx = Math.min(1, Math.max(0, (e.clientX - r.left - geom.current.padL) / geom.current.iw));
       if (e.ctrlKey || e.metaKey) {
@@ -348,7 +369,8 @@ export function Visualizer() {
         passRef.current = nowPass;
         setPass(nowPass);
       }
-      if (!dirty.current && pos === null && mode !== 'ripple') return;
+      // a backdrop moves on its own, even while stopped
+      if (!dirty.current && pos === null && backdropRef.current === 'off') return;
       dirty.current = false;
       const canvas = canvasRef.current!;
       const g = canvas.getContext('2d')!;
@@ -358,9 +380,22 @@ export function Visualizer() {
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, W, H);
       const secPerBeat = 60 / project.song.bpm;
+      // the backdrop: a dot-matrix figure of the live sound, laid under everything, faint
+      const bd = backdropRef.current;
+      if (bd !== 'off') {
+        const live = engine.waveform(wave);
+        const frame = { wave: live ? wave : null, tracks: [...score.melodic, ...score.drums].map((it) => it.track), now: performance.now() / 1000 };
+        // glow is measured in the small canvas's pixels: scale it down with them
+        const dots = (pixels.current ??= new Pixelator()).draw(W, H, dpr, PIXEL, (bg) => drawBackdrop(bg, W, H, { ...P, glow: P.glow / PIXEL }, frame, bd, backdropMem.current));
+        g.save();
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.globalAlpha = BACKDROP_ALPHA * backdropLevelRef.current;
+        g.drawImage(dots, 0, 0);
+        g.restore();
+      }
       // follow the playhead while zoomed in: turn the page when it runs off the edge
       let vw = view();
-      if (pos !== null && vw.zoomed && mode !== 'ripple') {
+      if (pos !== null && vw.zoomed) {
         const pb = pos % vw.total;
         if (pb < vw.start || pb > vw.start + vw.span) {
           viewRef.current = { start: Math.floor(pb / vw.span) * vw.span, span: vw.span };
@@ -753,30 +788,6 @@ export function Visualizer() {
           g.arc(x, y, 4.5, 0, Math.PI * 2);
           g.fill();
         }
-      } else if (mode === 'ripple') {
-        placedRef.current = [];
-        const live = engine.waveform(wave);
-        const heard = drawRipple(
-          g,
-          W,
-          H,
-          RIPPLE_TOP,
-          RIPPLE_BOTTOM,
-          P,
-          {
-            wave: live ? wave : null,
-            playBeat: pos === null ? null : pos % score.total,
-            secPerBeat,
-            score,
-            now: performance.now() / 1000,
-          },
-          rippleRef.current,
-          rippleMem.current,
-        );
-        if (heard !== rippleHeard.current) {
-          rippleHeard.current = heard;
-          setRippleLive(heard);
-        }
       }
     };
     raf = requestAnimationFrame(draw);
@@ -868,7 +879,7 @@ export function Visualizer() {
           dirty.current = true;
           setTip(null);
         }}
-        onDoubleClick={() => mode !== 'ripple' && setView(0, 0)}
+        onDoubleClick={() => setView(0, 0)}
         onClick={(e) => {
           if (mode !== 'score') return;
           const { best } = hit(e);
@@ -880,9 +891,9 @@ export function Visualizer() {
         style={{ cursor: mode === 'function' ? 'ew-resize' : tip ? 'pointer' : 'default', touchAction: 'none' }}
       />
       <div className="viz-legend">
-        <h2>{mode === 'score' ? 'The Track' : mode === 'function' ? selected?.name ?? '—' : 'Scope'}</h2>
+        <h2>{mode === 'score' ? 'The Track' : selected?.name ?? '—'}</h2>
         <span className="muted">
-          {mode !== 'ripple' && (project.song.repeat === 'exact' ? '⟲ repeats exactly · ' : pass > 0 ? `pass ${pass + 1} · ` : '')}
+          {(project.song.repeat === 'exact' ? '⟲ repeats exactly · ' : pass > 0 ? `pass ${pass + 1} · ` : '')}
           {mode === 'score' && `${Number(score.total.toFixed(3))} beats · ${midiToName(score.lo + 2)}–${midiToName(score.hi - 2)}${score.drums.length ? ` · ${score.drums.length} drum lanes` : ''}`}
           {mode === 'function' &&
             `y = f(x) · ${Number(score.total.toFixed(3))} beats · drag to hear it${
@@ -890,57 +901,36 @@ export function Visualizer() {
                 ? ` · ${Math.max(1, Math.round(fnRange.outside * 100))}% ${project.song.pitchRange.mode === 'wrap' ? 'wrapped' : 'clamped'} into ${midiToName(project.song.pitchRange.low)}–${midiToName(project.song.pitchRange.high)}`
                 : ''
             }`}
-          {mode === 'ripple' && `${RIPPLE_STYLES.find((x) => x.value === ripple.style)?.hint ?? ''}${playing || rippleLive ? '' : ' · press space to listen'}`}
         </span>
       </div>
-      {mode !== 'ripple' && <RangeControl />}
-      {mode !== 'ripple' && (
-        <div className="viz-zoom">
-          {view().zoomed && (
-            <span className="muted">
-              bars {Math.floor((offset + view().start) / BEATS_PER_BAR) + 1}–{Math.ceil((offset + view().start + view().span) / BEATS_PER_BAR)}
-            </span>
-          )}
-          {mode === 'score' && (
-            <button
-              className={`icon-btn ${drawIn ? 'on' : ''}`}
-              aria-pressed={drawIn}
-              onClick={toggleDrawIn}
-              title={drawIn ? 'Drawing the notes in as it plays — click to show the whole score' : 'Draw the notes in as the track plays (the whole score shows when stopped)'}
-              aria-label="Draw as it plays"
-            >
-              <Icon name="pen" size={13} />
-            </button>
-          )}
-          <button className="icon-btn" onClick={() => zoomAt(1 / 1.6)} title="Zoom in (⌘/Ctrl + scroll, or pinch)">
-            <Icon name="plus" size={13} />
-          </button>
-          <button className="icon-btn" onClick={() => zoomAt(1.6)} title="Zoom out">
-            <Icon name="minus" size={13} />
-          </button>
-          <button className="icon-btn" onClick={() => setView(0, 0)} title="Show the whole loop (double-click the view)" disabled={!view().zoomed}>
-            <Icon name="fit" size={13} />
-          </button>
-        </div>
-      )}
-      {mode === 'ripple' && (
-        <div className="ripple-opts">
-          <Seg<RippleStyle> value={ripple.style} onChange={(style) => setRipple({ style })} options={RIPPLE_STYLES.map(({ value, label }) => ({ value, label }))} />
-          <span className="ripple-opts-row">
-            <button className={`btn small ghost ${ripple.trails ? 'on' : ''}`} aria-pressed={ripple.trails} onClick={() => setRipple({ trails: !ripple.trails })} title="Older frames linger and fade">
-              Trails
-            </button>
-            <button
-              className={`btn small ghost ${ripple.colour === 'channels' ? 'on' : ''}`}
-              aria-pressed={ripple.colour === 'channels'}
-              onClick={() => setRipple({ colour: ripple.colour === 'channels' ? 'ink' : 'channels' })}
-              title={ripple.colour === 'channels' ? 'In the channels’ colours — click for one ink' : 'In one ink — click for the channels’ colours'}
-            >
-              Colours
-            </button>
+      <RangeControl />
+      <div className="viz-zoom">
+        {view().zoomed && (
+          <span className="muted">
+            bars {Math.floor((offset + view().start) / BEATS_PER_BAR) + 1}–{Math.ceil((offset + view().start + view().span) / BEATS_PER_BAR)}
           </span>
-        </div>
-      )}
+        )}
+        {mode === 'score' && (
+          <button
+            className={`icon-btn ${drawIn ? 'on' : ''}`}
+            aria-pressed={drawIn}
+            onClick={toggleDrawIn}
+            title={drawIn ? 'Drawing the notes in as it plays — click to show the whole score' : 'Draw the notes in as the track plays (the whole score shows when stopped)'}
+            aria-label="Draw as it plays"
+          >
+            <Icon name="pen" size={13} />
+          </button>
+        )}
+        <button className="icon-btn" onClick={() => zoomAt(1 / 1.6)} title="Zoom in (⌘/Ctrl + scroll, or pinch)">
+          <Icon name="plus" size={13} />
+        </button>
+        <button className="icon-btn" onClick={() => zoomAt(1.6)} title="Zoom out">
+          <Icon name="minus" size={13} />
+        </button>
+        <button className="icon-btn" onClick={() => setView(0, 0)} title="Show the whole loop (double-click the view)" disabled={!view().zoomed}>
+          <Icon name="fit" size={13} />
+        </button>
+      </div>
       <div className="viz-tabs">
         <Seg<Mode>
           value={mode}
@@ -948,8 +938,34 @@ export function Visualizer() {
           options={[
             { value: 'score', label: 'Score' },
             { value: 'function', label: 'Function' },
-            { value: 'ripple', label: 'Scope' },
           ]}
+        />
+        {/* the backdrop: Off → Halo → Phase, and how strongly it shows */}
+        <span className="seg backdrop-key">
+          <button
+            className={backdrop !== 'off' ? 'on' : ''}
+            aria-pressed={backdrop !== 'off'}
+            onClick={cycleBackdrop}
+            title={`Backdrop: ${BACKDROP_STYLES.find((b) => b.value === backdrop)!.hint} — click for the next (Off, Halo, Phase)`}
+            aria-label="Backdrop"
+          >
+            <Icon name="wave" size={13} />
+            <span>{BACKDROP_STYLES.find((b) => b.value === backdrop)!.label}</span>
+          </button>
+        </span>
+        {/* always there, so nothing in the row moves as the key is clicked */}
+        <input
+          className="backdrop-level"
+          type="range"
+          min={0.05}
+          max={1}
+          step={0.01}
+          value={backdropLevel}
+          disabled={backdrop === 'off'}
+          onChange={(e) => setBackdropLevel(Number(e.target.value))}
+          onDoubleClick={() => setBackdropLevel(1)}
+          title={backdrop === 'off' ? 'Backdrop opacity — turn a backdrop on first' : `Backdrop opacity: ${Math.round(backdropLevel * 100)}% (double-click for full)`}
+          aria-label="Backdrop opacity"
         />
       </div>
       {tip && (
