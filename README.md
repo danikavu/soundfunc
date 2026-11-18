@@ -2,7 +2,7 @@
 
 Explore making music with math, and export to midi with automations
 
-![SoundFunc playing a rhythm kit: the score above, the bass line as nodes below](docs/walkthrough/app.png)
+![SoundFunc playing two rave presets: the score above, both channels written as math in Func View below](docs/soundfunc.gif)
 
 See the [walkthrough](WALKTHROUGH.md) for a screenshot tour of every part of the app, and [USAGE.md](USAGE.md) for the full reference.
 
