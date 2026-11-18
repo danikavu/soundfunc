@@ -119,16 +119,20 @@ export interface Preset {
 }
 
 /** the Function presets list, in this order */
-export type PresetGroup = 'start' | 'math' | 'melodies' | 'harmony' | 'bass' | 'westcoast' | 'curves' | 'rave';
+export type PresetGroup = 'start' | 'math' | 'melodies' | 'arps' | 'harmony' | 'cinematic' | 'bass' | 'westcoast' | 'callresponse' | 'curves' | 'rave' | 'creatures';
 export const PRESET_GROUPS: Record<PresetGroup, { label: string; hint: string }> = {
   start: { label: 'Start here', hint: 'the simplest functions' },
   math: { label: 'Math & nature', hint: 'sequences, fractals, chaos and constants' },
   melodies: { label: 'Melodies & leads', hint: 'tunes and lines to play over the harmony' },
+  arps: { label: 'Arps & ostinatos', hint: 'arpeggios and figures that run through the chords' },
   harmony: { label: 'Chords & keys', hint: 'chords and comps on the song’s harmony' },
+  cinematic: { label: 'Pads & cinematic', hint: 'ambient pads with their own subs, and dark chord stories, on their own minor progressions' },
   bass: { label: 'Bass', hint: 'roots, walks and wobbles under the chords' },
   westcoast: { label: 'G-funk & West Coast', hint: 'whistles, Moog bass, talkbox and Rhodes ninths' },
+  callresponse: { label: 'Call & response', hint: 'one voice: a low hit answered by a high line, canons and fugues' },
   curves: { label: 'Glide curves', hint: 'wild shapes, followed continuously' },
-  rave: { label: 'Rave & piecewise', hint: 'kicks, riffs and drops written as one piecewise function' },
+  rave: { label: 'Rave & piecewise', hint: 'stomps, drill rolls, ratchets and drops written as one piecewise function' },
+  creatures: { label: 'Creatures & machines', hint: 'chirps, lasers, engines and talking machines' },
 };
 /** the built-in presets' groups (library presets carry their own) */
 const GROUP_OF: Record<string, PresetGroup> = {
@@ -137,7 +141,6 @@ const GROUP_OF: Record<string, PresetGroup> = {
   theremin: 'melodies', desmos: 'melodies', drawn: 'melodies', scooplead: 'melodies', wavetable: 'melodies', form: 'melodies',
   chordPad: 'harmony', strum: 'harmony', quartal: 'harmony', bloomchords: 'harmony', pumppad: 'harmony', discostrings: 'harmony', housestabs: 'harmony', rhodes: 'harmony', bossaguitar: 'harmony', montuno: 'harmony', clav: 'harmony',
   bass: 'bass', wobble: 'bass', slide808: 'bass', walking: 'bass', bossabass: 'bass', tumbao: 'bass', slap: 'bass', discobass: 'bass',
-  zap: 'rave',
 };
 export const groupOf = (p: Preset): PresetGroup => p.group ?? GROUP_OF[p.id] ?? 'math';
 
@@ -313,7 +316,7 @@ const part = (id: string, t: Template & { name: string }, description: string, f
   track: { pitchMode: 'degree', ...t, waveform: t.waveform ?? 'sine' },
 });
 
-export const PRESETS: Preset[] = [
+const LISTED: Preset[] = [
   {
     id: 'pond',
     name: 'Still Pond',
@@ -621,45 +624,6 @@ export const PRESETS: Preset[] = [
           semitones: ['math', { op: 'mul', b: 12 }],
           // re-articulate each note so the hooks are heard as separate notes
           gate: ['expr', { formula: 'fract(4t) < 0.85 ? 0.8 : 0' }],
-          out: ['output'],
-        },
-        ['y.out>semitones.a', 'semitones.out>out.pitch', 'gate.out>out.velocity'],
-      ),
-    },
-  },
-  {
-    id: 'zap',
-    name: 'Kick, Zap & Hook',
-    description:
-      'A three-case piecewise function in x (beats), y (octaves): a falling kick on each beat, a 1.6-octave zap on every third 16th, and an octave-down hook between. Repeats every 84 sixteenths.',
-    formula: 'y = −2 + 3e^(−20 frac x) | 3/5 + round(12(⌊4x⌋ mod 7)/7)/12 − 8/5 frac 4x | −1 + e^(−12 frac 4x)/6',
-    track: {
-      waveform: 'triangle',
-      pitchMode: 'semitone',
-      playMode: 'glide',
-      quantize: false,
-      glide: 0.003,
-      // ⌊4x⌋ mod 3, ⌊4x⌋ mod 7 and the beat line up again after lcm(3, 7, 4) = 84 sixteenths
-      steps: 84,
-      stepBeats: 0.25,
-      octave: 4,
-      attack: 0.003,
-      release: 0.05,
-      volume: 0.7,
-      send: 0.35,
-      graph: wire(
-        {
-          // y in octaves, exactly as written; the first case that holds wins
-          y: [
-            'expr',
-            {
-              formula:
-                'fract(t) < 0.25 ? -2 + 3 * exp(-20 * fract(t)) : floor(4t) % 3 == 0 ? 3/5 + round(12 * (floor(4t) % 7) / 7) / 12 - 8/5 * fract(4t) : -1 + exp(-12 * fract(4t)) / 6',
-            },
-          ],
-          semitones: ['math', { op: 'mul', b: 12 }],
-          // where no case holds, the function is undefined: silence
-          gate: ['expr', { formula: '0.8 * (fract(t) < 0.25 || floor(4t) % 3 == 0 || fract(4t) < 0.8)' }],
           out: ['output'],
         },
         ['y.out>semitones.a', 'semitones.out>out.pitch', 'gate.out>out.velocity'],
@@ -1079,6 +1043,10 @@ export const PRESETS: Preset[] = [
   // the function library: made in SoundFunc, saved from My functions
   ...LIBRARY_PRESETS,
 ];
+
+/** no preset starts quieter than this, however it was saved */
+const MIN_PRESET_VOLUME = 0.7;
+export const PRESETS: Preset[] = LISTED.map((p) => ({ ...p, track: { ...p.track, volume: Math.max(MIN_PRESET_VOLUME, p.track.volume ?? TRACK_DEFAULTS.volume) } }));
 
 
 // ---------- rhythm kits: several tracks planted together, all pure functions ----------

@@ -24,7 +24,7 @@ One finished groove per style: hip-hop, G-funk, trap and phonk, neo-soul, trip h
 
 ### Function presets
 
-76 functions in groups: sequences and fractals, melodies, chords, bass lines, G-funk parts, glide curves and rave. Each one shows a small score of what it plays. Click one to plant it as a new channel. **My functions** holds the ones you save; sort them newest or oldest first with ⌄ ⌃.
+182 functions in groups: sequences and fractals, melodies, arps, chords, pads and cinematic chord stories, bass lines, G-funk parts, call and response, glide curves, rave, and creatures and machines. Each one shows a small score of what it plays. Click one to plant it as a new channel. **My functions** holds the ones you save; sort them newest or oldest first with ⌄ ⌃.
 
 ![Function presets with their mini scores](docs/walkthrough/presets.png)
 
