@@ -537,6 +537,19 @@ input[type='range']:hover::-webkit-slider-thumb {
   position: absolute;
   top: 10px;
   right: 12px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.backdrop-key button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.viz .viz-tabs input.backdrop-level {
+  flex: none;
+  width: 64px;
+  min-width: 0;
 }
 .viz-tip {
   position: absolute;
@@ -727,15 +740,24 @@ input[type='range']:hover::-webkit-slider-thumb {
   width: 230px;
   max-height: 380px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  /* a thin thumb with no track, so the rounded card stays clean */
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  padding-top: 0;
   animation: rise 0.22s var(--ease);
 }
 .palette input {
+  /* the search stays put while the list scrolls under it */
+  position: sticky;
+  top: 0;
+  z-index: 1;
   width: 100%;
   margin-bottom: var(--sp-2);
-  padding: var(--sp-2) var(--sp-2);
+  padding: var(--sp-3) var(--sp-2) var(--sp-2);
   border: none;
   border-bottom: 1px solid var(--line);
-  background: transparent;
+  background: var(--card);
 }
 .palette input:focus {
   outline: none;
@@ -3474,40 +3496,6 @@ aside.panel:last-of-type .info-pop {
   }
 }
 
-/* Ripple's options: a small bar centred under the figure */
-.ripple-opts {
-  position: absolute;
-  left: 50%;
-  bottom: 10px;
-  transform: translateX(-50%);
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-2);
-  background: color-mix(in srgb, var(--card) 85%, transparent);
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  white-space: nowrap;
-}
-.ripple-opts .seg {
-  flex-wrap: nowrap;
-  gap: var(--sp-1);
-}
-.ripple-opts .seg button,
-.ripple-opts .btn {
-  padding: var(--sp-1) var(--sp-2);
-  font-size: var(--fs-sm);
-}
-.ripple-opts-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-}
-.ripple-opts .btn.on {
-  color: var(--accent);
-}
-
 /* ---------- Functions: every channel you can hear as math, in the node board's place ---------- */
 .score-math {
   position: relative;
@@ -3594,3 +3582,4 @@ aside.panel:last-of-type .info-pop {
 .viz-zoom .icon-btn.on {
   color: var(--accent);
 }
+

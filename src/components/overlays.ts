@@ -1,6 +1,6 @@
 /**
  * The math sketches laid faintly over the chrome — title, top bar, side panels, toolbar, sheets —
- * never over the screens (the score / function / ripple view and the node board).
+ * never over the screens (the score / function view and the node board).
  *
  * The drawings are black ink on transparent. For each theme they are re-inked here in the case's
  * --sketch-ink at --sketch-strength (both in retro.css, beside the palette), once, and handed to CSS

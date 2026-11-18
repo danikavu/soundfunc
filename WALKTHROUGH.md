@@ -8,7 +8,7 @@ The screen has five parts:
 
 - **Top bar** — the whole song: play, record, tempo, length, key, scale, the harmony (a formula of `bar`), the controls that act on every channel, and Export.
 - **Left** — the channels on top; rhythm kits and functions to plant below.
-- **Middle, top** — the visualizer: *Score*, *Function* and *Scope*.
+- **Middle, top** — the visualizer: *Score* and *Function*, with a backdrop of the live sound behind them.
 - **Middle, bottom** — the selected channel as a graph of nodes, or every channel written as math in **Func View**.
 - **Right** — the Inspector for the selected channel: *Channel*, *Sound*, *Notes* and *Guide*.
 
@@ -95,14 +95,11 @@ Switch on the ✎ pen and the score is drawn in as the track plays. Each note gr
 
 ![The Function view](docs/walkthrough/function-view.png)
 
-### Scope
+### Backdrop
 
-Four ways to watch the track:
+The 〰 key beside *Score* and *Function* puts the live sound behind either view, as a dot matrix like the calculator's display: **Halo**, the waveform bent into a ring that fills the view, or **Phase**, the wave against itself a moment later, a Lissajous figure. Click it again for the next one, or Off. The slider beside it sets how strongly it shows; at most it stays faint enough for the notes to read first.
 
-| | |
-|---|---|
-| **Pond** — every note drops a stone on the circle of notes ![Pond](docs/walkthrough/scope-pond.png) | **Sand** — sand on a vibrating plate: each note shakes out its own Chladni figure ![Sand](docs/walkthrough/scope-sand.png) |
-| **Halo** — the live waveform bent into a ring ![Halo](docs/walkthrough/scope-halo.png) | **Phase** — the wave against itself a moment later: a Lissajous figure ![Phase](docs/walkthrough/scope-phase.png) |
+![The Score with the Halo backdrop](docs/walkthrough/score-backdrop.png)
 
 ---
 

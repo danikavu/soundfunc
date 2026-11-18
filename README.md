@@ -1,6 +1,8 @@
 # SoundFunc
 
-Explore making music with math, and export to midi with automations
+Get func-y. Explore and create loops with math. Jam it out, mutate, and export wav, midi + automations.
+
+For recreational purposes.
 
 ![SoundFunc playing two rave presets: the score above, both channels written as math in Func View below](docs/soundfunc.gif)
 
