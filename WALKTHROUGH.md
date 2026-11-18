@@ -53,6 +53,10 @@ Tick the channels you want, then **Replace track** or **Add to track**. Your son
 
 ![A chosen stretch: four bars, written as functions](docs/walkthrough/midi-import.png)
 
+Every channel is sorted into a group, **Drums**, **Bass**, **Chords** or **Lead**, and wears its part's colour from the overview. Click a group's key to leave it all out or bring it back, double-click it for only that group, or use **Drums only** and **No drums**. The channels coming in move to the top of the list, and the overview greys out the notes left out. **Use the file's tempo, key & chords** sits on the same row.
+
+![No drums: the bass and chords come in, the drums are greyed out](docs/walkthrough/midi-groups.png)
+
 With **Sum of sines** under *Math*, a line's pitch becomes a pure function: a few sines over the loop that land every note. *Glide line* plays it as one voice sliding along the curve.
 
 ![A bass line as a sum of sines](docs/walkthrough/midi-math.png)

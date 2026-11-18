@@ -545,11 +545,21 @@ input[type='range']:hover::-webkit-slider-thumb {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* one width for Off, Halo and Phase, so the keys beside it never move */
+  width: 9.5ch;
+  justify-content: flex-start;
+}
+.backdrop-key button svg {
+  flex: none;
 }
 .viz .viz-tabs input.backdrop-level {
   flex: none;
   width: 64px;
   min-width: 0;
+}
+.viz .viz-tabs input.backdrop-level:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 .viz-tip {
   position: absolute;

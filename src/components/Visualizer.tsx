@@ -950,23 +950,23 @@ export function Visualizer() {
             aria-label="Backdrop"
           >
             <Icon name="wave" size={13} />
-            {backdrop !== 'off' && <span>{BACKDROP_STYLES.find((b) => b.value === backdrop)!.label}</span>}
+            <span>{BACKDROP_STYLES.find((b) => b.value === backdrop)!.label}</span>
           </button>
         </span>
-        {backdrop !== 'off' && (
-          <input
-            className="backdrop-level"
-            type="range"
-            min={0.05}
-            max={1}
-            step={0.01}
-            value={backdropLevel}
-            onChange={(e) => setBackdropLevel(Number(e.target.value))}
-            onDoubleClick={() => setBackdropLevel(1)}
-            title={`Backdrop opacity: ${Math.round(backdropLevel * 100)}% (double-click for full)`}
-            aria-label="Backdrop opacity"
-          />
-        )}
+        {/* always there, so nothing in the row moves as the key is clicked */}
+        <input
+          className="backdrop-level"
+          type="range"
+          min={0.05}
+          max={1}
+          step={0.01}
+          value={backdropLevel}
+          disabled={backdrop === 'off'}
+          onChange={(e) => setBackdropLevel(Number(e.target.value))}
+          onDoubleClick={() => setBackdropLevel(1)}
+          title={backdrop === 'off' ? 'Backdrop opacity — turn a backdrop on first' : `Backdrop opacity: ${Math.round(backdropLevel * 100)}% (double-click for full)`}
+          aria-label="Backdrop opacity"
+        />
       </div>
       {tip && (
         <div className="viz-tip" style={{ left: tip.x, top: tip.y }}>
