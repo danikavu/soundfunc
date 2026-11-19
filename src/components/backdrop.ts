@@ -1,24 +1,50 @@
 /**
- * The backdrop behind the Score and Function views: the live sound as a figure filling the whole view.
- *   halo   — the waveform bent into a ring, stretched to the view, its trails spreading to the edges
- *   phase  — the waveform against itself a moment later: a Lissajous figure, scaled to the edges
- * Drawn faint, under the notes, and in the channels' colours.
+ * The backdrop behind the Score and Function views: the live sound filling the whole view,
+ * drawn faint under the notes and in the channels' colours (the caller turns it into dots).
+ *   waves     — smooth waves flowing across the view, one per stretch of the spectrum, swelling with it
+ *   phase     — the waveform against itself a moment later: a Lissajous figure, scaled to the edges
+ *   eq        — an LED spectrum analyser: lows on the left, highs on the right, peaks that hang and fall
+ *   sonogram  — the spectrum painted under the playhead as it passes: bass low, hats high, pass after pass
+ *   life      — Conway's Game of Life on the dots, seeded by every note as it starts
+ *   julia     — a Julia set whose shape follows the chord and blooms with the bass
+ *   snake     — a snake per channel crawling the dots in time; every note turns it
  */
-import type { Track } from '../engine/project';
+import { isDrum, type Track } from '../engine/project';
 
-export type BackdropStyle = 'off' | 'halo' | 'phase';
+export type BackdropStyle = 'off' | 'waves' | 'phase' | 'eq' | 'sonogram' | 'life' | 'julia' | 'snake';
 export const BACKDROP_STYLES: { value: BackdropStyle; label: string; hint: string }[] = [
   { value: 'off', label: 'Off', hint: 'no backdrop' },
-  { value: 'halo', label: 'Halo', hint: 'the live waveform as a ring across the whole view' },
+  { value: 'waves', label: 'Waves', hint: 'smooth waves flowing across the view: the bass a slow swell, the highs quick ripples' },
   { value: 'phase', label: 'Phase', hint: 'the live Lissajous figure across the whole view' },
+  { value: 'eq', label: 'EQ', hint: 'an LED spectrum analyser: lows on the left, highs on the right, peaks that hang and fall' },
+  { value: 'sonogram', label: 'Sono', hint: 'the sound painted under the notes as the playhead passes: bass low, hats high' },
+  { value: 'life', label: 'Life', hint: 'Conway’s Game of Life on the dots, seeded by every note as it plays' },
+  { value: 'julia', label: 'Julia', hint: 'a Julia-set fractal: each chord glides it into a new shape, the bass makes it bloom' },
+  { value: 'snake', label: 'Snake', hint: 'a snake per channel crawling the dots in time; every note turns it, up left, down right' },
 ];
 
 export interface BackdropFrame {
   wave: Float32Array | null;
+  /** the spectrum, 0 – 255 per bin (bin i ≈ i × sampleRate / (2 × length) Hz) */
+  spectrum: Uint8Array | null;
+  sampleRate: number;
   /** the channels you hear: their colours paint the figure */
   tracks: Track[];
-  /** seconds, for idle motion */
+  /** the chord now (a scale degree) and how many degrees the scale has: Julia's shape follows it */
+  chord: number;
+  scaleLen: number;
+  /** the song's tempo, and whether it is playing: Waves and Snake move in beats */
+  bpm: number;
+  playing: boolean;
+  /** seconds, for motion */
   now: number;
+  /** where the music is drawn in the view, and the playhead's x there (null when stopped or out of view) */
+  area: { x0: number; x1: number; y0: number; y1: number };
+  playX: number | null;
+  /** what sounds right now, where it is drawn: Life is seeded from it (a key is one note) */
+  sparks: { key: string; x: number; y: number; color: string }[];
+  /** one dot, in CSS px: the figures that live on the grid draw in whole dots */
+  cell: number;
 }
 
 interface Palette {
@@ -26,14 +52,47 @@ interface Palette {
   glow: number;
 }
 
-/** how many frames linger and fade */
+/** how many frames of the wave linger (Phase) */
 const TRAILS = 7;
 
-/** what persists between frames: the trails, and the level the wave is scaled to */
+/** what persists between frames */
 export class BackdropMemory {
   waves: Float32Array[] = [];
   /** the recent loudest sample: quiet music is scaled up so the figures keep their size */
   level = 0.05;
+  last = 0;
+  /** EQ and Waves: the bands, eased, and the peaks hanging over them */
+  bands = new Float32Array(0);
+  peaks = new Float32Array(0);
+  held = new Float32Array(0);
+  /** Waves: how far each wave has flowed */
+  flow = new Float32Array(0);
+  /** Sonogram: what is painted so far, one pixel per dot, and the column the playhead was in */
+  sono: HTMLCanvasElement | null = null;
+  sonoCol: number | null = null;
+  sonoFade = 0;
+  /** Life: the grid (0 = dead, else 1 + the colour it was born in), what just died, fading, and the notes seen last frame */
+  life: Uint8Array | null = null;
+  lifeNext: Uint8Array | null = null;
+  ghost: Float32Array | null = null;
+  ghostColour: Uint8Array | null = null;
+  lifeW = 0;
+  lifeH = 0;
+  lifeClock = 0;
+  sounding = new Set<string>();
+  /** Julia: where c is on its path (an angle), the slow travel along it, the bass's push; the canvas and its pixels */
+  juliaAngle: number | null = null;
+  juliaTravel = 0;
+  juliaPush = 0;
+  julia: HTMLCanvasElement | null = null;
+  juliaImage: ImageData | null = null;
+  /** Snake: one per channel, and the fading trail grid they share */
+  snakes = new Map<string, { x: number; y: number; dir: number; colour: string; lastY: number | null; zig: number }>();
+  trail: Float32Array | null = null;
+  trailColour: Uint8Array | null = null;
+  trailW = 0;
+  trailH = 0;
+  crawl = 0;
   push(w: Float32Array) {
     this.waves.unshift(w);
     if (this.waves.length > TRAILS) this.waves.length = TRAILS;
@@ -102,38 +161,127 @@ function takeWave(f: BackdropFrame, mem: BackdropMemory) {
   mem.push(copy);
 }
 
-/** the wave bent round an ellipse rx × ry, pushed out by the samples (amp is a share of each radius) */
-function waveRing(g: CanvasRenderingContext2D, w: Float32Array, cx: number, cy: number, rx: number, ry: number, amp: number, N: number) {
-  g.beginPath();
-  for (let i = 0; i <= N; i++) {
-    const u = i / N;
-    // mirrored: the wave runs out and back, so the two ends meet without a seam
-    const k = u < 0.5 ? u * 2 : (1 - u) * 2;
-    const s = w[Math.min(w.length - 1, Math.floor(k * (N - 1)))] ?? 0;
-    const a = -Math.PI / 2 + TAU * u;
-    const r = 1 + s * amp;
-    const x = cx + Math.cos(a) * rx * r, y = cy + Math.sin(a) * ry * r;
-    i ? g.lineTo(x, y) : g.moveTo(x, y);
+/**
+ * The spectrum in `n` bands spaced evenly in pitch, 35 Hz – 16 kHz, each 0 … 1: the analyser's bytes
+ * span −100 … −30 dB, and music lives in about −65 … −25, so that window is stretched to fill 0 … 1.
+ * The highs carry less energy than the lows, so they are lifted a little to read evenly.
+ */
+function bandLevels(f: BackdropFrame, n: number): Float32Array {
+  const out = new Float32Array(n);
+  const spec = f.spectrum;
+  if (!spec || quiet(f.wave)) return out;
+  const lo = 35, hi = 16000;
+  const binHz = f.sampleRate / 2 / spec.length;
+  for (let i = 0; i < n; i++) {
+    const b0 = Math.floor((lo * Math.pow(hi / lo, i / n)) / binHz);
+    const b1 = Math.max(b0, Math.floor((lo * Math.pow(hi / lo, (i + 1) / n)) / binHz));
+    let m = 0;
+    for (let b = b0; b <= b1 && b < spec.length; b++) m = Math.max(m, spec[b]);
+    const v = (m / 255 - 0.5) / 0.55 + 0.18 * (i / n);
+    out[i] = Math.min(1, Math.max(0, v));
+  }
+  return out;
+}
+
+/** frame time, in seconds (kept sane across pauses) */
+function tick(f: BackdropFrame, mem: BackdropMemory): number {
+  const dt = mem.last ? Math.min(0.1, Math.max(0, f.now - mem.last)) : 1 / 60;
+  mem.last = f.now;
+  return dt;
+}
+
+/** bands that jump up at once and fall back slowly, and peaks that hang a moment before they drop */
+function easeBands(mem: BackdropMemory, lv: Float32Array, dt: number, now: number, fall: number) {
+  if (mem.bands.length !== lv.length) (mem.bands = new Float32Array(lv.length)), (mem.peaks = new Float32Array(lv.length)), (mem.held = new Float32Array(lv.length));
+  for (let i = 0; i < lv.length; i++) {
+    mem.bands[i] = lv[i] > mem.bands[i] ? lv[i] : Math.max(lv[i], mem.bands[i] - fall * dt);
+    if (mem.bands[i] >= mem.peaks[i]) (mem.peaks[i] = mem.bands[i]), (mem.held[i] = now);
+    else if (now - mem.held[i] > 0.4) mem.peaks[i] = Math.max(mem.bands[i], mem.peaks[i] - 0.6 * dt);
   }
 }
 
-function halo(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, P: Palette, f: BackdropFrame, mem: BackdropMemory) {
+// ---------- waves: smooth waves flowing across the view ----------
+
+/**
+ * The waves, lowest first: how many cycles span the view, how far they flow per beat (the bass one
+ * cycle every four bars, the highs one a bar), and the bands that drive them.
+ */
+const WAVES = [
+  { cycles: 0.8, perBeat: 1 / 16, from: 0, to: 0.12 },
+  { cycles: 1.3, perBeat: 1 / 12, from: 0.12, to: 0.3 },
+  { cycles: 1.9, perBeat: 1 / 8, from: 0.3, to: 0.5 },
+  { cycles: 2.7, perBeat: 1 / 6, from: 0.5, to: 0.72 },
+  { cycles: 3.6, perBeat: 1 / 4, from: 0.72, to: 1 },
+];
+/** stopped, the waves drift on at this share of the tempo */
+const IDLE_FLOW = 0.35;
+
+function waves(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
+  const n = 40;
+  easeBands(mem, bandLevels(f, n), dt, f.now, 0.9);
+  if (mem.flow.length !== WAVES.length) mem.flow = new Float32Array(WAVES.length);
   const cs = colours(f, P);
-  const paint = ringPaint(g, cx, cy, cs, f.now * 0.15);
+  const cy = H / 2;
+  const steps = Math.max(32, Math.ceil(W / 6));
   g.save();
   g.lineJoin = 'round';
-  if (P.glow > 0) (g.shadowBlur = 10 * P.glow), (g.shadowColor = cs[0]);
-  mem.waves.forEach((w, i) => {
-    g.globalAlpha = i === 0 ? 0.95 : 0.5 * (1 - i / mem.waves.length);
-    g.lineWidth = i === 0 ? 1.8 : 1;
-    g.strokeStyle = paint;
-    // older frames sit further out, like rings spreading to the edges
-    const k = 0.55 + i * 0.12;
-    waveRing(g, w, cx, cy, rx * k, ry * k, 0.4, 512);
-    g.stroke();
+  g.lineCap = 'round';
+  WAVES.forEach((wv, k) => {
+    // its stretch of the spectrum, averaged: the louder it is, the taller the wave and the faster it flows
+    const b0 = Math.floor(wv.from * n), b1 = Math.max(b0 + 1, Math.floor(wv.to * n));
+    let level = 0;
+    for (let i = b0; i < b1; i++) level += mem.bands[i] / (b1 - b0);
+    // flowing with the tempo: so many beats' worth each second, drifting slower while stopped
+    mem.flow[k] += dt * (f.bpm / 60) * wv.perBeat * (f.playing ? 1 : IDLE_FLOW);
+    // even in silence each wave keeps a gentle undulation
+    const amp = H * 0.34 * (0.24 + 0.76 * level) * (1 - k * 0.08);
+    const colour = cs[k % cs.length];
+    // each wave rides its own line, spread about the middle, so quiet waves don't pile into one stripe
+    const base = cy + (k - (WAVES.length - 1) / 2) * H * 0.09;
+    const y = (x: number, lag: number) => {
+      const u = x / W, t = mem.flow[k] - lag;
+      // a gentle swell along the wave, calmer towards the edges
+      const swell = 1 + 0.3 * Math.sin(TAU * (u * 0.5 + t * 0.13 + k * 0.7));
+      const edge = 0.35 + 0.65 * Math.sin(Math.PI * u);
+      return base + amp * edge * swell * Math.sin(TAU * (u * wv.cycles - t) + k * 1.9);
+    };
+    if (P.glow > 0) (g.shadowBlur = 6 * P.glow), (g.shadowColor = colour);
+    g.strokeStyle = colour;
+    // the fill: from the wave to its own line, fading towards the line
+    const fade = g.createLinearGradient(0, base - amp, 0, base + amp);
+    fade.addColorStop(0, colour);
+    fade.addColorStop(0.5, 'transparent');
+    fade.addColorStop(1, colour);
+    g.save();
+    g.shadowBlur = 0;
+    g.globalAlpha = 0.2;
+    g.fillStyle = fade;
+    g.beginPath();
+    g.moveTo(0, base);
+    for (let i = 0; i <= steps; i++) {
+      const x = (i / steps) * W;
+      g.lineTo(x, y(x, 0));
+    }
+    g.lineTo(W, base);
+    g.closePath();
+    g.fill();
+    g.restore();
+    // a ribbon: the wave, and fading echoes of where it just was
+    for (const [lag, alpha, width] of [[0.03, 0.22, 1.2], [0.015, 0.4, 1.5], [0, 0.95, 2]] as const) {
+      g.globalAlpha = alpha;
+      g.lineWidth = width;
+      g.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const x = (i / steps) * W;
+        i ? g.lineTo(x, y(x, lag)) : g.moveTo(x, y(x, lag));
+      }
+      g.stroke();
+    }
   });
   g.restore();
 }
+
+// ---------- phase ----------
 
 function phase(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, P: Palette, f: BackdropFrame, mem: BackdropMemory) {
   const cs = colours(f, P);
@@ -163,10 +311,399 @@ function phase(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number, 
   g.restore();
 }
 
+// ---------- eq: an LED spectrum analyser ----------
+
+/** a fill that runs up through the colours, bottom to top */
+function rising(g: CanvasRenderingContext2D, cs: string[], bottom: number, top: number): string | CanvasGradient {
+  if (cs.length < 2) return cs[0];
+  const grad = g.createLinearGradient(0, bottom, 0, top);
+  cs.forEach((c, i) => grad.addColorStop(i / (cs.length - 1), c));
+  return grad;
+}
+
+function eq(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
+  const c = f.cell;
+  // each bar two dots wide, one dot apart, across the whole view
+  const step = c * 3;
+  const n = Math.max(8, Math.floor(W / step));
+  easeBands(mem, bandLevels(f, n), dt, f.now, 1.4);
+  const x0 = Math.floor((W - n * step + c) / 2 / c) * c;
+  const floor = Math.floor(H / c) * c - c;
+  const span = floor - H * 0.06;
+  const snap = (v: number) => Math.round(v / c) * c;
+  const cs = colours(f, P);
+  g.save();
+  if (P.glow > 0) (g.shadowBlur = 6 * P.glow), (g.shadowColor = cs[0]);
+  g.fillStyle = rising(g, cs, floor, floor - span);
+  for (let i = 0; i < n; i++) {
+    const x = x0 + i * step;
+    const h = snap(mem.bands[i] * span);
+    // a row of dim dots along the floor, so the analyser is there even in silence
+    g.globalAlpha = 0.35;
+    g.fillRect(x, floor, c * 2, c);
+    if (h > 0) {
+      g.globalAlpha = 0.9;
+      g.fillRect(x, floor - h, c * 2, h);
+    }
+    const p = snap(mem.peaks[i] * span);
+    if (p > c) {
+      g.globalAlpha = 1;
+      g.fillRect(x, floor - p - c * 2, c * 2, c);
+    }
+  }
+  g.restore();
+}
+
+// ---------- sonogram: the spectrum painted under the playhead ----------
+
+function sonogram(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
+  const c = f.cell;
+  const cw = Math.ceil(W / c), ch = Math.ceil(H / c);
+  if (!mem.sono || mem.sono.width !== cw || mem.sono.height !== ch) {
+    mem.sono = document.createElement('canvas');
+    mem.sono.width = cw;
+    mem.sono.height = ch;
+    mem.sonoCol = null;
+  }
+  const s = mem.sono.getContext('2d')!;
+  // what was painted fades slowly, so a stopped or quieter loop gives way
+  mem.sonoFade += dt;
+  if (mem.sonoFade > 0.5) {
+    s.globalCompositeOperation = 'destination-out';
+    s.fillStyle = 'rgba(0,0,0,0.06)';
+    s.fillRect(0, 0, cw, ch);
+    s.globalCompositeOperation = 'source-over';
+    mem.sonoFade = 0;
+  }
+  const cs = colours(f, P);
+  if (f.playX !== null) {
+    const r0 = Math.ceil(f.area.y0 / c), r1 = Math.floor(f.area.y1 / c);
+    const rows = Math.max(1, r1 - r0);
+    const col = Math.floor(f.playX / c);
+    // carry on from the last column; a new pass, a jump or a fresh start begins where the playhead is
+    const from = mem.sonoCol === null || col < mem.sonoCol || col - mem.sonoCol > 24 ? col : mem.sonoCol + 1;
+    if (col >= from) {
+      const lv = bandLevels(f, rows);
+      // this pass paints over the last one
+      s.clearRect(from, r0, col - from + 1, rows);
+      for (let r = 0; r < rows; r++) {
+        const v = lv[r];
+        if (v < 0.05) continue;
+        // bass at the bottom, the highs at the top, through the channels' colours
+        s.fillStyle = cs[Math.min(cs.length - 1, Math.floor((r / rows) * cs.length))];
+        s.globalAlpha = Math.min(1, 0.08 + v * v * 0.55);
+        s.fillRect(from, r1 - 1 - r, col - from + 1, 1);
+      }
+      s.globalAlpha = 1;
+    }
+    mem.sonoCol = col;
+  } else mem.sonoCol = null;
+  g.save();
+  g.imageSmoothingEnabled = false;
+  g.drawImage(mem.sono, 0, 0, cw, ch, 0, 0, cw * c, ch * c);
+  g.restore();
+}
+
+// ---------- life: Conway's Game of Life on the dots ----------
+
+/** generations per second */
+const LIFE_RATE = 12;
+/** what a note drops: an R-pentomino, a glider, an acorn — small patterns that grow for a long while */
+const SEEDS: [number, number][][] = [
+  [[1, 0], [2, 0], [0, 1], [1, 1], [1, 2]],
+  [[1, 0], [2, 1], [0, 2], [1, 2], [2, 2]],
+  [[1, 0], [3, 1], [0, 2], [1, 2], [4, 2], [5, 2], [6, 2]],
+];
+
+function hash(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+function life(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
+  const c = f.cell;
+  const cw = Math.ceil(W / c), ch = Math.ceil(H / c);
+  const cs = colours(f, P);
+  if (!mem.life || mem.lifeW !== cw || mem.lifeH !== ch) {
+    mem.life = new Uint8Array(cw * ch);
+    mem.lifeNext = new Uint8Array(cw * ch);
+    mem.ghost = new Float32Array(cw * ch);
+    mem.ghostColour = new Uint8Array(cw * ch);
+    mem.lifeW = cw;
+    mem.lifeH = ch;
+    // a thin soup to start from, so the grid is alive before anything plays
+    for (let i = 0; i < mem.life.length; i++) if (Math.random() < 0.06) mem.life[i] = 1 + (i % cs.length);
+  }
+  let grid = mem.life;
+  const ghost = mem.ghost!, ghostColour = mem.ghostColour!;
+  const idx = (x: number, y: number) => ((y + ch) % ch) * cw + ((x + cw) % cw);
+
+  // seed: each note, as it starts, drops a small pattern where it is drawn, in its channel's colour
+  const now = new Set<string>();
+  for (const sp of f.sparks) {
+    now.add(sp.key);
+    if (mem.sounding.has(sp.key)) continue;
+    const h = hash(sp.key);
+    const shape = SEEDS[h % SEEDS.length];
+    const flipX = h & 8 ? -1 : 1, flipY = h & 16 ? -1 : 1, swap = (h & 32) !== 0;
+    const colour = 1 + Math.max(0, cs.indexOf(sp.color));
+    const gx = Math.floor(sp.x / c), gy = Math.floor(sp.y / c);
+    for (const [a, b] of shape) {
+      const [dx, dy] = swap ? [b, a] : [a, b];
+      grid[idx(gx + dx * flipX, gy + dy * flipY)] = colour;
+    }
+  }
+  mem.sounding = now;
+
+  // step the generations at a steady rate
+  mem.lifeClock += dt;
+  let steps = 0;
+  while (mem.lifeClock >= 1 / LIFE_RATE && steps < 3) {
+    mem.lifeClock -= 1 / LIFE_RATE;
+    steps++;
+    const next = mem.lifeNext!;
+    for (let y = 0; y < ch; y++) {
+      // the rows above and below, wrapping round the edges
+      const up = ((y + ch - 1) % ch) * cw, row = y * cw, down = ((y + 1) % ch) * cw;
+      for (let x = 0; x < cw; x++) {
+        const l = x ? x - 1 : cw - 1, r = x + 1 < cw ? x + 1 : 0;
+        const n0 = grid[up + l], n1 = grid[up + x], n2 = grid[up + r], n3 = grid[row + l];
+        const n4 = grid[row + r], n5 = grid[down + l], n6 = grid[down + x], n7 = grid[down + r];
+        const count = (n0 ? 1 : 0) + (n1 ? 1 : 0) + (n2 ? 1 : 0) + (n3 ? 1 : 0) + (n4 ? 1 : 0) + (n5 ? 1 : 0) + (n6 ? 1 : 0) + (n7 ? 1 : 0);
+        const i = row + x;
+        const alive = grid[i];
+        // B3/S23; a newborn takes a parent's colour
+        if (alive ? count === 2 || count === 3 : count === 3) next[i] = alive || n0 || n1 || n2 || n3 || n4 || n5 || n6 || n7;
+        else {
+          next[i] = 0;
+          if (alive) (ghost[i] = 1), (ghostColour[i] = alive);
+        }
+      }
+    }
+    // the new generation becomes the grid; the old buffer is reused for the next
+    mem.lifeNext = grid;
+    mem.life = next;
+    grid = next;
+  }
+  mem.lifeClock = Math.min(mem.lifeClock, 1 / LIFE_RATE);
+
+  // draw: the living in full, the just-dead fading behind them; one path per colour
+  const live: Path2D[] = cs.map(() => new Path2D());
+  const dying: Path2D[] = cs.map(() => new Path2D());
+  for (let i = 0; i < grid.length; i++) {
+    const x = (i % cw) * c, y = Math.floor(i / cw) * c;
+    if (grid[i]) live[(grid[i] - 1) % cs.length].rect(x, y, c, c);
+    else if (ghost[i] > 0) {
+      ghost[i] = Math.max(0, ghost[i] - dt * 1.6);
+      if (ghost[i] > 0.4) dying[(ghostColour[i] - 1) % cs.length].rect(x, y, c, c);
+    }
+  }
+  g.save();
+  cs.forEach((col, k) => {
+    g.fillStyle = col;
+    g.globalAlpha = 0.25;
+    g.fill(dying[k]);
+    g.globalAlpha = 0.95;
+    g.fill(live[k]);
+  });
+  g.restore();
+}
+
+// ---------- julia: a fractal whose shape follows the harmony ----------
+
+/** a colour as [r, g, b], whatever form it was written in */
+const rgbCache = new Map<string, [number, number, number]>();
+function rgbOf(c: string): [number, number, number] {
+  let v = rgbCache.get(c);
+  if (v) return v;
+  const m = /^#([0-9a-f]{6})$/i.exec(c.trim());
+  if (m) v = [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4), 16)];
+  else {
+    // anything else: let a canvas read it
+    const x = document.createElement('canvas').getContext('2d')!;
+    x.fillStyle = c;
+    x.fillRect(0, 0, 1, 1);
+    const d = x.getImageData(0, 0, 1, 1).data;
+    v = [d[0], d[1], d[2]];
+  }
+  rgbCache.set(c, v);
+  return v;
+}
+
+/** how many times a point may be squared before it counts as staying */
+const JULIA_ITER = 32;
+
+/**
+ * z → z² + c over the whole view, one dot per pixel. c runs along the edge of the Mandelbrot set's
+ * main body (the cardioid c = e^(iθ)/2 − e^(2iθ)/4, just inside it), where every Julia set is one
+ * connected, intricate shape: never dust. The chord sets where on the edge it heads (a degree per
+ * 1/L of the way round) and a change glides there; it also travels on slowly in time with the tempo,
+ * a full turn every 16 bars; the bass pushes it out a touch, so kicks make it bloom.
+ */
+function julia(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
+  const c = f.cell;
+  const cw = Math.ceil(W / c), ch = Math.ceil(H / c);
+  if (!mem.julia || mem.julia.width !== cw || mem.julia.height !== ch) {
+    mem.julia = document.createElement('canvas');
+    mem.julia.width = cw;
+    mem.julia.height = ch;
+    mem.juliaImage = new ImageData(cw, ch);
+  }
+  const lv = bandLevels(f, 24);
+  easeBands(mem, lv, dt, f.now, 1.2);
+  let bass = 0;
+  for (let i = 0; i < 4; i++) bass += mem.bands[i] / 4;
+  mem.juliaPush += (bass - mem.juliaPush) * Math.min(1, dt * 8);
+  // the chord's place on the edge, reached by gliding the short way round; the travel on top
+  const L = Math.max(1, f.scaleLen);
+  const target = (TAU * (((f.chord % L) + L) % L)) / L;
+  if (mem.juliaAngle === null) mem.juliaAngle = target;
+  let d = target - mem.juliaAngle;
+  d -= TAU * Math.round(d / TAU);
+  mem.juliaAngle += d * Math.min(1, dt * 1.2);
+  mem.juliaTravel += (dt * (f.bpm / 60) * TAU) / 64 * (f.playing ? 1 : 0.35);
+  const th = mem.juliaAngle + mem.juliaTravel;
+  const k = 0.985 + 0.03 * mem.juliaPush;
+  const cr = k * (Math.cos(th) / 2 - Math.cos(2 * th) / 4), ci = k * (Math.sin(th) / 2 - Math.sin(2 * th) / 4);
+
+  // the rings run through the channels' colours, two escape counts a ring, and step round slowly
+  const cs = colours(f, P).map(rgbOf);
+  const shift = Math.floor(f.now * 0.5);
+  const px = mem.juliaImage!.data;
+  // stretched to fill the view: −1.7 … 1.7 across, −1.05 … 1.05 down
+  const sx = 3.4 / cw, sy = 2.1 / ch;
+  for (let j = 0; j < ch; j++) {
+    const y0 = -1.05 + j * sy;
+    for (let i = 0; i < cw; i++) {
+      let zr = -1.7 + i * sx, zi = y0, n = 0;
+      while (n < JULIA_ITER) {
+        const zr2 = zr * zr, zi2 = zi * zi;
+        if (zr2 + zi2 > 4) break;
+        zi = 2 * zr * zi + ci;
+        zr = zr2 - zi2 + cr;
+        n++;
+      }
+      const o = (j * cw + i) * 4;
+      let colour: [number, number, number], a: number;
+      if (n === JULIA_ITER) {
+        // inside the set: a soft fill
+        (colour = cs[shift % cs.length]), (a = 45);
+      } else {
+        // outside: rings all the way to the edges of the view, dim far out, bright against the set
+        colour = cs[(Math.floor(n / 2) + shift) % cs.length];
+        a = 12 + 243 * Math.pow(n / JULIA_ITER, 1.1);
+      }
+      (px[o] = colour[0]), (px[o + 1] = colour[1]), (px[o + 2] = colour[2]), (px[o + 3] = a);
+    }
+  }
+  const x = mem.julia.getContext('2d')!;
+  x.putImageData(mem.juliaImage!, 0, 0);
+  g.save();
+  g.imageSmoothingEnabled = false;
+  g.drawImage(mem.julia, 0, 0, cw, ch, 0, 0, cw * c, ch * c);
+  g.restore();
+}
+
+// ---------- snake: a snake per channel, turned by its notes ----------
+
+/** right, down, left, up */
+const DIRS: [number, number][] = [
+  [1, 0],
+  [0, 1],
+  [-1, 0],
+  [0, -1],
+];
+/** dots a snake crawls per beat, and how long its trail glows, in seconds */
+const SNAKE_PER_BEAT = 8;
+const SNAKE_TRAIL = 5;
+
+function snake(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
+  const c = f.cell;
+  const cw = Math.ceil(W / c), ch = Math.ceil(H / c);
+  const cs = colours(f, P);
+  if (!mem.trail || mem.trailW !== cw || mem.trailH !== ch) {
+    mem.trail = new Float32Array(cw * ch);
+    mem.trailColour = new Uint8Array(cw * ch);
+    mem.trailW = cw;
+    mem.trailH = ch;
+    mem.snakes.clear();
+  }
+  const trail = mem.trail, trailColour = mem.trailColour!;
+  // one snake per channel you hear (or one, in the ink, when there are none), spread across the view
+  const ids = f.tracks.length ? f.tracks.map((t) => t.id) : ['ink'];
+  ids.forEach((id, k) => {
+    if (!mem.snakes.has(id)) mem.snakes.set(id, { x: Math.floor(((k + 0.5) / ids.length) * cw), y: Math.floor(ch * (0.3 + 0.4 * ((k * 0.618) % 1))), dir: k % 4, colour: '', lastY: null, zig: 0 });
+    mem.snakes.get(id)!.colour = f.tracks[k]?.color ?? cs[0];
+  });
+  for (const id of [...mem.snakes.keys()]) if (!ids.includes(id)) mem.snakes.delete(id);
+
+  // every note that starts turns its channel's snake: higher than the last note left, lower right; a drum zig-zags
+  for (const sp of f.sparks) {
+    if (mem.sounding.has(sp.key)) continue;
+    const s = mem.snakes.get(sp.key.split(':')[0]);
+    if (!s) continue;
+    const wave = f.tracks.find((t) => t.id === sp.key.split(':')[0])?.waveform;
+    if (wave && isDrum(wave)) s.dir = (s.dir + ((s.zig++ & 1) ? 1 : 3)) % 4;
+    else if (s.lastY !== null && Math.abs(sp.y - s.lastY) > 1) s.dir = (s.dir + (sp.y < s.lastY ? 3 : 1)) % 4;
+    s.lastY = sp.y;
+  }
+  mem.sounding = new Set(f.sparks.map((sp) => sp.key));
+
+  // crawl in time: so many dots a beat, slower while stopped
+  mem.crawl += dt * (f.bpm / 60) * SNAKE_PER_BEAT * (f.playing ? 1 : 0.35);
+  let moves = Math.floor(mem.crawl);
+  mem.crawl -= moves;
+  moves = Math.min(moves, 8);
+  const colourIndex = new Map<string, number>();
+  for (let m = 0; m < moves; m++) {
+    for (const s of mem.snakes.values()) {
+      s.x = (s.x + DIRS[s.dir][0] + cw) % cw;
+      s.y = (s.y + DIRS[s.dir][1] + ch) % ch;
+      const i = s.y * cw + s.x;
+      trail[i] = 1;
+      let ci = colourIndex.get(s.colour);
+      if (ci === undefined) colourIndex.set(s.colour, (ci = Math.max(0, cs.indexOf(s.colour))));
+      trailColour[i] = ci;
+    }
+  }
+
+  // draw the trails, fading; three steps of brightness, one path per colour and step
+  const paths = cs.map(() => [new Path2D(), new Path2D(), new Path2D()]);
+  const fade = dt / SNAKE_TRAIL;
+  for (let i = 0; i < trail.length; i++) {
+    if (trail[i] <= 0) continue;
+    trail[i] = Math.max(0, trail[i] - fade);
+    const level = trail[i] > 0.66 ? 2 : trail[i] > 0.33 ? 1 : 0;
+    paths[trailColour[i] % cs.length][level].rect((i % cw) * c, Math.floor(i / cw) * c, c, c);
+  }
+  g.save();
+  cs.forEach((col, k) => {
+    g.fillStyle = col;
+    [0.15, 0.35, 0.8].forEach((a, level) => {
+      g.globalAlpha = a;
+      g.fill(paths[k][level]);
+    });
+  });
+  // the heads, bright
+  g.globalAlpha = 1;
+  for (const s of mem.snakes.values()) {
+    g.fillStyle = s.colour;
+    g.fillRect(s.x * c, s.y * c, c, c);
+  }
+  g.restore();
+}
+
 /** One backdrop frame filling W × H. */
 export function drawBackdrop(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, style: Exclude<BackdropStyle, 'off'>, mem: BackdropMemory) {
   takeWave(f, mem);
+  const dt = tick(f, mem);
   const cx = W / 2, cy = H / 2;
-  if (style === 'halo') halo(g, cx, cy, W / 2, H / 2, P, f, mem);
-  else phase(g, cx, cy, W * 0.46, H * 0.46, P, f, mem);
+  if (style === 'waves') waves(g, W, H, P, f, mem, dt);
+  else if (style === 'phase') phase(g, cx, cy, W * 0.46, H * 0.46, P, f, mem);
+  else if (style === 'eq') eq(g, W, H, P, f, mem, dt);
+  else if (style === 'sonogram') sonogram(g, W, H, P, f, mem, dt);
+  else if (style === 'life') life(g, W, H, P, f, mem, dt);
+  else if (style === 'julia') julia(g, W, H, P, f, mem, dt);
+  else snake(g, W, H, P, f, mem, dt);
 }

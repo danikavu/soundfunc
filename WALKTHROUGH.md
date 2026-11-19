@@ -101,9 +101,19 @@ Switch on the ✎ pen and the score is drawn in as the track plays. Each note gr
 
 ### Backdrop
 
-The 〰 key beside *Score* and *Function* puts the live sound behind either view, as a dot matrix like the calculator's display: **Halo**, the waveform bent into a ring that fills the view, or **Phase**, the wave against itself a moment later, a Lissajous figure. Click it again for the next one, or Off. The slider beside it sets how strongly it shows; at most it stays faint enough for the notes to read first.
+The 〰 key beside *Score* and *Function* puts the live sound behind either view, as a dot matrix like the calculator's display. Click it for the next one, ⇧-click for the one before:
 
-![The Score with the Halo backdrop](docs/walkthrough/score-backdrop.png)
+- **Waves** — smooth filled waves flowing across the view in time with the tempo, one per stretch of the spectrum: the bass a slow swell, the highs quicker ripples.
+- **Phase** — the wave against itself a moment later: a Lissajous figure filling the view.
+- **EQ** — an LED spectrum analyser: lows on the left, highs on the right, peaks that hang and fall.
+- **Sono** — a sonogram: the sound painted under the notes as the playhead passes: bass low, hats high, pass after pass.
+- **Life** — Conway's Game of Life on the dots, seeded by every note as it starts, in its channel's colour.
+- **Julia** — a Julia-set fractal filling the view, always one connected shape: it travels slowly in time with the tempo, every chord sends it somewhere new, and the bass makes it bloom.
+- **Snake** — a snake per channel crawling the dots in time with the tempo; every note turns it (up a step: left, down: right), drums zig-zag.
+
+The slider beside it sets how strongly it shows; at most it stays faint enough for the notes to read first.
+
+![The Score with the Life backdrop: every note seeds a colony in its colour](docs/walkthrough/score-backdrop.png)
 
 ---
 

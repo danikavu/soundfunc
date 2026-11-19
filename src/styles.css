@@ -545,7 +545,7 @@ input[type='range']:hover::-webkit-slider-thumb {
   display: flex;
   align-items: center;
   gap: 6px;
-  /* one width for Off, Halo and Phase, so the keys beside it never move */
+  /* one width for every backdrop's name, so the keys beside it never move */
   width: 9.5ch;
   justify-content: flex-start;
 }
