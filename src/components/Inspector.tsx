@@ -12,6 +12,7 @@ import { WAVE_VOICES, timbreSamples, waveVoiceOf, type WaveVoice } from '../engi
 import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Info, NumberField, Seg, Slider, Stepper, TextField, download, fileSafe, getRender } from './ui';
 import { StepPicker } from './StepPicker';
+import { SauceFlames } from './SauceFlames';
 import { BEND_RANGES } from '../engine/midi';
 import { FormulaEditor } from './FormulaEditor';
 import { Dropdown } from './Dropdown';
@@ -220,6 +221,7 @@ function SoundPanel() {
     return (
       <div className="sound-panel">
         <div className="sauce-row">
+          <SauceFlames amount={d.sauce} />
           {knob('Sauce', 'sauce', 0, 1, d.sauce)}
           {changed && (
             <button className="btn small ghost" onClick={reset} title="Back to the drum as it was">
@@ -238,6 +240,7 @@ function SoundPanel() {
   return (
     <div className="sound-panel">
       <div className="sauce-row">
+        <SauceFlames amount={p.sauce} />
         {knob('Sauce', 'sauce', 0, 1, p.sauce)}
         <div className="sauce-actions">
         <button

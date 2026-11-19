@@ -40,3 +40,7 @@ src/components/ React UI (React Flow node editor, canvas visualizer)
 ```
 
 Adding a node type is just a new entry in `NODE_DEFS` in `graph.ts`. The UI, palette and evaluator pick it up automatically.
+
+## Notes
+
+Made with the assistance of [Claude Code](https://claude.com/claude-code)
