@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { FileMenu, ImportMenu } from './TopBar';
 
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -17,7 +18,7 @@ function Clock() {
   );
 }
 
-/** The instrument's nameplate: its name, and the time. */
+/** The instrument's nameplate: its name, the time, and on the right the ways in and out — Import and Export. */
 export function TitleStrip() {
   return (
     <div className="title-strip">
@@ -26,6 +27,10 @@ export function TitleStrip() {
       </div>
       <div className="title-plate">
         <Clock />
+      </div>
+      <div className="title-files">
+        <ImportMenu />
+        <FileMenu />
       </div>
     </div>
   );

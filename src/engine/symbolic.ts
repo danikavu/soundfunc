@@ -554,6 +554,10 @@ export function toTex(ast: Ast, min = 0): string {
         case 'pick':
           // a cyclic sequence indexed by the first argument
           return `\\left(${args.slice(1).map((a) => toTex(a)).join(',\\ ')}\\right)_{${t(0)}}`;
+        case 'fact':
+          return `{${toTex(args[0] ?? num(0), 9)}}!`;
+        case 'choose':
+          return `\\binom{${t(0)}}{${t(1)}}`;
         case 'every':
           // Iverson bracket: 1 when the condition holds, else 0
           return `\\left[\\,${t(0)} \\equiv ${args[2] ? t(2) : '0'} \\pmod{${t(1)}}\\,\\right]`;
@@ -680,6 +684,8 @@ const JS_HELPERS: Record<string, string> = {
     'function rand(n, seed = 0) {\n  let h = Math.imul(Math.floor(n) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(Math.floor(seed) + 0x632be5ab, 0xc2b2ae35);\n  h ^= h >>> 16; h = Math.imul(h, 0x7feb352d); h ^= h >>> 15; h = Math.imul(h, 0x846ca68b); h ^= h >>> 16;\n  return (h >>> 0) / 4294967296;\n}',
   noise: 'function noise(x, seed = 0) { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return rand(i, seed) * (1 - u) + rand(i + 1, seed) * u; }',
   gcd: 'function gcd(a, b) { a = Math.abs(Math.floor(a)); b = Math.abs(Math.floor(b)); while (b) [a, b] = [b, a % b]; return a; }',
+  fact: 'function fact(n) { n = Math.floor(n); if (n < 0) return 0; if (n > 170) return Infinity; let out = 1; for (let i = 2; i <= n; i++) out *= i; return out; }',
+  choose: 'function choose(n, r) { n = Math.floor(n); r = Math.floor(r); if (r < 0 || r > n || n < 0) return 0; const m = Math.min(r, n - r); let out = 1; for (let i = 1; i <= m; i++) out = (out * (n - m + i)) / i; return Math.round(out); }',
 };
 
 const PY_HELPERS: Record<string, string> = {
@@ -728,6 +734,8 @@ const PY_HELPERS: Record<string, string> = {
     'def _imul(a, b):\n    return ((a & 0xFFFFFFFF) * (b & 0xFFFFFFFF)) & 0xFFFFFFFF\n\ndef rand(n, seed=0):\n    """Deterministic hash → [0, 1); bit-for-bit the same as SoundFunc."""\n    h = _imul((math.floor(n) & 0xFFFFFFFF) ^ 0x9E3779B9, 0x85EBCA6B) ^ _imul((math.floor(seed) + 0x632BE5AB) & 0xFFFFFFFF, 0xC2B2AE35)\n    h ^= h >> 16\n    h = _imul(h, 0x7FEB352D)\n    h ^= h >> 15\n    h = _imul(h, 0x846CA68B)\n    h ^= h >> 16\n    return h / 4294967296',
   noise: 'def noise(x, seed=0):\n    i = math.floor(x)\n    f = x - i\n    u = f * f * (3 - 2 * f)\n    return rand(i, seed) * (1 - u) + rand(i + 1, seed) * u',
   gcd: 'def gcd(a, b):\n    return math.gcd(abs(math.floor(a)), abs(math.floor(b)))',
+  fact: 'def fact(n):\n    n = math.floor(n)\n    if n < 0:\n        return 0\n    return math.factorial(n) if n <= 170 else math.inf',
+  choose: 'def choose(n, r):\n    n, r = math.floor(n), math.floor(r)\n    return math.comb(n, r) if 0 <= r <= n else 0',
 };
 
 /** helpers that other helpers call */
@@ -830,6 +838,32 @@ export function trackTex(c: Composed, song: Song): { label: string; tex: string 
     });
   }
   return lines;
+}
+
+/**
+ * The LaTeX document the function sheet copies and downloads: every channel's lines, and — in a
+ * comment, invisible when typeset — the channel whole, so pasting the document back brings it back exactly.
+ */
+export function trackDocument(cs: Composed[], song: Song): string {
+  const body = cs
+    .map((c) => {
+      const { id: _id, ...track } = c.track;
+      return `% soundfunc-track ${JSON.stringify(track)}\n\\section*{${c.track.name.replace(/[&%$#_{}]/g, '\\$&')}}\n\\begin{gather*}\n${trackTex(c, song).map((l) => l.tex).join(' \\\\\n')}\n\\end{gather*}`;
+    })
+    .join('\n\n');
+  return `\\documentclass{article}\n\\usepackage{amsmath,amssymb}\n\\begin{document}\n${body}\n\\end{document}\n`;
+}
+
+/** The SoundFunc formulas the function sheet copies: per channel its name, grid, sliders and every Note Out input. */
+export function trackFormulas(cs: Composed[], song: Song): string {
+  return cs
+    .map((c) => {
+      const t = c.track;
+      const used = new Set(c.math.vars);
+      const sliders = (t.sliders ?? []).filter((sl) => used.has(sl.name)).map((sl) => `# slider ${sl.name} = ${exactNum(sl.value)} (${exactNum(sl.min)} … ${exactNum(sl.max)})`);
+      return [`# ${t.name}`, `# grid ${t.steps} × ${t.stepBeats}`, ...sliders, ...trackSource(c, song).map((l) => `${l.label} = ${l.code}`)].join('\n');
+    })
+    .join('\n\n');
 }
 
 /** SoundFunc formulas — each line can be pasted into a Formula node. */

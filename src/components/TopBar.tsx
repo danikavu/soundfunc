@@ -48,20 +48,89 @@ const MIDI_EXPORTS: { mode: MidiMode; label: string; hint: string; suffix: strin
   },
 ];
 
-function FileMenu() {
+/** a menu that closes when you click anywhere else */
+function useMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const midiRef = useRef<HTMLInputElement>(null);
-  const { project, loadProject } = useStore();
-  const jam = useJam((s) => s.jam);
-
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
     window.addEventListener('mousedown', close);
     return () => window.removeEventListener('mousedown', close);
   }, [open]);
+  return { open, setOpen, ref };
+}
+
+/** Bring things in: a MIDI file, a project, or a function pasted from anywhere (SoundFunc's own copies included). */
+export function ImportMenu() {
+  const { open, setOpen, ref } = useMenu();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const midiRef = useRef<HTMLInputElement>(null);
+  const loadProject = useStore((s) => s.loadProject);
+  const setShowImport = useStore((s) => s.setShowImport);
+  return (
+    <div className="menu" ref={ref}>
+      <button className="btn" onClick={() => setOpen((o) => !o)} title="Import a MIDI file, a project, or paste a function">
+        <Icon name="upload" size={14} /> Import
+      </button>
+      {open && (
+        <div className="menu-pop">
+          <button onClick={() => midiRef.current?.click()}>
+            MIDI file… <small>Turn a .mid file into channels of functions (or drop it on the window)</small>
+          </button>
+          <button
+            onClick={() => {
+              setOpen(false);
+              setShowImport(true);
+            }}
+          >
+            Paste a function… <small>LaTeX, Desmos, plain math — or what SoundFunc copies, back as the channels it came from</small>
+          </button>
+          <button onClick={() => fileRef.current?.click()}>
+            Project… <small>Open a .soundfunc.json file</small>
+          </button>
+        </div>
+      )}
+      <input
+        ref={midiRef}
+        type="file"
+        accept=".mid,.midi,audio/midi,audio/x-midi"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          setOpen(false);
+          if (f) void openMidiFile(f);
+        }}
+      />
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          setOpen(false);
+          if (!f) return;
+          try {
+            const data = JSON.parse(await f.text());
+            if (!isProject(data)) throw new Error('not a project');
+            loadProject(data);
+            toast(`Opened “${data.name}”`);
+          } catch {
+            toast('That file is not a SoundFunc project');
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+export function FileMenu() {
+  const { open, setOpen, ref } = useMenu();
+  const project = useStore((s) => s.project);
+  const jam = useJam((s) => s.jam);
 
   const name = fileSafe(project.name);
   const run = (fn: () => void) => () => {
@@ -115,48 +184,8 @@ function FileMenu() {
           <button onClick={run(() => download(`${name}.soundfunc.json`, JSON.stringify(project, null, 2), 'application/json'))}>
             Project <small>Everything, to re-open later</small>
           </button>
-          <hr />
-          <button onClick={() => midiRef.current?.click()}>
-            Import MIDI… <small>Turn a .mid file into channels of functions (or drop it on the window)</small>
-          </button>
-          <button onClick={() => fileRef.current?.click()}>
-            Import project… <small>Load a .soundfunc.json file</small>
-          </button>
-
         </div>
       )}
-      <input
-        ref={midiRef}
-        type="file"
-        accept=".mid,.midi,audio/midi,audio/x-midi"
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          e.target.value = '';
-          setOpen(false);
-          if (f) void openMidiFile(f);
-        }}
-      />
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".json,application/json"
-        hidden
-        onChange={async (e) => {
-          const f = e.target.files?.[0];
-          e.target.value = '';
-          if (!f) return;
-          try {
-            const data = JSON.parse(await f.text());
-            if (!isProject(data)) throw new Error('not a project');
-            loadProject(data);
-            toast(`Opened “${data.name}”`);
-          } catch {
-            toast('That file is not a SoundFunc project');
-          }
-          setOpen(false);
-        }}
-      />
     </div>
   );
 }
@@ -412,7 +441,6 @@ export function TopBar() {
           <Icon name={theme === 'light' ? 'moon' : 'sun'} />
         </button>
       </div>
-      <FileMenu />
       <Toast />
     </header>
   );

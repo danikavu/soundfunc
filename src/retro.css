@@ -292,6 +292,13 @@ body {
   font: 700 var(--fs-lg)/1 var(--sans);
   letter-spacing: 0.04em;
 }
+/* Import and Export, at the right end of the nameplate */
+.title-files {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+}
 .title-clock {
   font: 400 var(--fs-md)/1 var(--mono);
   letter-spacing: 0.08em;
