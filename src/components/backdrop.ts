@@ -26,6 +26,9 @@ export interface BackdropFrame {
   sampleRate: number;
   /** the channels you hear: their colours paint the figure */
   tracks: Track[];
+  /** the song's tempo, and whether it is playing: Waves flow in beats */
+  bpm: number;
+  playing: boolean;
   /** seconds, for motion */
   now: number;
   /** where the music is drawn in the view, and the playhead's x there (null when stopped or out of view) */
@@ -179,14 +182,19 @@ function easeBands(mem: BackdropMemory, lv: Float32Array, dt: number, now: numbe
 
 // ---------- waves: smooth waves flowing across the view ----------
 
-/** the waves, lowest first: how many cycles span the view, how fast they flow, and the bands that drive them */
+/**
+ * The waves, lowest first: how many cycles span the view, how far they flow per beat (the bass one
+ * cycle every four bars, the highs one a bar), and the bands that drive them.
+ */
 const WAVES = [
-  { cycles: 0.8, speed: 0.35, from: 0, to: 0.12 },
-  { cycles: 1.3, speed: 0.55, from: 0.12, to: 0.3 },
-  { cycles: 1.9, speed: 0.8, from: 0.3, to: 0.5 },
-  { cycles: 2.7, speed: 1.1, from: 0.5, to: 0.72 },
-  { cycles: 3.6, speed: 1.5, from: 0.72, to: 1 },
+  { cycles: 0.8, perBeat: 1 / 16, from: 0, to: 0.12 },
+  { cycles: 1.3, perBeat: 1 / 12, from: 0.12, to: 0.3 },
+  { cycles: 1.9, perBeat: 1 / 8, from: 0.3, to: 0.5 },
+  { cycles: 2.7, perBeat: 1 / 6, from: 0.5, to: 0.72 },
+  { cycles: 3.6, perBeat: 1 / 4, from: 0.72, to: 1 },
 ];
+/** stopped, the waves drift on at this share of the tempo */
+const IDLE_FLOW = 0.35;
 
 function waves(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
   const n = 40;
@@ -203,7 +211,8 @@ function waves(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f:
     const b0 = Math.floor(wv.from * n), b1 = Math.max(b0 + 1, Math.floor(wv.to * n));
     let level = 0;
     for (let i = b0; i < b1; i++) level += mem.bands[i] / (b1 - b0);
-    mem.flow[k] += dt * wv.speed * (1 + level * 1.5);
+    // flowing with the tempo: so many beats' worth each second, drifting slower while stopped
+    mem.flow[k] += dt * (f.bpm / 60) * wv.perBeat * (f.playing ? 1 : IDLE_FLOW);
     // even in silence each wave keeps a gentle undulation
     const amp = H * 0.34 * (0.24 + 0.76 * level) * (1 - k * 0.08);
     const colour = cs[k % cs.length];
@@ -218,8 +227,27 @@ function waves(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f:
     };
     if (P.glow > 0) (g.shadowBlur = 6 * P.glow), (g.shadowColor = colour);
     g.strokeStyle = colour;
+    // the fill: from the wave to its own line, fading towards the line
+    const fade = g.createLinearGradient(0, base - amp, 0, base + amp);
+    fade.addColorStop(0, colour);
+    fade.addColorStop(0.5, 'transparent');
+    fade.addColorStop(1, colour);
+    g.save();
+    g.shadowBlur = 0;
+    g.globalAlpha = 0.2;
+    g.fillStyle = fade;
+    g.beginPath();
+    g.moveTo(0, base);
+    for (let i = 0; i <= steps; i++) {
+      const x = (i / steps) * W;
+      g.lineTo(x, y(x, 0));
+    }
+    g.lineTo(W, base);
+    g.closePath();
+    g.fill();
+    g.restore();
     // a ribbon: the wave, and fading echoes of where it just was
-    for (const [lag, alpha, width] of [[0.09, 0.22, 1.2], [0.045, 0.4, 1.5], [0, 0.95, 2]] as const) {
+    for (const [lag, alpha, width] of [[0.03, 0.22, 1.2], [0.015, 0.4, 1.5], [0, 0.95, 2]] as const) {
       g.globalAlpha = alpha;
       g.lineWidth = width;
       g.beginPath();

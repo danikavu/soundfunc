@@ -103,7 +103,7 @@ Switch on the ✎ pen and the score is drawn in as the track plays. Each note gr
 
 The 〰 key beside *Score* and *Function* puts the live sound behind either view, as a dot matrix like the calculator's display. Click it for the next one, ⇧-click for the one before:
 
-- **Waves** — smooth waves flowing across the view, one per stretch of the spectrum: the bass a slow swell, the highs quick ripples.
+- **Waves** — smooth filled waves flowing across the view in time with the tempo, one per stretch of the spectrum: the bass a slow swell, the highs quicker ripples.
 - **Phase** — the wave against itself a moment later: a Lissajous figure filling the view.
 - **EQ** — an LED spectrum analyser: lows on the left, highs on the right, peaks that hang and fall.
 - **Sonogram** — the sound painted under the notes as the playhead passes: bass low, hats high, pass after pass.

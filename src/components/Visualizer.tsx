@@ -394,6 +394,8 @@ export function Visualizer() {
           wave: heard ? wave : null,
           spectrum: heard ? spectrum : null,
           sampleRate: engine.sampleRate,
+          bpm: project.song.bpm,
+          playing: pos !== null,
           tracks: [...score.melodic, ...score.drums].map((it) => it.track),
           now: performance.now() / 1000,
           cell: PIXEL,
