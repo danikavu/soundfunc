@@ -4,9 +4,10 @@ A tour of the core of SoundFunc: you plant functions, shape them as nodes, watch
 
 ![SoundFunc playing the Dusty Fingers kit](docs/walkthrough/app.png)
 
-The screen has five parts:
+The screen has six parts:
 
-- **Top bar** — the whole song: play, record, tempo, length, key, scale, the harmony (a formula of `bar`), the controls that act on every channel, and Export.
+- **Top strip** — the SoundFunc name, the clock, and on the right **Import** and **Export**.
+- **Top bar** — the whole song: play, record, tempo, length, key, scale, the harmony (a formula of `bar`) and the controls that act on every channel.
 - **Left** — the channels on top; rhythm kits and functions to plant below.
 - **Middle, top** — the visualizer: *Score* and *Function*, with a backdrop of the live sound behind them.
 - **Middle, bottom** — the selected channel as a graph of nodes, or every channel written as math in **Func View**.
@@ -30,13 +31,13 @@ One finished groove per style: hip-hop, G-funk, trap and phonk, neo-soul, trip h
 
 ### Paste a function
 
-Paste LaTeX straight from Desmos, plain math, `\begin{cases}` piecewise functions, or several lines with helper definitions. SoundFunc shows how it read the function and plots exactly what the channel will play. If the function is longer or shorter than the song's Length, it is cut to it or runs on to fill it; an import never changes the Length.
+Paste LaTeX straight from Desmos, plain math (factorials too: `n!/r!(n−r)!`), `\begin{cases}` piecewise functions, or several lines with helper definitions. What SoundFunc's own function sheet copies, LaTeX or formulas, pastes back as the channels it came from. SoundFunc shows how it read the function and plots exactly what the channel will play. If the function is longer or shorter than the song's Length, it is cut to it or runs on to fill it; an import never changes the Length.
 
 ![Pasting a Desmos function](docs/walkthrough/paste.png)
 
 ### Import MIDI
 
-Drop a `.mid` file anywhere on the window, or use **Export → Import MIDI…**. Every part of the file becomes a channel of functions.
+Drop a `.mid` file anywhere on the window, or use **Import → MIDI file…** (the Import key beside Export also opens projects and pastes functions). Every part of the file becomes a channel of functions.
 
 ![Drop a MIDI file](docs/walkthrough/midi-drop.png)
 

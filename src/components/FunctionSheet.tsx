@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { compose, describeTrack, trackCode, trackSource, trackTex } from '../engine/symbolic';
+import { compose, describeTrack, trackCode, trackDocument, trackFormulas, trackSource, trackTex } from '../engine/symbolic';
 import { useSelectedTrack, useStore } from '../state/store';
 import { toast } from './TopBar';
 import { Icon, Seg, download, fileSafe } from './ui';
@@ -58,16 +58,9 @@ export function FunctionSheet() {
   const asText = (): { text: string; ext: string; mime: string } => {
     if (tab === 'js') return { text: code, ext: 'js', mime: 'text/javascript' };
     if (tab === 'py') return { text: code, ext: 'py', mime: 'text/x-python' };
-    if (tab === 'source') {
-      const text = inlined
-        .map((c) => [`# ${c.track.name}`, ...trackSource(c, project.song).map((l) => `${l.label} = ${l.code}`)].join('\n'))
-        .join('\n\n');
-      return { text, ext: 'txt', mime: 'text/plain' };
-    }
-    const body = composed
-      .map((c) => `\\section*{${c.track.name.replace(/[&%$#_{}]/g, '\\$&')}}\n\\begin{gather*}\n${trackTex(c, project.song).map((l) => l.tex).join(' \\\\\n')}\n\\end{gather*}`)
-      .join('\n\n');
-    return { text: `\\documentclass{article}\n\\usepackage{amsmath,amssymb}\n\\begin{document}\n${body}\n\\end{document}\n`, ext: 'tex', mime: 'application/x-tex' };
+    // both paste back into Paste function as the channels they came from
+    if (tab === 'source') return { text: trackFormulas(inlined, project.song), ext: 'txt', mime: 'text/plain' };
+    return { text: trackDocument(composed, project.song), ext: 'tex', mime: 'application/x-tex' };
   };
 
   const name = scope === 'garden' ? fileSafe(project.name) : fileSafe(selected?.name ?? 'track');

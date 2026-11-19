@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { compileAst, type Ast } from '../engine/expr';
 import { fitToSpan, importedPitch, importMath, ImportError, type Imported, type YMeans } from '../engine/importMath';
+import { nativeTrack, readNative, type NativeRead } from '../engine/importChannel';
 import { DEFAULT_PITCH_RANGE, midiToName } from '../engine/music';
 import { TRACK_COLORS, layoutGraph, uid } from '../engine/presets';
 import { simplify, substitute, toSource, toTex } from '../engine/symbolic';
@@ -61,14 +62,26 @@ export function ImportSheet() {
     setFitChoice(null);
   }, [src]);
 
+  /** SoundFunc's own writing (what its function sheet copies): read back as the channels it came from */
+  const native = useMemo((): { ok: NativeRead | null; error: string | null } => {
+    try {
+      return { ok: readNative(src), error: null };
+    } catch (e) {
+      return { ok: null, error: e instanceof Error ? e.message : String(e) };
+    }
+  }, [src]);
+  /** a lone SoundFunc formula: which Note Out input it feeds */
+  const [lonePort, setLonePort] = useState('pitch');
+
   const parsed = useMemo((): { ok: Imported | null; error: string | null } => {
-    if (!src.trim()) return { ok: null, error: null };
+    if (!src.trim() || native.ok) return { ok: null, error: null };
+    if (native.error) return { ok: null, error: native.error };
     try {
       return { ok: importMath(src, { modReading, ...(timeChoice ? { timeVar: timeChoice } : {}) }), error: null };
     } catch (e) {
       return { ok: null, error: e instanceof ImportError || e instanceof Error ? e.message : String(e) };
     }
-  }, [src, modReading, timeChoice]);
+  }, [src, modReading, timeChoice, native]);
 
   /** the sliders this function will bring, with their values (as read, or as typed) */
   const params = useMemo(() => (parsed.ok?.params ?? []).map((p) => ({ ...p, value: paramEdits[p.name] ?? p.value })), [parsed.ok, paramEdits]);
@@ -145,6 +158,16 @@ export function ImportSheet() {
 
   if (!open) return null;
 
+  const plantNative = () => {
+    const read = native.ok;
+    if (!read) return;
+    const { plantTrack } = useStore.getState();
+    for (const ch of read.channels) plantTrack(nativeTrack(ch, read.lone ? lonePort : undefined));
+    setOpen(false);
+    const names = read.channels.map((c) => `“${c.name}”`).join(', ');
+    toast(read.format === 'saved' ? `Planted ${names} — exactly as it was saved` : `Planted ${names} from SoundFunc’s ${read.format === 'latex' ? 'LaTeX' : 'formulas'}`);
+  };
+
   const plant = () => {
     const r = parsed.ok;
     if (!r) return;
@@ -220,8 +243,9 @@ export function ImportSheet() {
               Paste a function
             </div>
             <p className="muted" style={{ margin: '6px 0 0', fontSize: 'var(--fs-md)' }}>
-              LaTeX (Desmos: select an expression, ⌘C), <code className="mono">\begin{'{cases}'}</code>, plain math with ⌊ ⌋, mod, frac, ≥ — or several lines: helper
-              definitions like <code className="mono">g(x) = …</code> and <code className="mono">IF … : / ELSE IF / OTHERWISE</code> blocks. y as a function of x.
+              LaTeX (Desmos: select an expression, ⌘C), <code className="mono">\begin{'{cases}'}</code>, plain math with ⌊ ⌋, mod, frac, n!, ≥ — or several lines: helper
+              definitions like <code className="mono">g(x) = …</code> and <code className="mono">IF … : / ELSE IF / OTHERWISE</code> blocks. y as a function of x. What SoundFunc’s
+              function sheet copies (LaTeX or formulas) comes back as the channels it came from.
             </p>
           </div>
           <button className="icon-btn" onClick={() => setOpen(false)} title="Close (Esc)">
@@ -265,7 +289,47 @@ export function ImportSheet() {
             ))}
           </div>
 
+          {native.ok && (
+            <div className="import-native">
+              <p className="import-native-head">
+                {native.ok.format === 'saved'
+                  ? 'A SoundFunc document: its channels come back exactly as they were — nodes, sound and grid.'
+                  : native.ok.lone
+                    ? 'A SoundFunc formula. Choose the Note Out input it feeds:'
+                    : `SoundFunc’s own ${native.ok.format === 'latex' ? 'LaTeX' : 'formulas'}: ${native.ok.channels.length === 1 ? 'the channel' : `${native.ok.channels.length} channels`} it came from, with every input.`}
+              </p>
+              {native.ok.lone && (
+                <Seg<string>
+                  value={lonePort}
+                  onChange={setLonePort}
+                  options={['pitch', 'velocity', 'length', 'shift', 'chord', 'bend'].map((p) => ({ value: p, label: p }))}
+                />
+              )}
+              {native.ok.channels.map((ch, i) => (
+                <section key={i} className="import-native-ch">
+                  <b>{ch.name}</b>
+                  <small className="muted">
+                    {ch.track
+                      ? `${ch.track.graph.nodes.length} nodes · ${ch.track.steps} steps of ${ch.track.stepBeats} beats`
+                      : `${ch.steps ?? 16} steps of ${ch.stepBeats ?? 0.25} beats${ch.sliders.length ? ` · sliders ${ch.sliders.map((s) => `${s.name} = ${s.value}`).join(', ')}` : ''}`}
+                  </small>
+                  {ch.outputs.map((o) => (
+                    <div key={o.port} className="fn-line">
+                      <span className="fn-label">{native.ok!.lone ? lonePort : o.port}</span>
+                      <Tex tex={toTex(o.ast)} katex={katex} />
+                    </div>
+                  ))}
+                </section>
+              ))}
+              {native.ok.warnings.map((w) => (
+                <p key={w} className="import-warn">
+                  {w}
+                </p>
+              ))}
+            </div>
+          )}
           {/* the preview keeps one size whatever is in it, so the sheet never jumps */}
+          {!native.ok && (
           <div className="import-preview">
             <div className="import-read">
               <span className="fn-label">read as</span>
@@ -310,6 +374,7 @@ export function ImportSheet() {
               {parsed.ok && plot?.silent && <p className="import-error import-overlay">The function is undefined (silent) over the whole length.</p>}
             </div>
           </div>
+          )}
           {parsed.ok && (
             <>
               {plot && sampled && !sampled.silent && (fitting || plot.up + plot.down > 0 || sampled.runsAway) && (
@@ -472,13 +537,21 @@ export function ImportSheet() {
 
         <footer className="sheet-foot">
           <span className="muted">
-            {parsed.ok
+            {native.ok
+              ? 'Every input becomes a Formula node you can keep editing; the song’s Length stays yours.'
+              : parsed.ok
               ? `${steps} steps of ${stepBeats} beats${parsed.ok.gate ? ' · undefined regions become silence' : ''}${steps === 256 && length / stepBeats > 256 ? ' · capped at 256 steps' : ''}`
               : 'Your function stays exact: it becomes a Formula node you can keep editing.'}
           </span>
-          <button className="btn primary" disabled={!parsed.ok} onClick={plant}>
-            <Icon name="plus" size={13} /> Plant as a channel
-          </button>
+          {native.ok ? (
+            <button className="btn primary" onClick={plantNative}>
+              <Icon name="plus" size={13} /> Plant {native.ok.channels.length > 1 ? `${native.ok.channels.length} channels` : 'the channel'}
+            </button>
+          ) : (
+            <button className="btn primary" disabled={!parsed.ok} onClick={plant}>
+              <Icon name="plus" size={13} /> Plant as a channel
+            </button>
+          )}
         </footer>
       </div>
     </div>

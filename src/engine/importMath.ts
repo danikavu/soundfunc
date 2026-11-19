@@ -13,6 +13,7 @@ const UNDEF: Ast = { k: 'var', name: '__undefined' };
 type Tok =
   | { t: 'num'; v: number }
   | { t: 'word'; v: string } // identifiers, function names, single-letter variables
+  | { t: 'name'; v: string } // a whole multi-letter name, as \mathit{beat} writes one
   | { t: 'cmd'; v: string } // LaTeX commands, normalised
   | { t: 'sym'; v: string }
   | { t: 'text'; v: string }; // \text{if}, \text{otherwise}, "and"
@@ -65,6 +66,9 @@ const CMD_ALIASES: Record<string, Tok> = {
   rvert: { t: 'sym', v: '|' },
   bmod: { t: 'word', v: 'mod' },
   pmod: { t: 'word', v: 'mod' },
+  equiv: { t: 'sym', v: '≡' },
+  lnot: { t: 'sym', v: '!' },
+  neg: { t: 'sym', v: '!' },
   varphi: { t: 'word', v: 'phi' },
   phi: { t: 'word', v: 'phi' },
   pi: { t: 'word', v: 'pi' },
@@ -93,6 +97,11 @@ function tokenize(input: string): Tok[] {
     .replace(/\\([dt]?frac)\s*(\d)\s*(\d)/g, '\\$1{$2}{$3}')
     .replace(/²/g, '^2')
     .replace(/³/g, '^3')
+    .replace(/≡/g, '\\equiv ')
+    // \mathtt{0x8A22}: a number written as it was typed
+    .replace(/\\mathtt\s*\{\s*([^}]*)\}/g, ' $1 ')
+    // \mathit{beat}, \mathrm{bar}: a whole name, not a product of letters (functions stay functions)
+    .replace(/\\(?:mathit|mathrm)\s*\{\s*([a-zA-Z]{2,})\s*\}/g, (_m, w: string) => (WORDS.has(w) ? ` ${w} ` : ` \u0003${w}\u0004 `))
     // \operatorname{mod}, \mathrm{floor}, \text{if} → words / text
     .replace(/\\(?:operatorname|mathrm|mathit|mathsf)\*?\s*\{\s*([a-zA-Z]+)\s*\}/g, ' $1 ')
     .replace(/\\(?:text|textrm|textit|mbox|textbf)\s*\{([^}]*)\}/g, (_, t: string) => ` \u0001${t.trim()}\u0002 `);
@@ -105,6 +114,12 @@ function tokenize(input: string): Tok[] {
     const c = s[i];
     if (/\s/.test(c)) {
       i++;
+      continue;
+    }
+    if (c === '\u0003') {
+      const end = s.indexOf('\u0004', i);
+      out.push({ t: 'name', v: s.slice(i + 1, end) });
+      i = end + 1;
       continue;
     }
     if (c === '\u0001') {
@@ -131,6 +146,13 @@ function tokenize(input: string): Tok[] {
       else out.push({ t: 'cmd', v: name });
       continue;
     }
+    // hex and binary, as SoundFunc writes rhythm masks: 0x8A22, 0b1001
+    const based = /^0([xX][0-9a-fA-F]+|[bB][01]+)/.exec(s.slice(i));
+    if (based) {
+      out.push({ t: 'num', v: parseInt(based[1].slice(1), /[xX]/.test(based[1][0]) ? 16 : 2) });
+      i += based[0].length;
+      continue;
+    }
     const num = /^(\d+\.?\d*|\.\d+)/.exec(s.slice(i));
     if (num) {
       out.push({ t: 'num', v: parseFloat(num[0]) });
@@ -154,7 +176,13 @@ function tokenize(input: string): Tok[] {
       i += 2;
       continue;
     }
-    if ('+-*/^_()[]{}|,:&=<>;'.includes(c)) {
+    // SoundFunc's own && and ||
+    if (two === '&&' || two === '||') {
+      out.push({ t: 'text', v: two === '&&' ? 'and' : 'or' });
+      i += 2;
+      continue;
+    }
+    if ("+-*/^_()[]{}|,:&=<>;!%?'".includes(c)) {
       out.push({ t: 'sym', v: c });
       i++;
       continue;
@@ -171,6 +199,13 @@ const FN_MAP: Record<string, string> = {
 };
 
 export interface ImportOptions {
+  /**
+   * Read SoundFunc's own writing (its LaTeX and its formulas): n, k, h, t, x, bar, beat, np, L and
+   * N (steps) stay SoundFunc's clocks instead of becoming sliders, mod binds like ×, and nothing is guessed.
+   */
+  native?: boolean;
+  /** names already defined (SoundFunc's where-clause: w_1 = …), written in wherever they are used */
+  constants?: Map<string, Ast>;
   /** what the source calls its time variable (default x) */
   timeVar?: string;
   /** SoundFunc variable to put in its place */
@@ -218,9 +253,13 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
     for (const extra of parts.slice(1)) ctx.warnings.add(`Read “${extra.trim()}” as a condition on the function — it isn't part of the sound.`);
     src = parts[0];
   }
-  const timeVar = opts.timeVar ?? 'x';
+  const native = !!opts.native;
+  // reading SoundFunc's own writing, no name is "the" time: every clock keeps its own name
+  const timeVar = native ? '\u0000' : opts.timeVar ?? 'x';
   const timeAs = opts.timeAs ?? 't';
-  const modSum = (opts.modReading ?? 'sum') === 'sum';
+  const modSum = !native && (opts.modReading ?? 'sum') === 'sum';
+  /** inside "a ≡ b (mod m)", the mod belongs to the ≡ */
+  let congruence = 0;
   const toks = tokenize(src);
   const warnings = ctx.warnings;
   let k = 0;
@@ -263,7 +302,15 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
   };
 
   function expr(): Ast {
-    return or();
+    // SoundFunc's c ? a : b
+    const c = or();
+    if (sym('?')) {
+      k++;
+      const a = expr();
+      expect(':');
+      return { k: 'cond', c, a, b: expr() };
+    }
+    return c;
   }
   function or(): Ast {
     let l = and();
@@ -286,6 +333,16 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
     let l = first;
     let prev = first;
     let out: Ast | null = null;
+    // a ≡ r (mod m): 1 when a leaves r over after dividing by m — SoundFunc's every(a, m, r)
+    if (sym('≡')) {
+      k++;
+      congruence++;
+      const r = add();
+      congruence--;
+      if (!is('word', 'mod')) throw new ImportError('A congruence needs its modulus: a ≡ r (mod m)');
+      k++;
+      return call('every', first, group(), r);
+    }
     // chained comparisons: a < b < c → a < b && b < c
     while (['<', '>', '<=', '>=', '=', '!='].some((o) => sym(o))) {
       const op = (peek() as { v: string }).v;
@@ -314,13 +371,14 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
   }
   /** "mod" used as an operator (a mod n), not the function mod(a, n) */
   function infixMod(): boolean {
-    return is('word', 'mod') && !callsWithComma(1);
+    return !congruence && is('word', 'mod') && !callsWithComma(1);
   }
   function startsAtom(): boolean {
     const x = peek();
     if (!x || stopped()) return false;
-    if (infixMod()) return false;
-    if (x.t === 'num' || x.t === 'word') return true;
+    if (infixMod() || (congruence && is('word', 'mod'))) return false;
+    if (x.t === 'num' || x.t === 'word' || x.t === 'name') return true;
+    if (x.t === 'text' && x.v === 'silence') return true;
     if (x.t === 'cmd') return !x.v.startsWith('end:');
     if (x.t === 'sym') return ['(', '[', '{', '\\{'].includes(x.v) || (x.v === '|' && !stops[stops.length - 1].includes('|'));
     return false;
@@ -328,9 +386,21 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
   function mul(): Ast {
     let l = unary();
     for (;;) {
-      if (sym('*') || sym('/')) {
+      if (sym('*') || sym('%')) {
+        // SoundFunc's % is mod, with the precedence of ×
         const op = (toks[k++] as { v: string }).v as BinOp;
         l = bin(op, l, unary());
+      } else if (sym('/')) {
+        k++;
+        // a product written without a sign stays together under the line: n!/r!(n−r)! = n! / (r! (n−r)!)
+        let d = unary();
+        let joined = false;
+        while (startsAtom()) {
+          d = bin('*', d, power());
+          joined = true;
+        }
+        if (joined && !native) warnings.add(DIV_NOTE);
+        l = bin('/', l, d);
       } else if (!modSum && infixMod()) {
         // infix "a mod b" with the precedence of ×
         k++;
@@ -346,6 +416,11 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
       k++;
       return { k: 'neg', a: unary() };
     }
+    // SoundFunc's !a (and LaTeX's \lnot a): 1 when a is 0
+    if (sym('!')) {
+      k++;
+      return { k: 'not', a: unary() };
+    }
     if (sym('+')) {
       k++;
       return unary();
@@ -353,7 +428,12 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
     return power();
   }
   function power(): Ast {
-    const base = atom();
+    let base = atom();
+    // n! — the factorial, as often as it is written (n!! is (n!)!)
+    while (sym('!')) {
+      k++;
+      base = call('fact', base);
+    }
     if (sym('^')) {
       k++;
       const ex = group();
@@ -420,13 +500,15 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
         return bin('/', bin('+', call('exp', a[0]), call('exp', { k: 'neg', a: a[0] })), { k: 'num', v: 2 });
       case 'sqrt':
         return call('sqrt', a[0]);
+      case 'binom':
+        return call('choose', a[0], a[1] ?? { k: 'num', v: 0 });
     }
     const mapped = FN_MAP[name] ?? name;
     if (!FUNCTIONS[mapped]) {
       warnings.add(`Unknown function “${name}” — it was replaced by 0. Define it with SoundFunc functions, or pick a close one from the Guide.`);
       return { k: 'num', v: 0 };
     }
-    if (['tri', 'saw', 'sqr', 'sine'].includes(mapped)) warnings.add(`“${mapped}” is SoundFunc’s version: period 1, range −1…1. If your source defined ${mapped} differently, adjust it.`);
+    if (!native && ['tri', 'saw', 'sqr', 'sine'].includes(mapped)) warnings.add(`“${mapped}” is SoundFunc’s version: period 1, range −1…1. If your source defined ${mapped} differently, adjust it.`);
     return call(mapped, ...a);
   }
   function piecewise(close: string): Ast {
@@ -442,6 +524,8 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
       else break;
     }
     expect(close);
+    // {x} on its own, with no condition in it, is the fractional part — as SoundFunc writes fract
+    if (rows.length === 1 && rows[0].c === null && !isComparison(rows[0].v)) return call('fract', rows[0].v);
     return foldRows(rows.map((r) => (r.c === null || rows.some((x) => x.c !== null) ? r : { c: r.v, v: { k: 'num', v: 1 } })));
   }
   function cases(): Ast {
@@ -485,6 +569,20 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
       }
       name = `${w}_${sub.replace(/[^A-Za-z0-9]/g, '')}`;
     }
+    // k′: SoundFunc writes a name it had to rename (k → k_) with a prime
+    while (sym("'")) {
+      k++;
+      name += '_';
+    }
+    if (native) {
+      // SoundFunc's clocks keep their names (N is steps); every other name is one of the channel's sliders, as named
+      const clock = name === 'N' ? 'steps' : name;
+      if (NATIVE_VARS.has(clock)) return { k: 'var', name: clock };
+      if (ctx.constants.has(name)) return ctx.constants.get(name)!;
+      if (!ctx.seen.includes(name)) ctx.seen.push(name);
+      ctx.params.add(name);
+      return { k: 'var', name };
+    }
     if (name === timeVar) return { k: 'var', name: timeAs };
     if (ctx.constants.has(name)) {
       // a constant written in brings along any sliders it is made of (c = 2a uses a)
@@ -509,10 +607,20 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
       if (x.v === '(' || x.v === '[') {
         k++;
         stops.push([]);
-        const e = expr();
+        const list = [expr()];
+        while (x.v === '(' && sym(',')) {
+          k++;
+          list.push(expr());
+        }
         stops.pop();
         expect(x.v === '(' ? ')' : ']');
-        return e;
+        // (a, b, c)_i: the i-th of a repeating list, as SoundFunc writes pick(i, a, b, c)
+        if (x.v === '(' && sym('_')) {
+          k++;
+          return call('pick', group(), ...list);
+        }
+        if (list.length > 1) throw new ImportError('A list (a, b, …) needs an index: (a, b, …)_i picks the i-th, round and round');
+        return list[0];
       }
       if (x.v === '{') return group();
       if (x.v === '\\{') {
@@ -520,7 +628,7 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
         return piecewise('\\}');
       }
       if (x.v === '|') {
-        warnings.add('|…| was read as an absolute value. If you meant to round down, write ⌊…⌋ or floor(…) — for example |4x| and ⌊4x⌋ differ between steps.');
+        if (!native) warnings.add('|…| was read as an absolute value. If you meant to round down, write ⌊…⌋ or floor(…) — for example |4x| and ⌊4x⌋ differ between steps.');
         k++;
         stops.push(['|']);
         const e = expr();
@@ -552,16 +660,35 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
           stops.push([]);
           const e = expr();
           stops.pop();
+          // ⌊x⌉ is round to nearest
+          if (x.v === 'lfloor' && is('cmd', 'rceil')) {
+            k++;
+            return call('round', e);
+          }
           if (!is('cmd', x.v === 'lfloor' ? 'rfloor' : 'rceil')) throw new ImportError(`Missing closing ${x.v === 'lfloor' ? '⌋' : '⌉'}`);
           k++;
           return call(x.v === 'lfloor' ? 'floor' : 'ceil', e);
         }
+        case 'binom': {
+          const n = group();
+          return call('choose', n, group());
+        }
+        case 'gcd':
+          return fn('gcd');
         case 'begin:cases':
         case 'begin:dcases':
           return cases();
+        case 'log':
+          // \log_2 x, \log_{b} x: log to that base
+          if (sym('_')) {
+            k++;
+            const base = group();
+            const a = args();
+            return bin('/', call('log', a[0]), call('log', base));
+          }
+          return fn('log');
         case 'exp':
         case 'ln':
-        case 'log':
         case 'sin':
         case 'cos':
         case 'tan':
@@ -577,6 +704,15 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
         default:
           throw new ImportError(`Unsupported command \\${x.v}`);
       }
+    }
+    if (x.t === 'name') {
+      k++;
+      return nameAtom(x.v);
+    }
+    // the silence SoundFunc writes where a piecewise function is undefined
+    if (x.t === 'text' && x.v === 'silence') {
+      k++;
+      return UNDEF;
     }
     if (x.t === 'word') {
       k++;
@@ -601,6 +737,11 @@ function readExpr(src: string, opts: ImportOptions, ctx: ReadContext): Ast {
   return ast;
 }
 
+const DIV_NOTE = 'A product written without a sign was kept together under “/”: a/bc = a/(b·c), so n!/r!(n−r)! is n!/(r!(n−r)!). Write (a/b)c if you meant the other.';
+/** SoundFunc's own clocks: reading its writing, these keep their names */
+const NATIVE_VARS = new Set(['n', 'k', 'h', 't', 'x', 'L', 'steps', 'bar', 'beat', 'np']);
+const isComparison = (a: Ast) => a.k === 'bin' && ['<', '>', '<=', '>=', '==', '!=', '&&', '||'].includes(a.op);
+
 const MOD_SUM_NOTE = 'Infix “mod” was read as applying to everything before it in its group: a + b mod n = (a + b) mod n. Switch “mod reads” if you meant a + (b mod n).';
 const MOD_TERM_NOTE = 'Infix “mod” was read with the precedence of ×: a + b mod n = a + (b mod n). Switch “mod reads” if you meant the whole sum.';
 
@@ -608,7 +749,7 @@ const noUser: ReadContext['callUser'] = () => null;
 
 export function importMath(src: string, opts: ImportOptions = {}): Imported {
   const read = (o: ImportOptions) => {
-    const ctx: ReadContext = { warnings: new Set(), userNames: new Set(), callUser: noUser, params: new Set(), constants: new Map(), seen: [] };
+    const ctx: ReadContext = { warnings: new Set(), userNames: new Set(), callUser: noUser, params: new Set(), constants: new Map(o.constants ?? []), seen: [] };
     const values = new Map<string, number>();
     const ast = looksStructured(src) ? readProgram(src, o, ctx, values) : readExpr(src, o, ctx);
     return { ast, ctx, values };
@@ -616,7 +757,7 @@ export function importMath(src: string, opts: ImportOptions = {}): Imported {
   let timeVar = opts.timeVar ?? 'x';
   let r = read({ ...opts, timeVar });
   // no x? then t, or the one plain lowercase name left over (h in p = p_0 e^{-h/H}), is time
-  if (!opts.timeVar && !usesVar(r.ast, opts.timeAs ?? 't') && r.ctx.seen.length) {
+  if (!opts.timeVar && !opts.native && !usesVar(r.ast, opts.timeAs ?? 't') && r.ctx.seen.length) {
     // judged on the names as written: t first, then a plain lowercase letter (not p_0), then a Greek one
     const names = r.ctx.seen;
     const guess = names.find((n) => n === 't') ?? names.find((n) => /^[a-z]$/.test(n)) ?? names.find((n) => GREEK_NAMES.has(n)) ?? names[0];
@@ -647,7 +788,7 @@ function usesVar(ast: Ast, name: string): boolean {
   }
 }
 
-/** split at commas that aren't inside any brackets */
+/** split at commas that aren't inside any brackets (nor LaTeX's \, space) */
 function splitTopLevel(src: string): string[] {
   const out: string[] = [];
   let depth = 0, from = 0;
@@ -655,7 +796,8 @@ function splitTopLevel(src: string): string[] {
     const c = src[i];
     if ('([{'.includes(c)) depth++;
     else if (')]}'.includes(c)) depth--;
-    else if (c === ',' && depth === 0) {
+    // \, is a thin space, not a comma
+    else if (c === ',' && depth === 0 && src[i - 1] !== '\\') {
       out.push(src.slice(from, i));
       from = i + 1;
     }

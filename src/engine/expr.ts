@@ -117,6 +117,16 @@ function noise(x: number, seed = 0): number {
   return hash(i, seed) * (1 - u) + hash(i + 1, seed) * u;
 }
 
+/** n! for whole n ≥ 0 (n rounded down); a negative n has none, and plays as silence */
+export function factorial(n: number): number {
+  n = Math.floor(n);
+  if (n < 0) return 0;
+  if (n > 170) return Infinity;
+  let out = 1;
+  for (let i = 2; i <= n; i++) out *= i;
+  return out;
+}
+
 export const PI_DIGITS =
   '31415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679';
 
@@ -223,6 +233,19 @@ export const FUNCTIONS: Record<string, { fn: (...a: number[]) => number; doc: st
   },
   rand: { fn: hash, doc: 'rand(n, seed) deterministic 0..1' },
   noise: { fn: noise, doc: 'noise(x, seed) smooth 0..1' },
+  fact: { fn: factorial, doc: 'fact(n) = n! (n rounded down; 0 for a negative n)' },
+  choose: {
+    fn: (n, r) => {
+      n = Math.floor(n);
+      r = Math.floor(r);
+      if (r < 0 || r > n || n < 0) return 0;
+      // multiplicative, so 52 choose 5 never overflows on the way
+      let out = 1;
+      for (let i = 1; i <= Math.min(r, n - r); i++) out = (out * (n - Math.min(r, n - r) + i)) / i;
+      return Math.round(out);
+    },
+    doc: 'choose(n, r) = n! / (r! (n − r)!), ways to pick r of n',
+  },
   gcd: {
     fn: (a, b) => {
       a = Math.abs(Math.floor(a));
