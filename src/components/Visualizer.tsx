@@ -172,7 +172,7 @@ export function Visualizer() {
   const pixels = useRef<Pixelator | null>(null);
   /** what the last frame drew, for the backdrop: where the music sits, the playhead's x, and what sounds where */
   const live = useRef<Pick<BackdropFrame, 'area' | 'playX' | 'sparks'>>({ area: { x0: 0, x1: 1, y0: 0, y1: 1 }, playX: null, sparks: [] });
-  /** the next backdrop round the list (or the one before): Off → Waves → Phase → EQ → Sonogram → Life → Off */
+  /** the next backdrop round the list (or the one before): Off → Waves → Phase → EQ → Sono → Life → Julia → Snake → Off */
   const cycleBackdrop = (by = 1) =>
     setBackdropState((b) => {
       const n = BACKDROP_STYLES.length;
@@ -396,6 +396,8 @@ export function Visualizer() {
           sampleRate: engine.sampleRate,
           bpm: project.song.bpm,
           playing: pos !== null,
+          chord: harmonyAt(project.song, offset + (pos === null ? 0 : pos % score.total)),
+          scaleLen: scaleLength(project.song),
           tracks: [...score.melodic, ...score.drums].map((it) => it.track),
           now: performance.now() / 1000,
           cell: PIXEL,
@@ -969,7 +971,7 @@ export function Visualizer() {
             className={backdrop !== 'off' ? 'on' : ''}
             aria-pressed={backdrop !== 'off'}
             onClick={(e) => cycleBackdrop(e.shiftKey ? -1 : 1)}
-            title={`Backdrop: ${BACKDROP_STYLES.find((b) => b.value === backdrop)!.hint} — click for the next (Off, Waves, Phase, EQ, Sonogram, Life), ⇧-click for the one before`}
+            title={`Backdrop: ${BACKDROP_STYLES.find((b) => b.value === backdrop)!.hint} — click for the next (Off, Waves, Phase, EQ, Sono, Life, Julia, Snake), ⇧-click for the one before`}
             aria-label="Backdrop"
           >
             <Icon name="wave" size={13} />

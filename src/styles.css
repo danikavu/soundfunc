@@ -546,7 +546,7 @@ input[type='range']:hover::-webkit-slider-thumb {
   align-items: center;
   gap: 6px;
   /* one width for every backdrop's name, so the keys beside it never move */
-  width: 12.5ch;
+  width: 9.5ch;
   justify-content: flex-start;
 }
 .backdrop-key button svg {

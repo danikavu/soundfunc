@@ -6,17 +6,21 @@
  *   eq        — an LED spectrum analyser: lows on the left, highs on the right, peaks that hang and fall
  *   sonogram  — the spectrum painted under the playhead as it passes: bass low, hats high, pass after pass
  *   life      — Conway's Game of Life on the dots, seeded by every note as it starts
+ *   julia     — a Julia set whose shape follows the chord and blooms with the bass
+ *   snake     — a snake per channel crawling the dots in time; every note turns it
  */
-import type { Track } from '../engine/project';
+import { isDrum, type Track } from '../engine/project';
 
-export type BackdropStyle = 'off' | 'waves' | 'phase' | 'eq' | 'sonogram' | 'life';
+export type BackdropStyle = 'off' | 'waves' | 'phase' | 'eq' | 'sonogram' | 'life' | 'julia' | 'snake';
 export const BACKDROP_STYLES: { value: BackdropStyle; label: string; hint: string }[] = [
   { value: 'off', label: 'Off', hint: 'no backdrop' },
   { value: 'waves', label: 'Waves', hint: 'smooth waves flowing across the view: the bass a slow swell, the highs quick ripples' },
   { value: 'phase', label: 'Phase', hint: 'the live Lissajous figure across the whole view' },
   { value: 'eq', label: 'EQ', hint: 'an LED spectrum analyser: lows on the left, highs on the right, peaks that hang and fall' },
-  { value: 'sonogram', label: 'Sonogram', hint: 'the sound painted under the notes as the playhead passes: bass low, hats high' },
+  { value: 'sonogram', label: 'Sono', hint: 'the sound painted under the notes as the playhead passes: bass low, hats high' },
   { value: 'life', label: 'Life', hint: 'Conway’s Game of Life on the dots, seeded by every note as it plays' },
+  { value: 'julia', label: 'Julia', hint: 'a Julia-set fractal: each chord glides it into a new shape, the bass makes it bloom' },
+  { value: 'snake', label: 'Snake', hint: 'a snake per channel crawling the dots in time; every note turns it, up left, down right' },
 ];
 
 export interface BackdropFrame {
@@ -26,7 +30,10 @@ export interface BackdropFrame {
   sampleRate: number;
   /** the channels you hear: their colours paint the figure */
   tracks: Track[];
-  /** the song's tempo, and whether it is playing: Waves flow in beats */
+  /** the chord now (a scale degree) and how many degrees the scale has: Julia's shape follows it */
+  chord: number;
+  scaleLen: number;
+  /** the song's tempo, and whether it is playing: Waves and Snake move in beats */
   bpm: number;
   playing: boolean;
   /** seconds, for motion */
@@ -73,6 +80,17 @@ export class BackdropMemory {
   lifeH = 0;
   lifeClock = 0;
   sounding = new Set<string>();
+  /** Julia: where c points (an angle) and how far out, eased towards the chord and the bass; the canvas it is drawn on */
+  juliaAngle: number | null = null;
+  juliaReach = 0.7885;
+  julia: HTMLCanvasElement | null = null;
+  /** Snake: one per channel, and the fading trail grid they share */
+  snakes = new Map<string, { x: number; y: number; dir: number; colour: string; lastY: number | null; zig: number }>();
+  trail: Float32Array | null = null;
+  trailColour: Uint8Array | null = null;
+  trailW = 0;
+  trailH = 0;
+  crawl = 0;
   push(w: Float32Array) {
     this.waves.unshift(w);
     if (this.waves.length > TRAILS) this.waves.length = TRAILS;
@@ -490,6 +508,185 @@ function life(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: 
   g.restore();
 }
 
+// ---------- julia: a fractal whose shape follows the harmony ----------
+
+/** a colour as [r, g, b], whatever form it was written in */
+const rgbCache = new Map<string, [number, number, number]>();
+function rgbOf(c: string): [number, number, number] {
+  let v = rgbCache.get(c);
+  if (v) return v;
+  const m = /^#([0-9a-f]{6})$/i.exec(c.trim());
+  if (m) v = [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4), 16)];
+  else {
+    // anything else: let a canvas read it
+    const x = document.createElement('canvas').getContext('2d')!;
+    x.fillStyle = c;
+    x.fillRect(0, 0, 1, 1);
+    const d = x.getImageData(0, 0, 1, 1).data;
+    v = [d[0], d[1], d[2]];
+  }
+  rgbCache.set(c, v);
+  return v;
+}
+
+/** how many times a point may be squared before it counts as staying */
+const JULIA_ITER = 40;
+
+/**
+ * z → z² + c over the view, one dot per pixel. c = r·e^(iθ): θ goes round with the chord (a degree
+ * per 1/L of a turn), so every chord has its own shape and a change glides between them; r ≈ 0.79,
+ * the edge where the shapes are most intricate, pushed out a little by the bass so kicks make it bloom.
+ */
+function julia(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
+  const c = f.cell;
+  const cw = Math.ceil(W / c), ch = Math.ceil(H / c);
+  if (!mem.julia || mem.julia.width !== cw || mem.julia.height !== ch) {
+    mem.julia = document.createElement('canvas');
+    mem.julia.width = cw;
+    mem.julia.height = ch;
+  }
+  const lv = bandLevels(f, 24);
+  easeBands(mem, lv, dt, f.now, 1.2);
+  let bass = 0;
+  for (let i = 0; i < 4; i++) bass += mem.bands[i] / 4;
+  // the chord's angle, reached by gliding the short way round
+  const L = Math.max(1, f.scaleLen);
+  const target = (TAU * (((f.chord % L) + L) % L)) / L + 0.35;
+  if (mem.juliaAngle === null) mem.juliaAngle = target;
+  let d = target - mem.juliaAngle;
+  d -= TAU * Math.round(d / TAU);
+  mem.juliaAngle += d * Math.min(1, dt * 1.6);
+  // a slow drift so it lives even on one chord, and the bass reaching out
+  const theta = mem.juliaAngle + 0.06 * Math.sin(f.now * 0.4);
+  const reachTo = 0.7885 + 0.035 * bass;
+  mem.juliaReach += (reachTo - mem.juliaReach) * Math.min(1, dt * 8);
+  const cr = mem.juliaReach * Math.cos(theta), ci = mem.juliaReach * Math.sin(theta);
+
+  // the rings of the fractal run through the channels' colours, three escape counts a ring, and the colours step round slowly
+  const cs = colours(f, P).map(rgbOf);
+  const shift = Math.floor(f.now * 0.5);
+  const x = mem.julia.getContext('2d')!;
+  const img = x.createImageData(cw, ch);
+  const px = img.data;
+  // stretched to fill the view: the set spans about −1.7 … 1.7 across and −1 … 1 down
+  const sx = 3.4 / cw, sy = 2.1 / ch;
+  for (let j = 0; j < ch; j++) {
+    const y0 = -1.05 + j * sy;
+    for (let i = 0; i < cw; i++) {
+      let zr = -1.7 + i * sx, zi = y0, n = 0;
+      while (n < JULIA_ITER) {
+        const zr2 = zr * zr, zi2 = zi * zi;
+        if (zr2 + zi2 > 4) break;
+        zi = 2 * zr * zi + ci;
+        zr = zr2 - zi2 + cr;
+        n++;
+      }
+      const o = (j * cw + i) * 4;
+      // inside the set, and far outside it, stay dark: the shape is drawn by the rings round its edge
+      if (n === JULIA_ITER) continue;
+      // the far rings fade out, so only the structure near the set's edge shows
+      const a = (n / JULIA_ITER - 0.12) / 0.45;
+      if (a <= 0) continue;
+      const [r, gg, b] = cs[(Math.floor(n / 3) + shift) % cs.length];
+      (px[o] = r), (px[o + 1] = gg), (px[o + 2] = b), (px[o + 3] = Math.min(255, 255 * a));
+    }
+  }
+  x.putImageData(img, 0, 0);
+  g.save();
+  g.imageSmoothingEnabled = false;
+  g.drawImage(mem.julia, 0, 0, cw, ch, 0, 0, cw * c, ch * c);
+  g.restore();
+}
+
+// ---------- snake: a snake per channel, turned by its notes ----------
+
+/** right, down, left, up */
+const DIRS: [number, number][] = [
+  [1, 0],
+  [0, 1],
+  [-1, 0],
+  [0, -1],
+];
+/** dots a snake crawls per beat, and how long its trail glows, in seconds */
+const SNAKE_PER_BEAT = 8;
+const SNAKE_TRAIL = 5;
+
+function snake(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
+  const c = f.cell;
+  const cw = Math.ceil(W / c), ch = Math.ceil(H / c);
+  const cs = colours(f, P);
+  if (!mem.trail || mem.trailW !== cw || mem.trailH !== ch) {
+    mem.trail = new Float32Array(cw * ch);
+    mem.trailColour = new Uint8Array(cw * ch);
+    mem.trailW = cw;
+    mem.trailH = ch;
+    mem.snakes.clear();
+  }
+  const trail = mem.trail, trailColour = mem.trailColour!;
+  // one snake per channel you hear (or one, in the ink, when there are none), spread across the view
+  const ids = f.tracks.length ? f.tracks.map((t) => t.id) : ['ink'];
+  ids.forEach((id, k) => {
+    if (!mem.snakes.has(id)) mem.snakes.set(id, { x: Math.floor(((k + 0.5) / ids.length) * cw), y: Math.floor(ch * (0.3 + 0.4 * ((k * 0.618) % 1))), dir: k % 4, colour: '', lastY: null, zig: 0 });
+    mem.snakes.get(id)!.colour = f.tracks[k]?.color ?? cs[0];
+  });
+  for (const id of [...mem.snakes.keys()]) if (!ids.includes(id)) mem.snakes.delete(id);
+
+  // every note that starts turns its channel's snake: higher than the last note left, lower right; a drum zig-zags
+  for (const sp of f.sparks) {
+    if (mem.sounding.has(sp.key)) continue;
+    const s = mem.snakes.get(sp.key.split(':')[0]);
+    if (!s) continue;
+    const wave = f.tracks.find((t) => t.id === sp.key.split(':')[0])?.waveform;
+    if (wave && isDrum(wave)) s.dir = (s.dir + ((s.zig++ & 1) ? 1 : 3)) % 4;
+    else if (s.lastY !== null && Math.abs(sp.y - s.lastY) > 1) s.dir = (s.dir + (sp.y < s.lastY ? 3 : 1)) % 4;
+    s.lastY = sp.y;
+  }
+  mem.sounding = new Set(f.sparks.map((sp) => sp.key));
+
+  // crawl in time: so many dots a beat, slower while stopped
+  mem.crawl += dt * (f.bpm / 60) * SNAKE_PER_BEAT * (f.playing ? 1 : 0.35);
+  let moves = Math.floor(mem.crawl);
+  mem.crawl -= moves;
+  moves = Math.min(moves, 8);
+  const colourIndex = new Map<string, number>();
+  for (let m = 0; m < moves; m++) {
+    for (const s of mem.snakes.values()) {
+      s.x = (s.x + DIRS[s.dir][0] + cw) % cw;
+      s.y = (s.y + DIRS[s.dir][1] + ch) % ch;
+      const i = s.y * cw + s.x;
+      trail[i] = 1;
+      let ci = colourIndex.get(s.colour);
+      if (ci === undefined) colourIndex.set(s.colour, (ci = Math.max(0, cs.indexOf(s.colour))));
+      trailColour[i] = ci;
+    }
+  }
+
+  // draw the trails, fading; three steps of brightness, one path per colour and step
+  const paths = cs.map(() => [new Path2D(), new Path2D(), new Path2D()]);
+  const fade = dt / SNAKE_TRAIL;
+  for (let i = 0; i < trail.length; i++) {
+    if (trail[i] <= 0) continue;
+    trail[i] = Math.max(0, trail[i] - fade);
+    const level = trail[i] > 0.66 ? 2 : trail[i] > 0.33 ? 1 : 0;
+    paths[trailColour[i] % cs.length][level].rect((i % cw) * c, Math.floor(i / cw) * c, c, c);
+  }
+  g.save();
+  cs.forEach((col, k) => {
+    g.fillStyle = col;
+    [0.15, 0.35, 0.8].forEach((a, level) => {
+      g.globalAlpha = a;
+      g.fill(paths[k][level]);
+    });
+  });
+  // the heads, bright
+  g.globalAlpha = 1;
+  for (const s of mem.snakes.values()) {
+    g.fillStyle = s.colour;
+    g.fillRect(s.x * c, s.y * c, c, c);
+  }
+  g.restore();
+}
+
 /** One backdrop frame filling W × H. */
 export function drawBackdrop(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, style: Exclude<BackdropStyle, 'off'>, mem: BackdropMemory) {
   takeWave(f, mem);
@@ -499,5 +696,7 @@ export function drawBackdrop(g: CanvasRenderingContext2D, W: number, H: number, 
   else if (style === 'phase') phase(g, cx, cy, W * 0.46, H * 0.46, P, f, mem);
   else if (style === 'eq') eq(g, W, H, P, f, mem, dt);
   else if (style === 'sonogram') sonogram(g, W, H, P, f, mem, dt);
-  else life(g, W, H, P, f, mem, dt);
+  else if (style === 'life') life(g, W, H, P, f, mem, dt);
+  else if (style === 'julia') julia(g, W, H, P, f, mem, dt);
+  else snake(g, W, H, P, f, mem, dt);
 }
