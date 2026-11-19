@@ -1,7 +1,7 @@
 /**
  * The backdrop behind the Score and Function views: the live sound filling the whole view,
  * drawn faint under the notes and in the channels' colours (the caller turns it into dots).
- *   halo      — the spectrum round a ring that breathes with the bass; each kick sends a shockwave out
+ *   waves     — smooth waves flowing across the view, one per stretch of the spectrum, swelling with it
  *   phase     — the waveform against itself a moment later: a Lissajous figure, scaled to the edges
  *   eq        — an LED spectrum analyser: lows on the left, highs on the right, peaks that hang and fall
  *   sonogram  — the spectrum painted under the playhead as it passes: bass low, hats high, pass after pass
@@ -9,10 +9,10 @@
  */
 import type { Track } from '../engine/project';
 
-export type BackdropStyle = 'off' | 'halo' | 'phase' | 'eq' | 'sonogram' | 'life';
+export type BackdropStyle = 'off' | 'waves' | 'phase' | 'eq' | 'sonogram' | 'life';
 export const BACKDROP_STYLES: { value: BackdropStyle; label: string; hint: string }[] = [
   { value: 'off', label: 'Off', hint: 'no backdrop' },
-  { value: 'halo', label: 'Halo', hint: 'the spectrum round a ring that breathes with the bass; every kick sends a shockwave to the edges' },
+  { value: 'waves', label: 'Waves', hint: 'smooth waves flowing across the view: the bass a slow swell, the highs quick ripples' },
   { value: 'phase', label: 'Phase', hint: 'the live Lissajous figure across the whole view' },
   { value: 'eq', label: 'EQ', hint: 'an LED spectrum analyser: lows on the left, highs on the right, peaks that hang and fall' },
   { value: 'sonogram', label: 'Sonogram', hint: 'the sound painted under the notes as the playhead passes: bass low, hats high' },
@@ -51,15 +51,12 @@ export class BackdropMemory {
   /** the recent loudest sample: quiet music is scaled up so the figures keep their size */
   level = 0.05;
   last = 0;
-  /** EQ and Halo: the bands, eased, and the peaks hanging over them */
+  /** EQ and Waves: the bands, eased, and the peaks hanging over them */
   bands = new Float32Array(0);
   peaks = new Float32Array(0);
   held = new Float32Array(0);
-  /** Halo: the bass, eased; the last raw bass, for onsets; the shockwaves going out */
-  bass = 0;
-  lastBass = 0;
-  lastShock = 0;
-  shocks: { born: number; strength: number; colour: string }[] = [];
+  /** Waves: how far each wave has flowed */
+  flow = new Float32Array(0);
   /** Sonogram: what is painted so far, one pixel per dot, and the column the playhead was in */
   sono: HTMLCanvasElement | null = null;
   sonoCol: number | null = null;
@@ -180,102 +177,59 @@ function easeBands(mem: BackdropMemory, lv: Float32Array, dt: number, now: numbe
   }
 }
 
-// ---------- halo: the spectrum round a ring that breathes, and shockwaves on the kicks ----------
+// ---------- waves: smooth waves flowing across the view ----------
 
-/** the wave bent round an ellipse rx × ry, pushed out by the samples (amp is a share of each radius) */
-function waveRing(g: CanvasRenderingContext2D, w: Float32Array, cx: number, cy: number, rx: number, ry: number, amp: number, N: number) {
-  g.beginPath();
-  for (let i = 0; i <= N; i++) {
-    const u = i / N;
-    // mirrored: the wave runs out and back, so the two ends meet without a seam
-    const k = u < 0.5 ? u * 2 : (1 - u) * 2;
-    const s = w[Math.min(w.length - 1, Math.floor(k * (N - 1)))] ?? 0;
-    const a = -Math.PI / 2 + TAU * u;
-    const r = 1 + s * amp;
-    const x = cx + Math.cos(a) * rx * r, y = cy + Math.sin(a) * ry * r;
-    i ? g.lineTo(x, y) : g.moveTo(x, y);
-  }
-}
+/** the waves, lowest first: how many cycles span the view, how fast they flow, and the bands that drive them */
+const WAVES = [
+  { cycles: 0.8, speed: 0.35, from: 0, to: 0.12 },
+  { cycles: 1.3, speed: 0.55, from: 0.12, to: 0.3 },
+  { cycles: 1.9, speed: 0.8, from: 0.3, to: 0.5 },
+  { cycles: 2.7, speed: 1.1, from: 0.5, to: 0.72 },
+  { cycles: 3.6, speed: 1.5, from: 0.72, to: 1 },
+];
 
-function halo(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
-  const n = 48;
-  const lv = bandLevels(f, n);
-  easeBands(mem, lv, dt, f.now, 2.4);
+function waves(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
+  const n = 40;
+  easeBands(mem, bandLevels(f, n), dt, f.now, 0.9);
+  if (mem.flow.length !== WAVES.length) mem.flow = new Float32Array(WAVES.length);
   const cs = colours(f, P);
-
-  // the bass: the lowest few bands, eased — the ring breathes with it, and a jump in it is a kick
-  let bass = 0;
-  for (let i = 0; i < 6; i++) bass += lv[i] / 6;
-  mem.bass = bass > mem.bass ? bass : Math.max(bass, mem.bass - 1.8 * dt);
-  if (bass - mem.lastBass > 0.1 && bass > 0.25 && f.now - mem.lastShock > 0.14) {
-    mem.shocks.push({ born: f.now, strength: Math.min(1, bass * 1.3), colour: cs[mem.shocks.length % cs.length] });
-    mem.lastShock = f.now;
-  }
-  mem.lastBass = bass * 0.6 + mem.lastBass * 0.4;
-  const breathe = 1 + 0.18 * mem.bass;
-  const R = 0.36 * breathe;
-
+  const cy = H / 2;
+  const steps = Math.max(32, Math.ceil(W / 6));
   g.save();
   g.lineJoin = 'round';
-  if (P.glow > 0) (g.shadowBlur = 10 * P.glow), (g.shadowColor = cs[0]);
-  // shockwaves: rings that run from the halo out past the corners and fade
-  const life = 1.5;
-  mem.shocks = mem.shocks.filter((s) => f.now - s.born < life);
-  for (const s of mem.shocks) {
-    const t = (f.now - s.born) / life;
-    const k = R + t * 1.1;
-    g.globalAlpha = (1 - t) * (1 - t) * s.strength;
-    g.strokeStyle = s.colour;
-    g.lineWidth = 1 + 3 * (1 - t);
-    g.beginPath();
-    g.ellipse(cx, cy, rx * k, ry * k, 0, 0, TAU);
-    g.stroke();
-  }
-
-  // the spectrum round the ring: lows at the top, highs meeting at the bottom, mirrored left and right; it turns slowly
-  const turn = f.now * 0.12;
-  const at = (j: number, out: number) => {
-    const a = -Math.PI / 2 + turn + (TAU * j) / (2 * n);
-    return [cx + Math.cos(a) * rx * R * out, cy + Math.sin(a) * ry * R * out] as const;
-  };
-  const band = (j: number) => mem.bands[j < n ? j : 2 * n - 1 - j];
-  const paint = ringPaint(g, cx, cy, cs, f.now * 0.35);
-  g.strokeStyle = paint;
-  // spikes
-  g.globalAlpha = 0.7;
-  g.lineWidth = 1.4;
-  g.beginPath();
-  for (let j = 0; j < 2 * n; j++) {
-    const [x0, y0] = at(j, 1);
-    const [x1, y1] = at(j, 1 + band(j) * 0.9);
-    g.moveTo(x0, y0);
-    g.lineTo(x1, y1);
-  }
-  g.stroke();
-  // the outline the spikes make, and the peaks hanging beyond it
-  g.globalAlpha = 0.95;
-  g.lineWidth = 1.8;
-  g.beginPath();
-  for (let j = 0; j <= 2 * n; j++) {
-    const [x, y] = at(j % (2 * n), 1 + band(j % (2 * n)) * 0.9);
-    j ? g.lineTo(x, y) : g.moveTo(x, y);
-  }
-  g.stroke();
-  g.globalAlpha = 0.8;
-  g.fillStyle = paint;
-  for (let j = 0; j < 2 * n; j++) {
-    const p = mem.peaks[j < n ? j : 2 * n - 1 - j];
-    if (p < 0.05) continue;
-    const [x, y] = at(j, 1 + p * 0.9 + 0.06);
-    g.fillRect(x - 1.5, y - 1.5, 3, 3);
-  }
-  // inside: the live waveform, small
-  if (mem.waves[0]) {
-    g.globalAlpha = 0.6;
-    g.lineWidth = 1.2;
-    waveRing(g, mem.waves[0], cx, cy, rx * R * 0.62, ry * R * 0.62, 0.35, 256);
-    g.stroke();
-  }
+  g.lineCap = 'round';
+  WAVES.forEach((wv, k) => {
+    // its stretch of the spectrum, averaged: the louder it is, the taller the wave and the faster it flows
+    const b0 = Math.floor(wv.from * n), b1 = Math.max(b0 + 1, Math.floor(wv.to * n));
+    let level = 0;
+    for (let i = b0; i < b1; i++) level += mem.bands[i] / (b1 - b0);
+    mem.flow[k] += dt * wv.speed * (1 + level * 1.5);
+    // even in silence each wave keeps a gentle undulation
+    const amp = H * 0.34 * (0.24 + 0.76 * level) * (1 - k * 0.08);
+    const colour = cs[k % cs.length];
+    // each wave rides its own line, spread about the middle, so quiet waves don't pile into one stripe
+    const base = cy + (k - (WAVES.length - 1) / 2) * H * 0.09;
+    const y = (x: number, lag: number) => {
+      const u = x / W, t = mem.flow[k] - lag;
+      // a gentle swell along the wave, calmer towards the edges
+      const swell = 1 + 0.3 * Math.sin(TAU * (u * 0.5 + t * 0.13 + k * 0.7));
+      const edge = 0.35 + 0.65 * Math.sin(Math.PI * u);
+      return base + amp * edge * swell * Math.sin(TAU * (u * wv.cycles - t) + k * 1.9);
+    };
+    if (P.glow > 0) (g.shadowBlur = 6 * P.glow), (g.shadowColor = colour);
+    g.strokeStyle = colour;
+    // a ribbon: the wave, and fading echoes of where it just was
+    for (const [lag, alpha, width] of [[0.09, 0.22, 1.2], [0.045, 0.4, 1.5], [0, 0.95, 2]] as const) {
+      g.globalAlpha = alpha;
+      g.lineWidth = width;
+      g.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const x = (i / steps) * W;
+        i ? g.lineTo(x, y(x, lag)) : g.moveTo(x, y(x, lag));
+      }
+      g.stroke();
+    }
+  });
   g.restore();
 }
 
@@ -513,7 +467,7 @@ export function drawBackdrop(g: CanvasRenderingContext2D, W: number, H: number, 
   takeWave(f, mem);
   const dt = tick(f, mem);
   const cx = W / 2, cy = H / 2;
-  if (style === 'halo') halo(g, cx, cy, W / 2, H / 2, P, f, mem, dt);
+  if (style === 'waves') waves(g, W, H, P, f, mem, dt);
   else if (style === 'phase') phase(g, cx, cy, W * 0.46, H * 0.46, P, f, mem);
   else if (style === 'eq') eq(g, W, H, P, f, mem, dt);
   else if (style === 'sonogram') sonogram(g, W, H, P, f, mem, dt);
