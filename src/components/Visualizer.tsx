@@ -6,7 +6,7 @@ import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Seg, getRender } from './ui';
 import { RangeControl } from './RangeControl';
 import { Pixelator } from './pixelate';
-import { BACKDROP_STYLES, BackdropMemory, drawBackdrop, type BackdropStyle } from './backdrop';
+import { BACKDROP_STYLES, BackdropMemory, drawBackdrop, type BackdropFrame, type BackdropStyle } from './backdrop';
 
 type Mode = 'score' | 'function';
 
@@ -169,10 +169,13 @@ export function Visualizer() {
     }
   };
   const pixels = useRef<Pixelator | null>(null);
-  /** the next backdrop round the list: Off → Halo → Phase → Off */
-  const cycleBackdrop = () =>
+  /** what the last frame drew, for the backdrop: where the music sits, the playhead's x, and what sounds where */
+  const live = useRef<Pick<BackdropFrame, 'area' | 'playX' | 'sparks'>>({ area: { x0: 0, x1: 1, y0: 0, y1: 1 }, playX: null, sparks: [] });
+  /** the next backdrop round the list (or the one before): Off → Halo → Phase → EQ → Sonogram → Life → Off */
+  const cycleBackdrop = (by = 1) =>
     setBackdropState((b) => {
-      const next = BACKDROP_STYLES[(BACKDROP_STYLES.findIndex((x) => x.value === b) + 1) % BACKDROP_STYLES.length].value;
+      const n = BACKDROP_STYLES.length;
+      const next = BACKDROP_STYLES[(BACKDROP_STYLES.findIndex((x) => x.value === b) + by + n) % n].value;
       try {
         localStorage.setItem(BACKDROP_KEY, next);
       } catch {
@@ -360,6 +363,7 @@ export function Visualizer() {
   useEffect(() => {
     let raf = 0;
     const wave = new Float32Array(2048);
+    const spectrum = new Uint8Array(1024);
     const draw = () => {
       raf = requestAnimationFrame(draw);
       const pos = engine.position();
@@ -383,8 +387,16 @@ export function Visualizer() {
       // the backdrop: a dot-matrix figure of the live sound, laid under everything, faint
       const bd = backdropRef.current;
       if (bd !== 'off') {
-        const live = engine.waveform(wave);
-        const frame = { wave: live ? wave : null, tracks: [...score.melodic, ...score.drums].map((it) => it.track), now: performance.now() / 1000 };
+        const heard = engine.waveform(wave) && engine.spectrum(spectrum);
+        const frame: BackdropFrame = {
+          ...live.current,
+          wave: heard ? wave : null,
+          spectrum: heard ? spectrum : null,
+          sampleRate: engine.sampleRate,
+          tracks: [...score.melodic, ...score.drums].map((it) => it.track),
+          now: performance.now() / 1000,
+          cell: PIXEL,
+        };
         // glow is measured in the small canvas's pixels: scale it down with them
         const dots = (pixels.current ??= new Pixelator()).draw(W, H, dpr, PIXEL, (bg) => drawBackdrop(bg, W, H, { ...P, glow: P.glow / PIXEL }, frame, bd, backdropMem.current));
         g.save();
@@ -500,9 +512,11 @@ export function Visualizer() {
         g.rect(padL - 2, 0, iw + 4, H);
         g.clip();
 
+        const sparks: BackdropFrame['sparks'] = [];
         const stone = (track: Track, note: Note, x: number, y: number, w: number, h: number, isSel: boolean) => {
           placed.push({ track, note, x, y, w, h });
           const sounding = playBeat !== null && playBeat >= note.beat && playBeat < note.beat + Math.max(note.duration, 0.05);
+          if (sounding) sparks.push({ key: `${track.id}:${note.beat}:${note.midi}`, x: x + h / 2, y: y + h / 2, color: track.color });
           // on a lit screen notes read like a display: brighter, even when not selected
           g.globalAlpha = P.glow > 0 ? (isSel ? 0.55 + 0.45 * note.velocity : 0.35 + 0.35 * note.velocity) : isSel ? 0.35 + 0.65 * note.velocity : 0.2 + 0.3 * note.velocity;
           g.fillStyle = track.color;
@@ -559,6 +573,7 @@ export function Visualizer() {
                 continue;
               }
               run.push([bx(b), my(m) + rowH / 2]);
+              if (playBeat !== null && b <= playBeat && playBeat - b < 0.05) sparks.push({ key: `${track.id}:${Math.floor(b * 4)}`, x: bx(b), y: my(m) + rowH / 2, color: track.color });
             }
             flush();
             continue;
@@ -599,6 +614,7 @@ export function Visualizer() {
         g.restore();
         g.globalAlpha = 1;
         placedRef.current = placed;
+        live.current = { area: { x0: padL, x1: W - padR, y0: padT, y1: drumTop }, playX: playBeat !== null && visible(playBeat, playBeat) ? bx(playBeat) : null, sparks };
         const hov = hoverRef.current;
         if (hov) {
           g.strokeStyle = P.ink;
@@ -768,9 +784,13 @@ export function Visualizer() {
         g.restore();
         // the playhead (or the scrub cursor) rides the curve
         const beat = scrubRef.current ?? (pos === null ? null : pos % fnFull.total);
+        // for the backdrop: the plot, the playhead, and the curve's point while it sounds (a new spark each step)
+        live.current = { area: { x0: padL, x1: W - padR, y0: padT, y1: padT + ch }, playX: null, sparks: [] };
         if (beat !== null && beat >= vw.start && beat <= vw.start + vw.span) {
           const i = Math.min(N - 1, Math.floor(beat / dt));
           const x = sx(beat), y = sy(fnFull.raw[i]);
+          live.current.playX = x;
+          if (fnFull.vel[i] >= 0.01) live.current.sparks.push({ key: `${selected.id}:${Math.floor(beat / (selected.stepBeats * stretchOf(selected)))}`, x, y, color: selected.color });
           g.strokeStyle = P.accent;
           g.globalAlpha = 0.35;
           g.lineWidth = 1;
@@ -940,13 +960,13 @@ export function Visualizer() {
             { value: 'function', label: 'Function' },
           ]}
         />
-        {/* the backdrop: Off → Halo → Phase, and how strongly it shows */}
+        {/* the backdrop, and how strongly it shows */}
         <span className="seg backdrop-key">
           <button
             className={backdrop !== 'off' ? 'on' : ''}
             aria-pressed={backdrop !== 'off'}
-            onClick={cycleBackdrop}
-            title={`Backdrop: ${BACKDROP_STYLES.find((b) => b.value === backdrop)!.hint} — click for the next (Off, Halo, Phase)`}
+            onClick={(e) => cycleBackdrop(e.shiftKey ? -1 : 1)}
+            title={`Backdrop: ${BACKDROP_STYLES.find((b) => b.value === backdrop)!.hint} — click for the next (Off, Halo, Phase, EQ, Sonogram, Life), ⇧-click for the one before`}
             aria-label="Backdrop"
           >
             <Icon name="wave" size={13} />
