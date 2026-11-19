@@ -108,7 +108,7 @@ The 〰 key beside *Score* and *Function* puts the live sound behind either view
 - **EQ** — an LED spectrum analyser: lows on the left, highs on the right, peaks that hang and fall.
 - **Sono** — a sonogram: the sound painted under the notes as the playhead passes: bass low, hats high, pass after pass.
 - **Life** — Conway's Game of Life on the dots, seeded by every note as it starts, in its channel's colour.
-- **Julia** — a Julia-set fractal: every chord has its own shape and a chord change glides into the next; the bass makes it bloom.
+- **Julia** — a Julia-set fractal filling the view, always one connected shape: it travels slowly in time with the tempo, every chord sends it somewhere new, and the bass makes it bloom.
 - **Snake** — a snake per channel crawling the dots in time with the tempo; every note turns it (up a step: left, down: right), drums zig-zag.
 
 The slider beside it sets how strongly it shows; at most it stays faint enough for the notes to read first.

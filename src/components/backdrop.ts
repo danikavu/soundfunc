@@ -80,10 +80,12 @@ export class BackdropMemory {
   lifeH = 0;
   lifeClock = 0;
   sounding = new Set<string>();
-  /** Julia: where c points (an angle) and how far out, eased towards the chord and the bass; the canvas it is drawn on */
+  /** Julia: where c is on its path (an angle), the slow travel along it, the bass's push; the canvas and its pixels */
   juliaAngle: number | null = null;
-  juliaReach = 0.7885;
+  juliaTravel = 0;
+  juliaPush = 0;
   julia: HTMLCanvasElement | null = null;
+  juliaImage: ImageData | null = null;
   /** Snake: one per channel, and the fading trail grid they share */
   snakes = new Map<string, { x: number; y: number; dir: number; colour: string; lastY: number | null; zig: number }>();
   trail: Float32Array | null = null;
@@ -530,12 +532,14 @@ function rgbOf(c: string): [number, number, number] {
 }
 
 /** how many times a point may be squared before it counts as staying */
-const JULIA_ITER = 40;
+const JULIA_ITER = 32;
 
 /**
- * z → z² + c over the view, one dot per pixel. c = r·e^(iθ): θ goes round with the chord (a degree
- * per 1/L of a turn), so every chord has its own shape and a change glides between them; r ≈ 0.79,
- * the edge where the shapes are most intricate, pushed out a little by the bass so kicks make it bloom.
+ * z → z² + c over the whole view, one dot per pixel. c runs along the edge of the Mandelbrot set's
+ * main body (the cardioid c = e^(iθ)/2 − e^(2iθ)/4, just inside it), where every Julia set is one
+ * connected, intricate shape: never dust. The chord sets where on the edge it heads (a degree per
+ * 1/L of the way round) and a change glides there; it also travels on slowly in time with the tempo,
+ * a full turn every 16 bars; the bass pushes it out a touch, so kicks make it bloom.
  */
 function julia(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f: BackdropFrame, mem: BackdropMemory, dt: number) {
   const c = f.cell;
@@ -544,31 +548,30 @@ function julia(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f:
     mem.julia = document.createElement('canvas');
     mem.julia.width = cw;
     mem.julia.height = ch;
+    mem.juliaImage = new ImageData(cw, ch);
   }
   const lv = bandLevels(f, 24);
   easeBands(mem, lv, dt, f.now, 1.2);
   let bass = 0;
   for (let i = 0; i < 4; i++) bass += mem.bands[i] / 4;
-  // the chord's angle, reached by gliding the short way round
+  mem.juliaPush += (bass - mem.juliaPush) * Math.min(1, dt * 8);
+  // the chord's place on the edge, reached by gliding the short way round; the travel on top
   const L = Math.max(1, f.scaleLen);
-  const target = (TAU * (((f.chord % L) + L) % L)) / L + 0.35;
+  const target = (TAU * (((f.chord % L) + L) % L)) / L;
   if (mem.juliaAngle === null) mem.juliaAngle = target;
   let d = target - mem.juliaAngle;
   d -= TAU * Math.round(d / TAU);
-  mem.juliaAngle += d * Math.min(1, dt * 1.6);
-  // a slow drift so it lives even on one chord, and the bass reaching out
-  const theta = mem.juliaAngle + 0.06 * Math.sin(f.now * 0.4);
-  const reachTo = 0.7885 + 0.035 * bass;
-  mem.juliaReach += (reachTo - mem.juliaReach) * Math.min(1, dt * 8);
-  const cr = mem.juliaReach * Math.cos(theta), ci = mem.juliaReach * Math.sin(theta);
+  mem.juliaAngle += d * Math.min(1, dt * 1.2);
+  mem.juliaTravel += (dt * (f.bpm / 60) * TAU) / 64 * (f.playing ? 1 : 0.35);
+  const th = mem.juliaAngle + mem.juliaTravel;
+  const k = 0.985 + 0.03 * mem.juliaPush;
+  const cr = k * (Math.cos(th) / 2 - Math.cos(2 * th) / 4), ci = k * (Math.sin(th) / 2 - Math.sin(2 * th) / 4);
 
-  // the rings of the fractal run through the channels' colours, three escape counts a ring, and the colours step round slowly
+  // the rings run through the channels' colours, two escape counts a ring, and step round slowly
   const cs = colours(f, P).map(rgbOf);
   const shift = Math.floor(f.now * 0.5);
-  const x = mem.julia.getContext('2d')!;
-  const img = x.createImageData(cw, ch);
-  const px = img.data;
-  // stretched to fill the view: the set spans about −1.7 … 1.7 across and −1 … 1 down
+  const px = mem.juliaImage!.data;
+  // stretched to fill the view: −1.7 … 1.7 across, −1.05 … 1.05 down
   const sx = 3.4 / cw, sy = 2.1 / ch;
   for (let j = 0; j < ch; j++) {
     const y0 = -1.05 + j * sy;
@@ -582,16 +585,20 @@ function julia(g: CanvasRenderingContext2D, W: number, H: number, P: Palette, f:
         n++;
       }
       const o = (j * cw + i) * 4;
-      // inside the set, and far outside it, stay dark: the shape is drawn by the rings round its edge
-      if (n === JULIA_ITER) continue;
-      // the far rings fade out, so only the structure near the set's edge shows
-      const a = (n / JULIA_ITER - 0.12) / 0.45;
-      if (a <= 0) continue;
-      const [r, gg, b] = cs[(Math.floor(n / 3) + shift) % cs.length];
-      (px[o] = r), (px[o + 1] = gg), (px[o + 2] = b), (px[o + 3] = Math.min(255, 255 * a));
+      let colour: [number, number, number], a: number;
+      if (n === JULIA_ITER) {
+        // inside the set: a soft fill
+        (colour = cs[shift % cs.length]), (a = 45);
+      } else {
+        // outside: rings all the way to the edges of the view, dim far out, bright against the set
+        colour = cs[(Math.floor(n / 2) + shift) % cs.length];
+        a = 12 + 243 * Math.pow(n / JULIA_ITER, 1.1);
+      }
+      (px[o] = colour[0]), (px[o + 1] = colour[1]), (px[o + 2] = colour[2]), (px[o + 3] = a);
     }
   }
-  x.putImageData(img, 0, 0);
+  const x = mem.julia.getContext('2d')!;
+  x.putImageData(mem.juliaImage!, 0, 0);
   g.save();
   g.imageSmoothingEnabled = false;
   g.drawImage(mem.julia, 0, 0, cw, ch, 0, 0, cw * c, ch * c);
