@@ -3814,6 +3814,10 @@ aside.panel:last-of-type .info-pop {
   border-radius: 2px;
   flex: none;
 }
+.build-out {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
 .video-ch small {
   opacity: 0.55;
 }

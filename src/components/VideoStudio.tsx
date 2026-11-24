@@ -36,6 +36,10 @@ const FPS = 30;
 const TAIL = 0.9;
 /** the Length that has no end: the take runs until it is stopped */
 const FREE = 0;
+/** the Length of a build-up: a loop for each channel */
+const AUTO = -1;
+/** how the channels come in during a take: as they are switched by hand, or one more each loop */
+type Build = 'off' | 'order' | 'random';
 /** a take's last loop stops this much before the next one's first beat could sound (seconds) */
 const EARLY = 0.06;
 
@@ -64,6 +68,27 @@ async function onlyTheApp(track: MediaStreamTrack): Promise<boolean> {
   }
 }
 
+/** a channel's place in a shuffle: the same shuffle always gives it the same one */
+function shuffleRank(id: string, shuffle: number): number {
+  let h = 2166136261 ^ shuffle;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  h = Math.imul(h ^ (h >>> 15), 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 3266489917);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+const shuffled = (tracks: Track[], shuffle: number) => [...tracks].sort((a, b) => shuffleRank(a.id, shuffle) - shuffleRank(b.id, shuffle));
+
+/** a shuffle that puts the channels in another order than they are in now (where there is one) */
+function reshuffle(now: Track[], shuffle: number): number {
+  let next = shuffle;
+  for (let i = 0; i < 20; i++) {
+    next = Math.floor(Math.random() * 1e9);
+    if (shuffled(now, next).some((t, k) => t !== now[k])) break;
+  }
+  return next;
+}
+
 /** the first bar line of the song after the beat heard now (bars are counted from the start of each loop) */
 function nextBar(loopBeats: number): number {
   let at = engine.position() ?? 0;
@@ -73,6 +98,13 @@ function nextBar(loopBeats: number): number {
     at = Math.min(start + (bar + 1) * BEATS_PER_BAR, start + loopBeats);
   } while (engine.secondsTo(at) < 0.1);
   return at;
+}
+
+/** the first beat of the song's next loop */
+function nextLoop(loopBeats: number): number {
+  let n = Math.floor((engine.position() ?? 0) / loopBeats + 1e-9) + 1;
+  while (engine.secondsTo(n * loopBeats) < 0.2) n++;
+  return n * loopBeats;
 }
 
 /** where the song is: the bar, the beat within it, and the loop — of the take, once it records */
@@ -241,7 +273,10 @@ export function VideoStudio() {
   const [format, setFormat] = useState<Format>('story');
   const [view, setView] = useState<View>('score');
   const [showFns, setShowFns] = useState(true);
-  const [loops, setLoops] = useState(2);
+  const [length, setLength] = useState(2);
+  const [build, setBuild] = useState<Build>('off');
+  /** which shuffle the random order is */
+  const [shuffle, setShuffle] = useState(1);
   const [title, setTitle] = useState('');
   /** what is recorded: the composed frame, or the whole app filling the screen */
   const [source, setSource] = useState<'frame' | 'app'>('frame');
@@ -281,6 +316,16 @@ export function VideoStudio() {
   const L = useMemo(() => layoutOf(format, showFns), [format, showFns]);
   const tracks = useMemo(() => audibleTracks(project.tracks), [project.tracks]);
   const loopBeats = songBeats(tracks, project.song);
+  /** the channels a build-up brings in, in turn: those that are on (the ones switched off stay out) */
+  const buildOrder = useMemo(() => {
+    const on = tracks.filter((t) => !down.has(t.id));
+    return build === 'random' ? shuffled(on, shuffle) : on;
+  }, [tracks, down, build, shuffle]);
+  /** during a take: the order it was started with */
+  const [running, setRunning] = useState<Track[] | null>(null);
+  const order = running ?? buildOrder;
+  const building = build !== 'off' && order.length > 0;
+  const loops = length === AUTO ? Math.max(1, order.length) : length;
   const seconds = (loops * loopBeats * 60) / project.song.bpm;
   const mime = useMemo(pickMime, []);
   const onCanvas = useCallback((c: HTMLCanvasElement | null) => {
@@ -290,13 +335,16 @@ export function VideoStudio() {
 
   /** fade a channel out, or back in, over the chosen length — the sound and the picture together */
   const downRef = useRef(new Set<string>());
-  const toggleChannel = useCallback((id: string) => {
+  const markDown = (id: string, out: boolean) => {
     const d = new Set(downRef.current);
-    const out = !d.has(id);
     if (out) d.add(id);
     else d.delete(id);
     downRef.current = d;
     setDown(d);
+  };
+  const toggleChannel = useCallback((id: string) => {
+    const out = !downRef.current.has(id);
+    markDown(id, out);
     // off: at once; back on: on the first beat of the next loop — no fades either way
     const wait = engine.fadeChannel(id, out ? 0 : 1, CUT, !out);
     setCued((c) => {
@@ -587,10 +635,34 @@ export function VideoStudio() {
     setPhase('armed');
   };
 
+  /** a build-up's channels, while one runs */
+  const buildRef = useRef<Track[] | null>(null);
+  /** only its first channel is left up — at the start of the next loop, when the song is playing */
+  const beginBuild = (onLoop: boolean) => {
+    if (buildRef.current) return;
+    buildRef.current = order;
+    setRunning(order);
+    for (const t of order.slice(1)) {
+      markDown(t.id, true);
+      engine.fadeChannel(t.id, 0, CUT, onLoop);
+    }
+  };
+  /** every channel it was bringing in is up again */
+  const endBuild = () => {
+    for (const t of buildRef.current ?? []) {
+      markDown(t.id, false);
+      engine.fadeChannel(t.id, 1, CUT);
+    }
+    buildRef.current = null;
+    setRunning(null);
+    setCued(new Set());
+  };
+
   /** back to the studio without a take */
   const disarm = () => {
     cueing.current++;
     setCueAt(null);
+    if (recorder.current?.state !== 'recording') endBuild();
     const src = session.current;
     if (!src) return;
     session.current = null;
@@ -607,15 +679,27 @@ export function VideoStudio() {
     const src = session.current;
     if (!src || preparing.current) return;
     const turn = ++cueing.current;
-    if (cueAt !== null) return setCueAt(null);
+    if (cueAt !== null) {
+      endBuild();
+      return setCueAt(null);
+    }
     let at: number | null = null;
     if (useStore.getState().playing && engine.position() !== null) {
-      at = nextBar(loopBeats);
+      // a build-up begins with a loop: its channels come in on the one
+      at = building ? nextLoop(loopBeats) : nextBar(loopBeats);
       setCueAt(at);
+      let ready = !building;
       for (let wait = engine.secondsTo(at); wait > 0.02; wait = engine.secondsTo(at)) {
         await new Promise((r) => setTimeout(r, Math.min(50, (wait - 0.01) * 1000)));
         if (turn !== cueing.current) return;
-        if (engine.position() === null) return setCueAt(null);
+        if (engine.position() === null) {
+          endBuild();
+          return setCueAt(null);
+        }
+        if (!ready && engine.secondsTo(at) < 0.15) {
+          ready = true;
+          beginBuild(true);
+        }
       }
       setCueAt(null);
     }
@@ -638,6 +722,7 @@ export function VideoStudio() {
     // the file is named after the take, whatever is changed afterwards
     const name = `${fileSafe(title || project.name)}-${suffix}`;
     const app = src === session.current;
+    if (building) beginBuild(false);
     const stream = src.stream;
     for (const t of engine.audioStream().getAudioTracks()) stream.addTrack(t);
     const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: app ? 14_000_000 : 10_000_000, audioBitsPerSecond: 192_000 });
@@ -651,6 +736,7 @@ export function VideoStudio() {
       src.done();
       setHidden(false);
       if (cancelled.current) return;
+      endBuild();
       const blob = new Blob(chunks, { type: mime.split(';')[0] });
       setResult({ url: URL.createObjectURL(blob), name, ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm', bytes: blob.size });
       setPhase('done');
@@ -671,8 +757,16 @@ export function VideoStudio() {
     }
     const end = loops === FREE ? null : (at ?? 0) + loops * loopBeats;
     // the end is a beat of the song, not a moment: a tempo changed during the take still ends on it
+    let loop = -1;
     const tick = () => {
       if (rec.state !== 'recording') return;
+      // a build-up: as each loop begins, the next channel is cued for the one after
+      const now = Math.floor(((engine.position() ?? 0) - (at ?? 0)) / loopBeats + 1e-6);
+      if (buildRef.current && now > loop && engine.secondsTo((at ?? 0) + now * loopBeats) < 0) {
+        loop = now;
+        const next = buildRef.current[loop + 1];
+        if (next && downRef.current.has(next.id) && (loops === FREE || loop + 1 < loops)) toggleChannel(next.id);
+      }
       setElapsed((performance.now() - began) / 1000);
       const left = end === null ? Infinity : engine.secondsTo(end) - EARLY;
       // stopped by hand (Space) ends the take too
@@ -703,6 +797,7 @@ export function VideoStudio() {
     if (phase === 'recording') {
       cancelled.current = true;
       finish(true);
+      endBuild();
       setPhase('idle');
     }
     disarm();
@@ -755,6 +850,8 @@ export function VideoStudio() {
   const busy = phase === 'recording' || phase === 'armed';
   const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
   const recTime = `${fmtTime(elapsed)}${loops === FREE ? '' : ` / ${fmtTime(seconds)}`}`;
+  // how many channels each loop has: 1-2-3-3
+  const pattern = Array.from({ length: Math.max(0, loops) }, (_, i) => Math.min(i + 1, order.length)).join('-');
   const fits = seconds <= 60 ? 'fits Reels, TikTok and Shorts' : seconds <= 90 ? 'fits Reels and TikTok — over Shorts’ 60 s' : seconds <= 180 ? 'fits TikTok (and Shorts up to 3 min)' : 'longer than most short-video limits';
 
   return (
@@ -851,9 +948,42 @@ export function VideoStudio() {
               </div>
             </div>
             <div className="field">
+              <span>Smart channels — one more each loop</span>
+              <div className="row" style={{ gap: 'var(--sp-2)' }}>
+                <Seg<Build>
+                  value={build}
+                  onChange={(b) => {
+                    if (busy) return;
+                    setBuild(b);
+                    if (b === 'random') setShuffle(reshuffle(buildOrder, shuffle));
+                    // a loop for each channel, until another length is chosen
+                    if (b === 'off') setLength((n) => (n === AUTO ? 2 : n));
+                    else if (build === 'off') setLength(AUTO);
+                  }}
+                  options={[
+                    { value: 'off', label: 'Off' },
+                    { value: 'order', label: 'In order' },
+                    { value: 'random', label: build === 'random' ? 'Shuffle' : 'Random' },
+                  ]}
+                />
+              </div>
+              {building && (
+                <small className="muted">
+                  {order.map((t, i) => (
+                    <span key={t.id} className={loops === FREE || i < loops ? '' : 'build-out'}>
+                      {i ? ' → ' : ''}
+                      {t.name}
+                    </span>
+                  ))}
+                  {loops !== FREE && loops < order.length ? ` · ${loops} of ${order.length} come in` : ''}
+                  {down.size && !running ? (order.length < 2 ? ' · switch on the channels to bring in' : ' · those switched off stay out') : ''}
+                </small>
+              )}
+            </div>
+            <div className="field">
               <span>Length</span>
-              <Seg<number> value={loops} onChange={(n) => !busy && setLoops(n)} options={[...[1, 2, 4, 8].map((n) => ({ value: n, label: `${n} loop${n > 1 ? 's' : ''}` })), { value: FREE, label: 'Free' }]} />
-              <small className="muted">{loops === FREE ? 'Records until you stop it' : `${fmtTime(seconds)} · ${fits}`}</small>
+              <Seg<number> value={length} onChange={(n) => !busy && setLength(n)} options={[...(build === 'off' ? [] : [{ value: AUTO, label: 'Auto' }]), ...[1, 2, 4, 8].map((n) => ({ value: n, label: build === 'off' ? `${n} loop${n > 1 ? 's' : ''}` : String(n) })), { value: FREE, label: 'Free' }]} />
+              <small className="muted">{loops === FREE ? 'Records until you stop it' : `${build === 'off' ? '' : `${loops} loop${loops > 1 ? 's' : ''} · `}${building ? `${pattern} · ` : ''}${fmtTime(seconds)} · ${fits}`}</small>
             </div>
             {!mime && <p className="import-warn">This browser can’t record video. Try Chrome, Edge or Safari.</p>}
             {mime && !mime.startsWith('video/mp4') && <p className="import-warn">This browser records WebM. Most platforms take it; for Instagram, convert it to MP4 first.</p>}

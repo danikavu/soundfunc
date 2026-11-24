@@ -488,8 +488,8 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         const until = drawIn && playBeat !== null ? playBeat : Infinity;
         const placed: Placed[] = [];
 
-        // raked sand: one line per in-scale pitch, the root a little darker
-        if (melodic.length) {
+        // raked sand: one line per in-scale pitch, the root a little darker (a video is left clear)
+        if (melodic.length && !stageRef.current) {
           for (let m = lo; m <= hi; m++) {
             const pc = (((m - project.song.root) % 12) + 12) % 12;
             if (!scale.includes(pc)) continue;
@@ -513,7 +513,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           let lastX = -Infinity;
           for (let bar = first; bar * BEATS_PER_BAR < Math.min(total, vw.start + vw.span); bar++) {
             const x0 = bx(bar * BEATS_PER_BAR);
-            if (bar % 2 === 1) {
+            if (bar % 2 === 1 && !stageRef.current) {
               const x = Math.max(padL, x0);
               g.fillStyle = P.rake;
               g.fillRect(x, padT - 14, Math.min(W - padR, bx((bar + 1) * BEATS_PER_BAR)) - x, H - padB - padT + 14);
@@ -637,11 +637,13 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           g.fillStyle = P.ink3;
           g.font = '9.5px Doto, monospace';
           g.textAlign = 'left';
-          g.strokeStyle = P.rake;
-          g.beginPath();
-          g.moveTo(padL, y0 + laneH / 2);
-          g.lineTo(W - padR, y0 + laneH / 2);
-          g.stroke();
+          if (!stageRef.current) {
+            g.strokeStyle = P.rake;
+            g.beginPath();
+            g.moveTo(padL, y0 + laneH / 2);
+            g.lineTo(W - padR, y0 + laneH / 2);
+            g.stroke();
+          }
           const h = Math.max(3, laneH * 0.62);
           if (levelOf(track.id) >= 0.02) for (const note of notes) {
             if (!visible(note.beat, note.beat + note.duration) || note.beat > until) continue;
