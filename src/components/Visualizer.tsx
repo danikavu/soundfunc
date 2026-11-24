@@ -138,6 +138,8 @@ export interface VizStage {
   view: Mode;
   pixelRatio: number;
   onCanvas: (canvas: HTMLCanvasElement | null) => void;
+  /** how much of each channel is heard (0 … 1): faded channels fade on screen too */
+  level?: (trackId: string) => number;
 }
 
 export function Visualizer({ stage }: { stage?: VizStage } = {}) {
@@ -150,6 +152,10 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
   const mode = stage?.view ?? chosenMode;
   const ratio = () => stage?.pixelRatio ?? (window.devicePixelRatio || 1);
   const onCanvas = stage?.onCanvas;
+  const stageRef = useRef(stage);
+  stageRef.current = stage;
+  /** a channel's share of the picture: its fade level on a stage, else all of it */
+  const levelOf = (id: string) => stageRef.current?.level?.(id) ?? 1;
   useEffect(() => {
     onCanvas?.(canvasRef.current);
     return () => onCanvas?.(null);
@@ -393,7 +399,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         setPass(nowPass);
       }
       // a backdrop moves on its own, even while stopped
-      if (!dirty.current && pos === null && backdropRef.current === 'off') return;
+      if (!dirty.current && pos === null && backdropRef.current === 'off' && !stageRef.current) return;
       dirty.current = false;
       const canvas = canvasRef.current!;
       const g = canvas.getContext('2d')!;
@@ -542,6 +548,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           if (sounding) sparks.push({ key: `${track.id}:${note.beat}:${note.midi}`, x: x + h / 2, y: y + h / 2, color: track.color });
           // on a lit screen notes read like a display: brighter, even when not selected
           g.globalAlpha = P.glow > 0 ? (isSel ? 0.55 + 0.45 * note.velocity : 0.35 + 0.35 * note.velocity) : isSel ? 0.35 + 0.65 * note.velocity : 0.2 + 0.3 * note.velocity;
+          g.globalAlpha *= 0.15 + 0.85 * levelOf(track.id);
           g.fillStyle = track.color;
           if (P.glow > 0) {
             g.shadowColor = track.color;
@@ -565,7 +572,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
             g.stroke();
           }
           // the fuse: a note long enough to see it burns from its start to its end; a short one catches with a burst
-          if (playBeat !== null) {
+          if (playBeat !== null && levelOf(track.id) > 0.1) {
             let age = (playBeat - note.beat) * secPerBeat;
             if (age < 0) age += total * secPerBeat;
             const seed = Math.round(note.beat * 97 + note.midi * 13 + track.color.length);
@@ -588,7 +595,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
             // a glide track is one fine, glowing line per sounding stretch
             let run: [number, number][] = [];
             const flush = () => {
-              glowLine(g, run, track.color, track.color, { width: isSel ? 1.3 : 0.9, glow: isSel ? 1 : 0.45, alpha: isSel ? 0.95 : 0.5 });
+              glowLine(g, run, track.color, track.color, { width: isSel ? 1.3 : 0.9, glow: isSel ? 1 : 0.45, alpha: (isSel ? 0.95 : 0.5) * (0.15 + 0.85 * levelOf(track.id)) });
               run = [];
             };
             for (const [b, m, v] of glide) {
@@ -598,7 +605,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
                 continue;
               }
               run.push([bx(b), my(m) + rowH / 2]);
-              if (playBeat !== null && b <= playBeat && playBeat - b < 0.05) {
+              if (playBeat !== null && b <= playBeat && playBeat - b < 0.05 && levelOf(track.id) > 0.1) {
                 sparks.push({ key: `${track.id}:${Math.floor(b * 4)}`, x: bx(b), y: my(m) + rowH / 2, color: track.color });
                 // a glide burns along its line: the spark rides it at the playhead
                 const px = bx(b), py = my(m) + rowH / 2, seed = track.id.length * 17 + Math.floor(b);

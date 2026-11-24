@@ -158,7 +158,7 @@ Mix, then the voice: a stock patch, one of the ten **Sonic Menagerie** voices, o
 
 ### Video
 
-The **Video** key in the top strip records a clip for socials: the visualizer with its backdrop and fuse, every channel's functions lighting up as they play, and the sound, from the top of the song for as many loops as you choose. Pick 9:16, 1:1 or 16:9, press **Record**, then download the MP4.
+The **Video** key in the top strip records a clip for socials: the visualizer with its backdrop and fuse, every channel's functions lighting up as they play, and the sound, from the top of the song for as many loops as you choose. Pick 9:16, 1:1 or 16:9, press **Record**, then download the MP4. While it plays, fade channels out and back in with their keys (or 1–9): the fades are heard, seen and recorded. The functions can be shown as formulas or as typeset LaTeX math.
 
 ![A 9:16 video frame: the score, and the functions lighting up as they play](docs/walkthrough/video.png)
 

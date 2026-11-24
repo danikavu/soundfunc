@@ -19,6 +19,8 @@ interface Bus {
   delay: DelayNode;
   delayWet: GainNode;
   feedback: GainNode;
+  /** the channel faded in and out as a whole (video mode), after everything else on it */
+  fade: GainNode;
 }
 
 /** A single sustained voice whose pitch and level follow a glide track's curve. */
@@ -169,9 +171,12 @@ export class AudioEngine {
       gain.connect(delay);
       delay.connect(tone).connect(feedback).connect(delay);
       tone.connect(delayWet).connect(pan);
-      pan.connect(this.dry);
-      pan.connect(send).connect(this.wet);
-      b = { gain, pan, send, chorusWet, delay, delayWet, feedback };
+      const fade = ctx.createGain();
+      fade.gain.value = this.levelOf(track.id);
+      pan.connect(fade);
+      fade.connect(this.dry);
+      fade.connect(send).connect(this.wet);
+      b = { gain, pan, send, chorusWet, delay, delayWet, feedback, fade };
       this.buses.set(track.id, b);
     }
     const now = ctx.currentTime;
@@ -219,6 +224,44 @@ export class AudioEngine {
 
   private timeAt(beat: number): number {
     return this.originTime + ((beat - this.originBeat) * 60) / this.bpm;
+  }
+
+  /** channels fading in or out: from → to between two audio-clock times */
+  private fades = new Map<string, { from: number; to: number; t0: number; t1: number }>();
+
+  /** a channel's fade level now, 0 … 1 (1 when it was never faded) */
+  levelOf(trackId: string): number {
+    const f = this.fades.get(trackId);
+    if (!f) return 1;
+    const now = this.ctx?.currentTime ?? 0;
+    if (now >= f.t1) return f.to;
+    if (now <= f.t0) return f.from;
+    return f.from + ((f.to - f.from) * (now - f.t0)) / (f.t1 - f.t0);
+  }
+
+  /** fade a channel to `to` (0 … 1) over `seconds`, smoothly, from wherever it is now */
+  fadeChannel(trackId: string, to: number, seconds: number) {
+    const ctx = this.ensure();
+    const now = ctx.currentTime;
+    const from = this.levelOf(trackId);
+    const t1 = now + Math.max(0.01, seconds);
+    this.fades.set(trackId, { from, to, t0: now, t1 });
+    const b = this.buses.get(trackId);
+    if (b) {
+      b.fade.gain.cancelScheduledValues(now);
+      b.fade.gain.setValueAtTime(from, now);
+      b.fade.gain.linearRampToValueAtTime(to, t1);
+    }
+  }
+
+  /** every channel back to full, at once */
+  resetFades() {
+    this.fades.clear();
+    if (!this.ctx) return;
+    for (const b of this.buses.values()) {
+      b.fade.gain.cancelScheduledValues(this.ctx.currentTime);
+      b.fade.gain.setValueAtTime(1, this.ctx.currentTime);
+    }
   }
 
   private streamOut: MediaStreamAudioDestinationNode | null = null;

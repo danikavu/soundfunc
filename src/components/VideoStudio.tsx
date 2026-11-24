@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { engine } from '../engine/audio';
 import { audibleTracks, isDrum, keyLabel, patternBeats, songBeats, stretchOf, type Track } from '../engine/project';
-import { compose, toSource } from '../engine/symbolic';
+import { compose, toSource, toTex } from '../engine/symbolic';
 import { useStore } from '../state/store';
 import { sparkHead } from './fuse';
 import { toast } from './TopBar';
 import { Icon, Seg, TextField, download, fileSafe, getRender } from './ui';
 import { Visualizer } from './Visualizer';
+import { mathImage, preloadMath } from './mathSvg';
 
 /**
  * Video mode: the visualizer, every channel's functions and the sound, recorded together as a clip
@@ -22,6 +23,15 @@ const FORMATS: Record<Format, { w: number; h: number; label: string; hint: strin
   wide: { w: 1920, h: 1080, label: '16:9', hint: 'YouTube, X, LinkedIn' },
 };
 type View = 'score' | 'function';
+/** how the functions are written in the frame: SoundFunc formulas, or typeset math */
+type MathView = 'formulas' | 'latex';
+/** fade lengths, in beats */
+const FADES: { beats: number; label: string }[] = [
+  { beats: 2, label: '½ bar' },
+  { beats: 4, label: '1 bar' },
+  { beats: 8, label: '2 bars' },
+  { beats: 16, label: '4 bars' },
+];
 /** the stage's pixel ratio: the visualizer is drawn as on a 2× screen, whatever this one is */
 const RATIO = 2;
 const FPS = 30;
@@ -67,6 +77,13 @@ const MIMES = ['video/mp4;codecs=avc1.42E01F,mp4a.40.2', 'video/mp4;codecs=avc1,
 const pickMime = () => (typeof MediaRecorder === 'undefined' ? null : MIMES.find((m) => MediaRecorder.isTypeSupported(m)) ?? null);
 
 /** a channel's lines for the frame: its name and its formulas (drums: just when they hit) */
+/** a channel's formulas as LaTeX, one per input, written out whole */
+function channelTex(track: Track): string[] {
+  const outs = compose(track, true).math.outputs;
+  const ports = isDrum(track.waveform) ? ['velocity'] : ['pitch', 'velocity'];
+  return outs.filter((o) => ports.includes(o.port)).map((o) => `\\mathrm{${o.port}} = ${toTex(o.ast)}`);
+}
+
 function channelLines(track: Track): { port: string; text: string }[] {
   const outs = compose(track, true).math.outputs;
   const ports = isDrum(track.waveform) ? ['velocity'] : ['pitch', 'velocity'];
@@ -122,6 +139,10 @@ export function VideoStudio() {
   const [showFns, setShowFns] = useState(true);
   const [loops, setLoops] = useState(2);
   const [title, setTitle] = useState('');
+  const [mathView, setMathView] = useState<MathView>('formulas');
+  const [fadeBeats, setFadeBeats] = useState(4);
+  /** which channels are up (fading in or in) or down (fading out or out) */
+  const [down, setDown] = useState<Set<string>>(new Set());
   const [phase, setPhase] = useState<'idle' | 'recording' | 'done'>('idle');
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<{ url: string; ext: string; bytes: number; seconds: number } | null>(null);
@@ -140,7 +161,28 @@ export function VideoStudio() {
   const onCanvas = useCallback((c: HTMLCanvasElement | null) => {
     stageCanvas.current = c;
   }, []);
-  const stage = useMemo(() => ({ view, pixelRatio: RATIO, onCanvas }), [view, onCanvas]);
+  const stage = useMemo(() => ({ view, pixelRatio: RATIO, onCanvas, level: (id: string) => engine.levelOf(id) }), [view, onCanvas]);
+
+  /** fade a channel out, or back in, over the chosen length — the sound and the picture together */
+  const toggleChannel = (id: string) =>
+    setDown((d) => {
+      const next = new Set(d);
+      const out = !next.has(id);
+      if (out) next.add(id);
+      else next.delete(id);
+      engine.fadeChannel(id, out ? 0 : 1, (fadeBeats * 60) / project.song.bpm);
+      return next;
+    });
+  // every channel up again when the studio opens and when it closes
+  useEffect(() => {
+    engine.resetFades();
+    setDown(new Set());
+    return () => engine.resetFades();
+  }, [open]);
+  useEffect(() => {
+    if (open && mathView === 'latex') preloadMath();
+  }, [open, mathView]);
+  const texBlocks = useMemo(() => (mathView === 'latex' ? tracks.map((t) => ({ track: t, tex: channelTex(t) })) : []), [mathView, tracks]);
 
   useEffect(() => {
     if (open) setTitle((t) => t || project.name);
@@ -217,37 +259,80 @@ export function VideoStudio() {
       // the visualizer, drawn for this frame size
       const s = stageCanvas.current;
       if (s && s.width) g.drawImage(s, L.viz.x, L.viz.y, L.viz.w, L.viz.h);
-      // the functions: each channel's name in its colour (a spark while it sounds), its formulas under it
+      // the functions: each channel's name in its colour (a spark while it sounds), its formulas under it,
+      // faded as far as the channel is
       if (L.fns && fnLayout) {
         const on = sounding(engine.position());
-        let y = L.fns.y;
+        const box = L.fns;
+        const size = mathView === 'latex' ? L.font : fnLayout.size;
+        const lh = Math.round(size * 1.35);
+        const indent = size * 1.6;
+        let y = box.y;
         g.textBaseline = 'middle';
-        for (const { track, text } of fnLayout.blocks) {
-          const lit = on.has(track.id);
-          g.globalAlpha = lit ? 1 : 0.7;
+        const head = (track: Track, lit: boolean, level: number) => {
+          g.globalAlpha = (lit ? 1 : 0.7) * (0.2 + 0.8 * level);
           g.fillStyle = track.color;
-          g.font = `700 ${fnLayout.size}px ${T.mono}`;
-          g.fillText(track.name, L.fns.x + fnLayout.size * 1.6, y + fnLayout.lh / 2);
-          if (lit) sparkHead(g, L.fns.x + fnLayout.size * 0.6, y + fnLayout.lh / 2, now, track.id.length * 7, track.color, fnLayout.size / 22);
+          g.font = `700 ${size}px ${T.mono}`;
+          g.fillText(track.name, box.x + indent, y + lh / 2);
+          if (lit) sparkHead(g, box.x + size * 0.6, y + lh / 2, now, track.id.length * 7, track.color, size / 22);
           else {
             g.beginPath();
-            g.arc(L.fns.x + fnLayout.size * 0.6, y + fnLayout.lh / 2, fnLayout.size * 0.18, 0, Math.PI * 2);
+            g.arc(box.x + size * 0.6, y + lh / 2, size * 0.18, 0, Math.PI * 2);
             g.fill();
           }
-          y += fnLayout.lh;
-          g.font = `400 ${fnLayout.size}px ${T.mono}`;
-          g.fillStyle = T.ink;
-          g.globalAlpha = lit ? 0.95 : 0.5;
-          for (const line of text) {
-            g.fillText(line, L.fns.x + fnLayout.size * 1.6, y + fnLayout.lh / 2);
-            y += fnLayout.lh;
+          y += lh;
+        };
+        let more = 0;
+        if (mathView === 'latex') {
+          // typeset: each formula scaled to the box's width, and never taller than two and a half lines
+          const exPx = size * 0.5;
+          texBlocks.forEach(({ track, tex }, i) => {
+            if (more) return;
+            if (y + lh * 2 > box.y + box.h) {
+              more = texBlocks.length - i;
+              return;
+            }
+            const level = engine.levelOf(track.id);
+            const lit = on.has(track.id) && level > 0.1;
+            head(track, lit, level);
+            g.globalAlpha = (lit ? 1 : 0.55) * (0.2 + 0.8 * level);
+            for (const t of tex) {
+              const m = mathImage(t, T.ink);
+              if (!m) continue;
+              const w = m.wEx * exPx, h = m.hEx * exPx;
+              const k = Math.max(0.3, Math.min(1, (box.w - indent) / w, (size * 2.6) / h));
+              if (y + h * k > box.y + box.h) break;
+              g.save();
+              g.beginPath();
+              g.rect(box.x, y, box.w, h * k + 2);
+              g.clip();
+              g.drawImage(m.img, box.x + indent, y, w * k, h * k);
+              g.restore();
+              y += h * k + lh * 0.2;
+            }
+            y += lh * 0.35;
+          });
+        } else {
+          for (const { track, text } of fnLayout.blocks) {
+            const level = engine.levelOf(track.id);
+            const lit = on.has(track.id) && level > 0.1;
+            head(track, lit, level);
+            g.font = `400 ${size}px ${T.mono}`;
+            g.fillStyle = T.ink;
+            g.globalAlpha = (lit ? 0.95 : 0.5) * (0.2 + 0.8 * level);
+            for (const line of text) {
+              g.fillText(line, box.x + indent, y + lh / 2);
+              y += lh;
+            }
+            y += lh * 0.35;
           }
-          y += fnLayout.lh * 0.35;
+          more = fnLayout.more;
         }
-        if (fnLayout.more > 0) {
+        if (more > 0) {
           g.globalAlpha = 0.6;
           g.fillStyle = T.ink3;
-          g.fillText(`+ ${fnLayout.more} more channel${fnLayout.more > 1 ? 's' : ''}`, L.fns.x + fnLayout.size * 1.6, y + fnLayout.lh / 2);
+          g.font = `400 ${size}px ${T.mono}`;
+          g.fillText(`+ ${more} more channel${more > 1 ? 's' : ''}`, box.x + indent, Math.min(y, box.y + box.h - lh) + lh / 2);
         }
         g.globalAlpha = 1;
       }
@@ -261,7 +346,7 @@ export function VideoStudio() {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [open, F, L, fnLayout, title, project, renders]);
+  }, [open, F, L, fnLayout, title, project, renders, mathView, texBlocks]);
 
   const clearTimers = () => {
     timers.current.forEach((t) => clearTimeout(t));
@@ -336,7 +421,16 @@ export function VideoStudio() {
   // closing with Esc; a finished clip's file is let go when the studio closes
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return close();
+      // 1–9 fade the channels in and out, as you play — unless you're typing
+      const typing = e.target instanceof HTMLElement && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
+      const n = Number(e.key);
+      if (!typing && !e.metaKey && !e.ctrlKey && n >= 1 && n <= 9 && tracks[n - 1]) {
+        e.preventDefault();
+        toggleChannel(tracks[n - 1].id);
+      }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
@@ -401,7 +495,36 @@ export function VideoStudio() {
               <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }}>
                 <input type="checkbox" checked={showFns} disabled={busy} onChange={(e) => setShowFns(e.target.checked)} /> the functions, lighting up as they play
               </label>
+              {showFns && (
+                <Seg<MathView>
+                  value={mathView}
+                  onChange={setMathView}
+                  options={[
+                    { value: 'formulas', label: 'Formulas' },
+                    { value: 'latex', label: 'LaTeX math' },
+                  ]}
+                />
+              )}
               <small className="muted">The backdrop, its strength and the fuse follow the main view.</small>
+            </div>
+            <div className="field">
+              <span>Channels — fade in and out, live (keys 1–9)</span>
+              <div className="video-channels">
+                {tracks.map((t, i) => (
+                  <button
+                    key={t.id}
+                    className={`btn small video-ch ${down.has(t.id) ? 'off' : 'on'}`}
+                    aria-pressed={!down.has(t.id)}
+                    onClick={() => toggleChannel(t.id)}
+                    title={`${down.has(t.id) ? 'Fade in' : 'Fade out'} ${t.name}${i < 9 ? ` (key ${i + 1})` : ''}`}
+                  >
+                    <i style={{ background: t.color }} />
+                    {i < 9 && <small>{i + 1}</small>} {t.name}
+                  </button>
+                ))}
+              </div>
+              <Seg<number> value={fadeBeats} onChange={setFadeBeats} options={FADES.map((f) => ({ value: f.beats, label: f.label }))} />
+              <small className="muted">Fades run on the tempo, are heard and seen, and are recorded. Set channels out before Record to bring them in during the take.</small>
             </div>
             <label className="field">
               <span>Title</span>

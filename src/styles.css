@@ -3701,6 +3701,34 @@ aside.panel:last-of-type .info-pop {
     opacity: 0.2;
   }
 }
+/* the channels: a key each, lit while up, dim once faded out */
+.video-channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.video-ch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.3s;
+}
+.video-ch i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: none;
+}
+.video-ch small {
+  opacity: 0.55;
+}
+.video-ch.off {
+  opacity: 0.4;
+}
+.video-ch.off i {
+  background: transparent !important;
+  outline: 1px solid var(--ink-3);
+}
 /* the visualizer the frame is drawn from: off screen, at the size it fills in the frame */
 .video-stage {
   position: fixed;
