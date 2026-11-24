@@ -629,7 +629,6 @@ export function VideoStudio() {
                   </button>
                 ))}
               </div>
-              <small className="muted">A channel goes off at once — sound and picture — and comes back on at the start of the next loop. It's all recorded. Switch channels off before Record to bring them in during the take; muted channels start off. In a full-screen take, the channel list’s M keys do the same.</small>
             </div>
             <label className="field">
               <span>Title</span>

@@ -3649,6 +3649,10 @@ aside.panel:last-of-type .info-pop {
   background: #000;
   box-shadow: var(--shadow);
 }
+/* the live frame waits, hidden, under a finished clip */
+.video-frame[hidden] {
+  display: none;
+}
 .video-preview.story .video-frame {
   height: 68vh;
 }
