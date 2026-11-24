@@ -6,6 +6,7 @@ import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Seg, getRender } from './ui';
 import { RangeControl } from './RangeControl';
 import { Pixelator } from './pixelate';
+import { POP_SECONDS, burnCord, pop, sparkHead } from './fuse';
 import { BACKDROP_STYLES, BackdropMemory, drawBackdrop, type BackdropFrame, type BackdropStyle } from './backdrop';
 
 type Mode = 'score' | 'function';
@@ -546,21 +547,23 @@ export function Visualizer() {
             });
             g.stroke();
           }
-          // ripples from freshly struck stones
+          // the fuse: a note long enough to see it burns from its start to its end; a short one catches with a burst
           if (playBeat !== null) {
             let age = (playBeat - note.beat) * secPerBeat;
             if (age < 0) age += total * secPerBeat;
-            if (age < 1.2) {
-              const t = age / 1.2;
-              g.globalAlpha = (1 - t) * 0.45 * (isSel ? 1 : 0.5);
-              g.strokeStyle = track.color;
-              g.lineWidth = 1;
-              g.beginPath();
-              g.ellipse(x + h / 2, y + h / 2, 4 + t * 22, 2 + t * 8, 0, 0, Math.PI * 2);
-              g.stroke();
-            }
+            const seed = Math.round(note.beat * 97 + note.midi * 13 + track.color.length);
+            const runs = w > 12 && note.duration * secPerBeat > 0.15;
+            if (sounding && runs) {
+              const head = x + Math.min(1, Math.max(0, (playBeat - note.beat) / note.duration)) * w;
+              g.globalAlpha = 1;
+              burnCord(g, x, y, h, head, h * P.round);
+              fuses.push(() => sparkHead(g, head, y + h / 2, now, seed, track.color, isSel ? 1 : 0.75));
+            } else if (age < POP_SECONDS) fuses.push(() => pop(g, x + Math.min(w, h) / 2, y + h / 2, age, seed, track.color, isSel ? 1 : 0.75));
           }
         };
+        /** sparks are drawn over every note, after them all */
+        const fuses: (() => void)[] = [];
+        const now = performance.now() / 1000;
 
         for (const { track, notes, glide } of melodic) {
           const isSel = track.id === selected?.id;
@@ -578,7 +581,12 @@ export function Visualizer() {
                 continue;
               }
               run.push([bx(b), my(m) + rowH / 2]);
-              if (playBeat !== null && b <= playBeat && playBeat - b < 0.05) sparks.push({ key: `${track.id}:${Math.floor(b * 4)}`, x: bx(b), y: my(m) + rowH / 2, color: track.color });
+              if (playBeat !== null && b <= playBeat && playBeat - b < 0.05) {
+                sparks.push({ key: `${track.id}:${Math.floor(b * 4)}`, x: bx(b), y: my(m) + rowH / 2, color: track.color });
+                // a glide burns along its line: the spark rides it at the playhead
+                const px = bx(b), py = my(m) + rowH / 2, seed = track.id.length * 17 + Math.floor(b);
+                fuses.push(() => sparkHead(g, px, py, now, seed, track.color, isSel ? 0.9 : 0.65));
+              }
             }
             flush();
             continue;
@@ -615,6 +623,7 @@ export function Visualizer() {
             stone(track, note, x, y0 + (laneH - h) / 2, w, h, isSel);
           }
         });
+        for (const f of fuses) f();
 
         g.restore();
         g.globalAlpha = 1;
@@ -803,15 +812,20 @@ export function Visualizer() {
           g.moveTo(x, padT - 6);
           g.lineTo(x, vBase);
           g.stroke();
-          g.globalAlpha = 0.18;
-          g.fillStyle = P.accent;
-          g.beginPath();
-          g.arc(x, y, 12, 0, Math.PI * 2);
-          g.fill();
           g.globalAlpha = 1;
-          g.beginPath();
-          g.arc(x, y, 4.5, 0, Math.PI * 2);
-          g.fill();
+          // the spark burns while a note of this channel sounds (a glide: while its curve does)
+          const own = [...score.melodic, ...score.drums].find((it) => it.track.id === selected.id);
+          const sounding = glide ? fnFull.vel[i] >= 0.01 : !!own?.notes.some((nt) => beat >= nt.beat && beat < nt.beat + Math.max(nt.duration, 0.05));
+          if (sounding) sparkHead(g, x, y, performance.now() / 1000, 7, selected.color, 1.15);
+          else {
+            // silent here: the fuse waits, unlit
+            g.fillStyle = P.accent;
+            g.globalAlpha = 0.5;
+            g.beginPath();
+            g.arc(x, y, 3, 0, Math.PI * 2);
+            g.fill();
+            g.globalAlpha = 1;
+          }
         }
       }
     };

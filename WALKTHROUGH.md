@@ -86,7 +86,7 @@ Each channel is a graph. Clocks (`n`, `x`, `t`, `k`, the chord `h`) flow through
 
 ### Score
 
-Every channel at once, with drums in their own lanes. The chord of each bar is written along the top. Hover a note to see its pitch, velocity and the raw value of `f`.
+Every channel at once, with drums in their own lanes. A note burns like a fuse as it plays: a spark runs along it, charring the cord behind; drum hits catch with a burst of sparks. The chord of each bar is written along the top. Hover a note to see its pitch, velocity and the raw value of `f`.
 
 ![The Score](docs/walkthrough/score.png)
 
