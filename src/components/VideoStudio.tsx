@@ -71,19 +71,17 @@ function layoutOf(format: Format, fns: boolean): { head: Box; viz: Box; fns: Box
 const MIMES = ['video/mp4;codecs=avc1.42E01F,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
 const pickMime = () => (typeof MediaRecorder === 'undefined' ? null : MIMES.find((m) => MediaRecorder.isTypeSupported(m)) ?? null);
 
-/** a channel's lines for the frame: its name and its formulas (drums: just when they hit) */
-/** a channel's formulas as LaTeX, one per input, written out whole */
-function channelTex(track: Track): string[] {
-  const outs = compose(track, true).math.outputs;
-  const ports = isDrum(track.waveform) ? ['velocity'] : ['pitch', 'velocity'];
-  return outs.filter((o) => ports.includes(o.port)).map((o) => `\\mathrm{${o.port}} = ${toTex(o.ast)}`);
+/** what is written for a channel: pitch and velocity (drums: just when they hit), or pitch alone (no drums) */
+function channelOutputs(track: Track, pitchOnly: boolean) {
+  const ports = isDrum(track.waveform) ? (pitchOnly ? [] : ['velocity']) : pitchOnly ? ['pitch'] : ['pitch', 'velocity'];
+  return ports.length ? compose(track, true).math.outputs.filter((o) => ports.includes(o.port)) : [];
 }
 
-function channelLines(track: Track): { port: string; text: string }[] {
-  const outs = compose(track, true).math.outputs;
-  const ports = isDrum(track.waveform) ? ['velocity'] : ['pitch', 'velocity'];
-  return outs.filter((o) => ports.includes(o.port)).map((o) => ({ port: o.port, text: toSource(o.ast) }));
-}
+/** a channel's formulas as LaTeX, one per input, written out whole */
+const channelTex = (track: Track, pitchOnly: boolean): string[] => channelOutputs(track, pitchOnly).map((o) => `\\mathrm{${o.port}} = ${toTex(o.ast)}`);
+
+/** a channel's formulas as SoundFunc writes them */
+const channelLines = (track: Track, pitchOnly: boolean): { port: string; text: string }[] => channelOutputs(track, pitchOnly).map((o) => ({ port: o.port, text: toSource(o.ast) }));
 
 /** break text into lines no wider than `max`, at spaces where it can, anywhere where it must */
 function wrapText(g: CanvasRenderingContext2D, text: string, max: number): string[] {
@@ -139,13 +137,15 @@ export function VideoStudio() {
   /** the studio steps aside while the whole app is recorded */
   const [hidden, setHidden] = useState(false);
   const [mathView, setMathView] = useState<MathView>('formulas');
+  /** write only the pitch functions: no velocities, and so no drums */
+  const [pitchOnly, setPitchOnly] = useState(false);
   /** which channels are up (fading in or in) or down (fading out or out) */
   const [down, setDown] = useState<Set<string>>(new Set());
   /** channels brought back that are waiting for the next loop to begin */
   const [cued, setCued] = useState<Set<string>>(new Set());
   const [phase, setPhase] = useState<'idle' | 'recording' | 'done'>('idle');
   const [progress, setProgress] = useState(0);
-  const [result, setResult] = useState<{ url: string; ext: string; bytes: number; seconds: number } | null>(null);
+  const [result, setResult] = useState<{ url: string; name: string; ext: string; bytes: number } | null>(null);
   const frameRef = useRef<HTMLCanvasElement>(null);
   const stageCanvas = useRef<HTMLCanvasElement | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -218,11 +218,13 @@ export function VideoStudio() {
   useEffect(() => {
     if (open && mathView === 'latex') preloadMath();
   }, [open, mathView]);
-  const texBlocks = useMemo(() => (mathView === 'latex' ? tracks.map((t) => ({ track: t, tex: channelTex(t) })) : []), [mathView, tracks]);
+  const texBlocks = useMemo(() => (mathView === 'latex' ? tracks.map((t) => ({ track: t, tex: channelTex(t, pitchOnly) })).filter((x) => x.tex.length) : []), [mathView, tracks, pitchOnly]);
 
-  useEffect(() => {
-    if (open) setTitle((t) => t || project.name);
-  }, [open, project.name]);
+  // the title is the project's name until it is changed here; renaming or opening a project sets it again
+  const projectId = useStore((st) => st.currentProjectId);
+  useEffect(() => setTitle(project.name), [project.name, projectId]);
+  // a change to the frame is seen at once: a finished clip gives way to the live frame (it is kept)
+  useEffect(() => setPhase((ph) => (ph === 'done' ? 'idle' : ph)), [title, format, view, showFns, mathView, pitchOnly]);
 
   // each channel's formulas, laid out to fit the functions box: as many lines each as there is room for
   const fnLayout = useMemo(() => {
@@ -230,7 +232,7 @@ export function VideoStudio() {
     const g = document.createElement('canvas').getContext('2d')!;
     const { mono } = themeColours();
     const box = L.fns;
-    const channels = tracks.map((t) => ({ track: t, lines: channelLines(t) }));
+    const channels = tracks.map((t) => ({ track: t, lines: channelLines(t, pitchOnly) })).filter((x) => x.lines.length);
     for (let size = L.font; size >= 13; size -= 1) {
       g.font = `400 ${size}px ${mono}`;
       const lh = Math.round(size * 1.35);
@@ -251,7 +253,7 @@ export function VideoStudio() {
       if ((used <= box.h && count === channels.length) || size === 13 || (used <= box.h && size <= L.font * 0.75)) return { size, lh, blocks, more: channels.length - shown.length };
     }
     return null;
-  }, [L, tracks]);
+  }, [L, tracks, pitchOnly]);
 
   // which channels sound right now, from the first pass of each (as the Score shows it)
   const renders = useMemo(() => tracks.map((t) => ({ track: t, r: getRender(t, project.song), len: patternBeats(t) })), [tracks, project.song]);
@@ -438,6 +440,8 @@ export function VideoStudio() {
     setPhase('idle');
     cancelled.current = false;
     if (useStore.getState().playing) stopPlayback();
+    // the file is named after the take, whatever is changed afterwards
+    const name = `${fileSafe(title || project.name)}-${source === 'app' ? 'screen' : F.label.replace(':', 'x')}`;
     const src = await videoSource();
     if (!src) return;
     const stream = src.stream;
@@ -451,7 +455,7 @@ export function VideoStudio() {
       setHidden(false);
       if (cancelled.current) return;
       const blob = new Blob(chunks, { type: mime.split(';')[0] });
-      setResult({ url: URL.createObjectURL(blob), ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm', bytes: blob.size, seconds: seconds + TAIL });
+      setResult({ url: URL.createObjectURL(blob), name, ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm', bytes: blob.size });
       setPhase('done');
     };
     // the whole app ends when the screen is let go of: Esc out of full screen, or the browser's Stop sharing
@@ -541,14 +545,8 @@ export function VideoStudio() {
     <div className={`sheet-backdrop ${hidden ? 'video-away' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && !busy && close()}>
       <div className="sheet video-sheet" role="dialog" aria-label="Video">
         <header className="sheet-head">
-          <div>
-            <div className="eyebrow" style={{ margin: 0 }}>
-              Video
-            </div>
-            <p className="muted" style={{ margin: '6px 0 0', fontSize: 'var(--fs-md)' }}>
-              The visuals, every channel’s functions and the sound, recorded from the top of the song — sized for socials.
-            </p>
-          </div>
+          {/* the clip's name, as written in the frame and on the file: click to change it */}
+          <TextField className="video-title" value={title} onValue={setTitle} placeholder={project.name} aria-label="Video title" title="The video’s title — click to change it" spellCheck={false} readOnly={busy} />
           <button className="icon-btn" onClick={close} title="Close (Esc)">
             <Icon name="close" />
           </button>
@@ -611,6 +609,11 @@ export function VideoStudio() {
                   ]}
                 />
               )}
+              {showFns && (
+                <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="Leave out the velocities — and the drums, which have no pitch function">
+                  <input type="checkbox" checked={pitchOnly} onChange={(e) => setPitchOnly(e.target.checked)} /> only the pitch functions
+                </label>
+              )}
               <small className="muted">The backdrop, its strength and the fuse follow the main view.</small>
             </div>
             <div className="field">
@@ -630,10 +633,6 @@ export function VideoStudio() {
                 ))}
               </div>
             </div>
-            <label className="field">
-              <span>Title</span>
-              <TextField className="input" value={title} onValue={setTitle} />
-            </label>
             <div className="field">
               <span>Length</span>
               <Seg<number> value={loops} onChange={(n) => !busy && setLoops(n)} options={[1, 2, 4, 8].map((n) => ({ value: n, label: `${n} loop${n > 1 ? 's' : ''}` }))} />
@@ -653,12 +652,12 @@ export function VideoStudio() {
                   <span className="video-rec-dot" /> {result ? 'Record again' : 'Record'}
                 </button>
               )}
-              {result && phase === 'done' && (
+              {result && !busy && (
                 <button
                   className="btn primary"
                   onClick={async () => {
                     const blob = await (await fetch(result.url)).blob();
-                    download(`${fileSafe(title || project.name)}-${F.label.replace(':', 'x')}.${result.ext}`, blob, blob.type);
+                    download(`${result.name}.${result.ext}`, blob, blob.type);
                     toast(`Saved the video — ${(result.bytes / 1e6).toFixed(1)} MB, ${result.ext.toUpperCase()}`);
                   }}
                 >
@@ -666,9 +665,9 @@ export function VideoStudio() {
                 </button>
               )}
             </div>
-            {result && phase === 'done' && (
-              <button className="btn small ghost" onClick={() => setPhase('idle')}>
-                Back to the live preview
+            {result && !busy && (
+              <button className="btn small ghost" onClick={() => setPhase(phase === 'done' ? 'idle' : 'done')}>
+                {phase === 'done' ? 'Back to the live preview' : 'Show the recorded clip'}
               </button>
             )}
             <small className="muted">Keep this tab in front while it records: a hidden tab stops drawing.</small>

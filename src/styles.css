@@ -3630,6 +3630,26 @@ aside.panel:last-of-type .info-pop {
   gap: var(--sp-6);
   align-items: start;
 }
+/* the clip's name is the studio's heading: plain until you point at it */
+.video-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: var(--sp-1) 0;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--accent);
+  font: 700 var(--fs-xl, 24px) / 1.2 var(--sans);
+  text-overflow: ellipsis;
+}
+.video-title:hover {
+  border-bottom-color: var(--line);
+}
+.video-title:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
 /* the frame, as large as fits, at its own shape */
 .video-preview {
   position: relative;
