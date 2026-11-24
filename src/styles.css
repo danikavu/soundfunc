@@ -3701,6 +3701,11 @@ aside.panel:last-of-type .info-pop {
     opacity: 0.2;
   }
 }
+/* recording the whole app: the studio steps aside (it stays mounted, so its keys still fade channels) */
+.video-away {
+  visibility: hidden;
+  pointer-events: none;
+}
 /* the channels: a key each, lit while up, dim once faded out */
 .video-channels {
   display: flex;
@@ -3721,6 +3726,10 @@ aside.panel:last-of-type .info-pop {
 }
 .video-ch small {
   opacity: 0.55;
+}
+.video-ch.cued {
+  opacity: 1;
+  animation: video-blink 0.8s steps(2) infinite;
 }
 .video-ch.off {
   opacity: 0.4;

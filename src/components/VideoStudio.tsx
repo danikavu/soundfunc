@@ -139,10 +139,16 @@ export function VideoStudio() {
   const [showFns, setShowFns] = useState(true);
   const [loops, setLoops] = useState(2);
   const [title, setTitle] = useState('');
+  /** what is recorded: the composed frame, or the whole app filling the screen */
+  const [source, setSource] = useState<'frame' | 'app'>('frame');
+  /** the studio steps aside while the whole app is recorded */
+  const [hidden, setHidden] = useState(false);
   const [mathView, setMathView] = useState<MathView>('formulas');
   const [fadeBeats, setFadeBeats] = useState(4);
   /** which channels are up (fading in or in) or down (fading out or out) */
   const [down, setDown] = useState<Set<string>>(new Set());
+  /** channels brought back that are waiting for the next loop to begin */
+  const [cued, setCued] = useState<Set<string>>(new Set());
   const [phase, setPhase] = useState<'idle' | 'recording' | 'done'>('idle');
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<{ url: string; ext: string; bytes: number; seconds: number } | null>(null);
@@ -170,13 +176,25 @@ export function VideoStudio() {
       const out = !next.has(id);
       if (out) next.add(id);
       else next.delete(id);
-      engine.fadeChannel(id, out ? 0 : 1, (fadeBeats * 60) / project.song.bpm);
+      // out: at once; back in: on the first beat of the next loop
+      const wait = engine.fadeChannel(id, out ? 0 : 1, (fadeBeats * 60) / project.song.bpm, !out);
+      setCued((c) => {
+        const n = new Set(c);
+        if (!out && wait > 0.02) n.add(id);
+        else n.delete(id);
+        return n;
+      });
+      if (!out && wait > 0.02)
+        timers.current.push(
+          window.setTimeout(() => setCued((c) => (c.has(id) ? new Set([...c].filter((x) => x !== id)) : c)), wait * 1000),
+        );
       return next;
     });
   // every channel up again when the studio opens and when it closes
   useEffect(() => {
     engine.resetFades();
     setDown(new Set());
+    setCued(new Set());
     return () => engine.resetFades();
   }, [open]);
   useEffect(() => {
@@ -270,7 +288,7 @@ export function VideoStudio() {
         let y = box.y;
         g.textBaseline = 'middle';
         const head = (track: Track, lit: boolean, level: number) => {
-          g.globalAlpha = (lit ? 1 : 0.7) * (0.2 + 0.8 * level);
+          g.globalAlpha = (lit ? 1 : 0.7) * level;
           g.fillStyle = track.color;
           g.font = `700 ${size}px ${T.mono}`;
           g.fillText(track.name, box.x + indent, y + lh / 2);
@@ -293,9 +311,10 @@ export function VideoStudio() {
               return;
             }
             const level = engine.levelOf(track.id);
+            if (level < 0.02) return;
             const lit = on.has(track.id) && level > 0.1;
             head(track, lit, level);
-            g.globalAlpha = (lit ? 1 : 0.55) * (0.2 + 0.8 * level);
+            g.globalAlpha = (lit ? 1 : 0.55) * level;
             for (const t of tex) {
               const m = mathImage(t, T.ink);
               if (!m) continue;
@@ -315,11 +334,12 @@ export function VideoStudio() {
         } else {
           for (const { track, text } of fnLayout.blocks) {
             const level = engine.levelOf(track.id);
+            if (level < 0.02) continue;
             const lit = on.has(track.id) && level > 0.1;
             head(track, lit, level);
             g.font = `400 ${size}px ${T.mono}`;
             g.fillStyle = T.ink;
-            g.globalAlpha = (lit ? 0.95 : 0.5) * (0.2 + 0.8 * level);
+            g.globalAlpha = (lit ? 0.95 : 0.5) * level;
             for (const line of text) {
               g.fillText(line, box.x + indent, y + lh / 2);
               y += lh;
@@ -358,26 +378,78 @@ export function VideoStudio() {
     setPlaying(false);
   };
 
+  /**
+   * The video to record: the composed frame, or — for the whole app — this tab, captured by the
+   * browser while SoundFunc fills the screen. Null when that was refused.
+   */
+  const videoSource = async (): Promise<{ stream: MediaStream; done: () => void } | null> => {
+    if (source === 'frame') {
+      const c = frameRef.current;
+      return c ? { stream: c.captureStream(FPS), done: () => undefined } : null;
+    }
+    // both asked for at once, while the click still counts: full screen, then this tab
+    const full = document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => undefined);
+    try {
+      const display = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: FPS, displaySurface: 'browser' },
+        audio: false,
+        preferCurrentTab: true,
+        selfBrowserSurface: 'include',
+        surfaceSwitching: 'exclude',
+      } as DisplayMediaStreamOptions);
+      await full;
+      return {
+        stream: new MediaStream(display.getVideoTracks()),
+        done: () => {
+          display.getTracks().forEach((t) => t.stop());
+          if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+        },
+      };
+    } catch {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      toast('Screen recording was not allowed — choose “This tab” when the browser asks');
+      return null;
+    }
+  };
+
   /** record from the top: the song plays for the chosen loops, the clip ends after the reverb's tail */
   const record = async () => {
-    const c = frameRef.current;
-    if (!c || !mime) return;
+    if (!mime) return;
     if (result) URL.revokeObjectURL(result.url);
     setResult(null);
+    setPhase('idle');
     cancelled.current = false;
     if (useStore.getState().playing) stopPlayback();
-    const stream = c.captureStream(FPS);
+    const src = await videoSource();
+    if (!src) return;
+    const stream = src.stream;
     for (const t of engine.audioStream().getAudioTracks()) stream.addTrack(t);
-    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10_000_000, audioBitsPerSecond: 192_000 });
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: source === 'app' ? 14_000_000 : 10_000_000, audioBitsPerSecond: 192_000 });
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     rec.onstop = () => {
       stream.getVideoTracks().forEach((t) => t.stop());
+      src.done();
+      setHidden(false);
       if (cancelled.current) return;
       const blob = new Blob(chunks, { type: mime.split(';')[0] });
       setResult({ url: URL.createObjectURL(blob), ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm', bytes: blob.size, seconds: seconds + TAIL });
       setPhase('done');
     };
+    // the whole app ends when the screen is let go of: Esc out of full screen, or the browser's Stop sharing
+    if (source === 'app') {
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => finishEarly());
+      const left = () => {
+        if (!document.fullscreenElement) {
+          document.removeEventListener('fullscreenchange', left);
+          finishEarly();
+        }
+      };
+      document.addEventListener('fullscreenchange', left);
+      // the studio steps aside, so the app is what is recorded
+      setHidden(true);
+      await new Promise((r) => setTimeout(r, 500));
+    }
     recorder.current = rec;
     // a beat of silence first, so a platform's first frame isn't mid-note
     rec.start(250);
@@ -422,7 +494,7 @@ export function VideoStudio() {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') return close();
+      if (e.key === 'Escape') return hidden ? finishEarly() : close();
       // 1–9 fade the channels in and out, as you play — unless you're typing
       const typing = e.target instanceof HTMLElement && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
       const n = Number(e.key);
@@ -448,7 +520,7 @@ export function VideoStudio() {
   const fits = seconds <= 60 ? 'fits Reels, TikTok and Shorts' : seconds <= 90 ? 'fits Reels and TikTok — over Shorts’ 60 s' : seconds <= 180 ? 'fits TikTok (and Shorts up to 3 min)' : 'longer than most short-video limits';
 
   return (
-    <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && close()}>
+    <div className={`sheet-backdrop ${hidden ? 'video-away' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && !busy && close()}>
       <div className="sheet video-sheet" role="dialog" aria-label="Video">
         <header className="sheet-head">
           <div>
@@ -465,11 +537,9 @@ export function VideoStudio() {
         </header>
         <div className="sheet-body video-body">
           <div className={`video-preview ${format}`}>
-            {result && phase === 'done' ? (
-              <video className="video-frame" src={result.url} controls playsInline />
-            ) : (
-              <canvas ref={frameRef} className="video-frame" width={F.w} height={F.h} />
-            )}
+            {/* the frame stays mounted under a finished clip, so Record again can draw it */}
+            <canvas ref={frameRef} className="video-frame" width={F.w} height={F.h} hidden={!!result && phase === 'done'} />
+            {result && phase === 'done' && <video className="video-frame" src={result.url} controls playsInline />}
             {busy && (
               <div className="video-rec">
                 <span className="video-rec-dot" /> REC {fmtTime(progress * (seconds + TAIL))} / {fmtTime(seconds + TAIL)}
@@ -478,10 +548,28 @@ export function VideoStudio() {
           </div>
           <div className="video-options">
             <div className="field">
+              <span>Record</span>
+              <Seg<'frame' | 'app'>
+                value={source}
+                onChange={(v) => !busy && setSource(v)}
+                options={[
+                  { value: 'frame', label: 'Video frame' },
+                  { value: 'app', label: 'Whole app, full screen' },
+                ]}
+              />
+              {source === 'app' && (
+                <small className="muted">
+                  SoundFunc fills the screen and records itself with the sound — the browser asks once to share this tab. Esc stops; fades (keys 1–9) still work.
+                </small>
+              )}
+            </div>
+            {source === 'frame' && (
+            <div className="field">
               <span>Format</span>
               <Seg<Format> value={format} onChange={(f) => !busy && setFormat(f)} options={(Object.keys(FORMATS) as Format[]).map((f) => ({ value: f, label: FORMATS[f].label }))} />
               <small className="muted">{F.hint} · {F.w}×{F.h}</small>
             </div>
+            )}
             <div className="field">
               <span>Show</span>
               <Seg<View>
@@ -513,10 +601,10 @@ export function VideoStudio() {
                 {tracks.map((t, i) => (
                   <button
                     key={t.id}
-                    className={`btn small video-ch ${down.has(t.id) ? 'off' : 'on'}`}
+                    className={`btn small video-ch ${down.has(t.id) ? 'off' : 'on'} ${cued.has(t.id) ? 'cued' : ''}`}
                     aria-pressed={!down.has(t.id)}
                     onClick={() => toggleChannel(t.id)}
-                    title={`${down.has(t.id) ? 'Fade in' : 'Fade out'} ${t.name}${i < 9 ? ` (key ${i + 1})` : ''}`}
+                    title={`${cued.has(t.id) ? `${t.name} comes in at the start of the next loop` : `${down.has(t.id) ? 'Bring in' : 'Fade out'} ${t.name}`}${i < 9 ? ` (key ${i + 1})` : ''}`}
                   >
                     <i style={{ background: t.color }} />
                     {i < 9 && <small>{i + 1}</small>} {t.name}
@@ -524,7 +612,7 @@ export function VideoStudio() {
                 ))}
               </div>
               <Seg<number> value={fadeBeats} onChange={setFadeBeats} options={FADES.map((f) => ({ value: f.beats, label: f.label }))} />
-              <small className="muted">Fades run on the tempo, are heard and seen, and are recorded. Set channels out before Record to bring them in during the take.</small>
+              <small className="muted">A channel fades out at once and comes back in on the start of the next loop. Fades run on the tempo, are heard and seen, and are recorded. Set channels out before Record to bring them in during the take.</small>
             </div>
             <label className="field">
               <span>Title</span>

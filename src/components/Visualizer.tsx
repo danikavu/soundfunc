@@ -155,7 +155,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
   const stageRef = useRef(stage);
   stageRef.current = stage;
   /** a channel's share of the picture: its fade level on a stage, else all of it */
-  const levelOf = (id: string) => stageRef.current?.level?.(id) ?? 1;
+  const levelOf = (id: string) => stageRef.current?.level?.(id) ?? engine.levelOf(id);
   useEffect(() => {
     onCanvas?.(canvasRef.current);
     return () => onCanvas?.(null);
@@ -545,10 +545,10 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         const stone = (track: Track, note: Note, x: number, y: number, w: number, h: number, isSel: boolean) => {
           placed.push({ track, note, x, y, w, h });
           const sounding = playBeat !== null && playBeat >= note.beat && playBeat < note.beat + Math.max(note.duration, 0.05);
-          if (sounding) sparks.push({ key: `${track.id}:${note.beat}:${note.midi}`, x: x + h / 2, y: y + h / 2, color: track.color });
+          if (sounding && levelOf(track.id) > 0.1) sparks.push({ key: `${track.id}:${note.beat}:${note.midi}`, x: x + h / 2, y: y + h / 2, color: track.color });
           // on a lit screen notes read like a display: brighter, even when not selected
           g.globalAlpha = P.glow > 0 ? (isSel ? 0.55 + 0.45 * note.velocity : 0.35 + 0.35 * note.velocity) : isSel ? 0.35 + 0.65 * note.velocity : 0.2 + 0.3 * note.velocity;
-          g.globalAlpha *= 0.15 + 0.85 * levelOf(track.id);
+          g.globalAlpha *= levelOf(track.id);
           g.fillStyle = track.color;
           if (P.glow > 0) {
             g.shadowColor = track.color;
@@ -595,7 +595,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
             // a glide track is one fine, glowing line per sounding stretch
             let run: [number, number][] = [];
             const flush = () => {
-              glowLine(g, run, track.color, track.color, { width: isSel ? 1.3 : 0.9, glow: isSel ? 1 : 0.45, alpha: (isSel ? 0.95 : 0.5) * (0.15 + 0.85 * levelOf(track.id)) });
+              glowLine(g, run, track.color, track.color, { width: isSel ? 1.3 : 0.9, glow: isSel ? 1 : 0.45, alpha: (isSel ? 0.95 : 0.5) * levelOf(track.id) });
               run = [];
             };
             for (const [b, m, v] of glide) {

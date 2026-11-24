@@ -11,6 +11,22 @@ const TICK_MS = 25;
  * A channel's strip: voices play into `gain`; a chorus (two modulated delays, left and right)
  * and a tempo-synced delay with feedback join them; then pan, the dry mix and the reverb send.
  */
+/** one fade of a channel, and the one it took over from (heard until this one starts) */
+interface Fade {
+  from: number;
+  to: number;
+  t0: number;
+  t1: number;
+  prev?: Fade;
+}
+
+function levelAt(f: Fade | undefined, time: number): number {
+  if (!f) return 1;
+  if (time < f.t0) return f.prev ? levelAt(f.prev, time) : f.from;
+  if (time >= f.t1) return f.to;
+  return f.from + ((f.to - f.from) * (time - f.t0)) / (f.t1 - f.t0);
+}
+
 interface Bus {
   gain: GainNode;
   pan: StereoPannerNode;
@@ -226,32 +242,44 @@ export class AudioEngine {
     return this.originTime + ((beat - this.originBeat) * 60) / this.bpm;
   }
 
-  /** channels fading in or out: from → to between two audio-clock times */
-  private fades = new Map<string, { from: number; to: number; t0: number; t1: number }>();
+  /** channels fading in or out: from → to between two audio-clock times (and the fade before, until this one starts) */
+  private fades = new Map<string, Fade>();
 
   /** a channel's fade level now, 0 … 1 (1 when it was never faded) */
   levelOf(trackId: string): number {
-    const f = this.fades.get(trackId);
-    if (!f) return 1;
-    const now = this.ctx?.currentTime ?? 0;
-    if (now >= f.t1) return f.to;
-    if (now <= f.t0) return f.from;
-    return f.from + ((f.to - f.from) * (now - f.t0)) / (f.t1 - f.t0);
+    return levelAt(this.fades.get(trackId), this.ctx?.currentTime ?? 0);
   }
 
-  /** fade a channel to `to` (0 … 1) over `seconds`, smoothly, from wherever it is now */
-  fadeChannel(trackId: string, to: number, seconds: number) {
+  /**
+   * Fade a channel to `to` (0 … 1) over `seconds`. With `onLoop`, while playing, the fade waits for
+   * the start of the next loop of the song (a channel brought back comes in on the one). Returns how
+   * many seconds from now it begins.
+   */
+  fadeChannel(trackId: string, to: number, seconds: number, onLoop = false): number {
     const ctx = this.ensure();
     const now = ctx.currentTime;
-    const from = this.levelOf(trackId);
-    const t1 = now + Math.max(0.01, seconds);
-    this.fades.set(trackId, { from, to, t0: now, t1 });
+    let t0 = now;
+    if (onLoop && this.playing && this.project) {
+      const len = songBeats(audibleTracks(this.project.tracks), this.project.song);
+      if (len > 0) t0 = Math.max(now, this.timeAt(Math.ceil((this.beatAt(now) + 1e-3) / len) * len));
+    }
+    const prev = this.fades.get(trackId);
+    const from = levelAt(prev, t0);
+    const t1 = t0 + Math.max(0.01, seconds);
+    this.fades.set(trackId, { from, to, t0, t1, prev: t0 > now ? prev : undefined });
     const b = this.buses.get(trackId);
     if (b) {
-      b.fade.gain.cancelScheduledValues(now);
-      b.fade.gain.setValueAtTime(from, now);
-      b.fade.gain.linearRampToValueAtTime(to, t1);
+      const g = b.fade.gain;
+      // what is already under way carries on until this fade begins
+      if (t0 > now && typeof g.cancelAndHoldAtTime === 'function') g.cancelAndHoldAtTime(t0);
+      else {
+        g.cancelScheduledValues(now);
+        g.setValueAtTime(levelAt(prev, now), now);
+      }
+      g.setValueAtTime(from, t0);
+      g.linearRampToValueAtTime(to, t1);
     }
+    return t0 - now;
   }
 
   /** every channel back to full, at once */
