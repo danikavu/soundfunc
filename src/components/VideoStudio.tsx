@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { engine } from '../engine/audio';
 import { audibleTracks, isDrum, keyLabel, patternBeats, songBeats, stretchOf, type Track } from '../engine/project';
-import { compose, toSource, toTex } from '../engine/symbolic';
+import { compose, texVariants, toSource } from '../engine/symbolic';
 import { useStore } from '../state/store';
 import { sparkHead } from './fuse';
 import { toast } from './TopBar';
 import { Icon, Seg, TextField, download, fileSafe, getRender } from './ui';
 import { Visualizer } from './Visualizer';
-import { mathImage, preloadMath } from './mathSvg';
+import { mathImage, mathPending, preloadMath } from './mathSvg';
 
 /**
  * Video mode: the visualizer, every channel's functions and the sound, recorded together as a clip
@@ -77,8 +77,42 @@ function channelOutputs(track: Track, pitchOnly: boolean) {
   return ports.length ? compose(track, true).math.outputs.filter((o) => ports.includes(o.port)) : [];
 }
 
-/** a channel's formulas as LaTeX, one per input, written out whole */
-const channelTex = (track: Track, pitchOnly: boolean): string[] => channelOutputs(track, pitchOnly).map((o) => `\\mathrm{${o.port}} = ${toTex(o.ast)}`);
+/** a channel's formulas as LaTeX, one per input: each in the ways it may be broken over lines */
+const channelTex = (track: Track, pitchOnly: boolean): string[][] => channelOutputs(track, pitchOnly).map((o) => texVariants(o.port, o.ast));
+
+/** the most and the least the typeset math is scaled (it grows only while every formula still fits the width) */
+const MATH_MOST = 1.4;
+const MATH_LEAST = 0.6;
+
+/**
+ * Typeset every channel's formulas as large as the box allows: at each size, a formula takes the
+ * shortest of its forms that fits the width — or, when none does, the one shrunk the least. The
+ * names shrink with it, so more channels fit.
+ */
+function setMath(blocks: { track: Track; tex: string[][] }[], box: Box, font: number, ink: string) {
+  const forms = blocks.map(({ track, tex }) => ({
+    track,
+    formulas: tex.map((v) => v.map((t) => mathImage(t, ink)).filter((m) => m !== null).sort((p, q) => p.hEx - q.hEx || p.wEx - q.wEx)).filter((f) => f.length),
+  }));
+  for (let scale = MATH_MOST; ; scale -= 0.05) {
+    const size = font * Math.min(1, Math.max(0.65, scale)), lh = Math.round(size * 1.35);
+    const ex = font * 0.5 * scale, room = box.w - size * 1.6;
+    let shrunk = false;
+    const set = forms.map(({ track, formulas }) => {
+      const lines = formulas.map((f) => {
+        // none fits: the narrowest, unless that barely helps
+        const narrow = f.reduce((p, q) => (q.wEx < p.wEx * 0.9 ? q : p));
+        const m = f.find((x) => x.wEx * ex <= room) ?? narrow;
+        const k = Math.min(ex, room / m.wEx);
+        if (k < ex) shrunk = true;
+        return { img: m.img, w: m.wEx * k, h: m.hEx * k };
+      });
+      return { track, lines, h: lh + lines.reduce((n, l) => n + l.h + lh * 0.2, 0) };
+    });
+    const total = set.reduce((n, b) => n + b.h + lh * 0.35, -lh * 0.35);
+    if (scale <= MATH_LEAST || (total <= box.h && (scale <= 1 || !shrunk))) return { set, size };
+  }
+}
 
 /** a channel's formulas as SoundFunc writes them */
 const channelLines = (track: Track, pitchOnly: boolean): { port: string; text: string }[] => channelOutputs(track, pitchOnly).map((o) => ({ port: o.port, text: toSource(o.ast) }));
@@ -151,6 +185,8 @@ export function VideoStudio() {
   const recorder = useRef<MediaRecorder | null>(null);
   const timers = useRef<number[]>([]);
   const cancelled = useRef(false);
+  /** between pressing Record and the take: a second press does nothing */
+  const preparing = useRef(false);
 
   const F = FORMATS[format];
   const L = useMemo(() => layoutOf(format, showFns), [format, showFns]);
@@ -302,7 +338,8 @@ export function VideoStudio() {
       if (L.fns && fnLayout) {
         const on = sounding(engine.position());
         const box = L.fns;
-        const size = mathView === 'latex' ? L.font : fnLayout.size;
+        const math = mathView === 'latex' ? setMath(texBlocks, L.fns, L.font, T.ink) : null;
+        const size = math ? math.size : fnLayout.size;
         const lh = Math.round(size * 1.35);
         const indent = size * 1.6;
         let y = box.y;
@@ -321,33 +358,22 @@ export function VideoStudio() {
           y += lh;
         };
         let more = 0;
-        if (mathView === 'latex') {
-          // typeset: each formula scaled to the box's width, and never taller than two and a half lines
-          const exPx = size * 0.5;
-          texBlocks.forEach(({ track, tex }, i) => {
+        if (math) {
+          const shown = math.set.filter(({ track }) => engine.levelOf(track.id) >= 0.02);
+          shown.forEach(({ track, lines, h }, i) => {
             if (more) return;
-            if (y + lh * 2 > box.y + box.h) {
-              more = texBlocks.length - i;
+            // what doesn't fit even at the smallest size is counted, with a line kept for saying so
+            if (y + h > box.y + box.h - (i < shown.length - 1 ? lh : 0) && i > 0) {
+              more = shown.length - i;
               return;
             }
             const level = engine.levelOf(track.id);
-            if (level < 0.02) return;
             const lit = on.has(track.id) && level > 0.1;
             head(track, lit, level);
             g.globalAlpha = (lit ? 1 : 0.55) * level;
-            for (const t of tex) {
-              const m = mathImage(t, T.ink);
-              if (!m) continue;
-              const w = m.wEx * exPx, h = m.hEx * exPx;
-              const k = Math.max(0.3, Math.min(1, (box.w - indent) / w, (size * 2.6) / h));
-              if (y + h * k > box.y + box.h) break;
-              g.save();
-              g.beginPath();
-              g.rect(box.x, y, box.w, h * k + 2);
-              g.clip();
-              g.drawImage(m.img, box.x + indent, y, w * k, h * k);
-              g.restore();
-              y += h * k + lh * 0.2;
+            for (const l of lines) {
+              g.drawImage(l.img, box.x + indent, y, l.w, l.h);
+              y += l.h + lh * 0.2;
             }
             y += lh * 0.35;
           });
@@ -434,15 +460,22 @@ export function VideoStudio() {
 
   /** record from the top: the song plays for the chosen loops, the clip ends after the reverb's tail */
   const record = async () => {
-    if (!mime) return;
+    if (!mime || preparing.current) return;
+    preparing.current = true;
     if (result) URL.revokeObjectURL(result.url);
     setResult(null);
     setPhase('idle');
     cancelled.current = false;
     if (useStore.getState().playing) stopPlayback();
+    // the math is all typeset before the take, so nothing pops in during it
+    if (source === 'frame' && showFns && mathView === 'latex') {
+      const ink = themeColours().ink;
+      for (let i = 0; i < 50 && texBlocks.some((b) => b.tex.some((v) => v.some((t) => mathPending(t, ink)))); i++) await new Promise((r) => setTimeout(r, 100));
+    }
     // the file is named after the take, whatever is changed afterwards
     const name = `${fileSafe(title || project.name)}-${source === 'app' ? 'screen' : F.label.replace(':', 'x')}`;
     const src = await videoSource();
+    preparing.current = false;
     if (!src) return;
     const stream = src.stream;
     for (const t of engine.audioStream().getAudioTracks()) stream.addTrack(t);

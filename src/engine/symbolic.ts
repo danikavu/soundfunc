@@ -505,8 +505,14 @@ export function toTex(ast: Ast, min = 0): string {
       return wrap(`-${toTex(ast.a, 7)}`);
     case 'not':
       return wrap(`\\lnot ${toTex(ast.a, 7)}`);
-    case 'cond':
-      return `\\begin{cases} ${toTex(ast.a)} & \\text{if } ${toTex(ast.c)} \\\\ ${toTex(ast.b)} & \\text{otherwise} \\end{cases}`;
+    case 'cond': {
+      // if … else if … otherwise is one list of cases, not cases inside cases
+      const rows: string[] = [];
+      let rest: Ast = ast;
+      for (; rest.k === 'cond'; rest = rest.b) rows.push(`${toTex(rest.a)} & \\text{if } ${toTex(rest.c)}`);
+      rows.push(`${toTex(rest)} & \\text{otherwise}`);
+      return `\\begin{cases} ${rows.join(' \\\\ ')} \\end{cases}`;
+    }
     case 'bin': {
       const p = PREC[ast.op];
       const a = ast.a, b = ast.b;
@@ -568,6 +574,89 @@ export function toTex(ast: Ast, min = 0): string {
       }
     }
   }
+}
+
+/** the parts a formula may be broken between, each with the sign that joins it to the one before: its terms, or a lone term's factors */
+function texParts(ast: Ast): string[] {
+  const terms: string[] = [];
+  const sum = (a: Ast) => {
+    if (a.k === 'bin' && (a.op === '+' || a.op === '-')) {
+      sum(a.a);
+      terms.push(`{} ${a.op} ${toTex(a.b, PREC[a.op] + 1)}`);
+    } else terms.push(toTex(a, PREC['+']));
+  };
+  sum(ast);
+  if (terms.length > 1) return terms;
+  const factors: string[] = [];
+  const product = (a: Ast) => {
+    // a number stays with what it multiplies
+    if (a.k === 'bin' && a.op === '*' && a.a.k !== 'num') {
+      product(a.a);
+      factors.push(`{} \\cdot ${toTex(a.b, PREC['*'] + 1)}`);
+    } else factors.push(toTex(a, PREC['*']));
+  };
+  product(ast);
+  return factors;
+}
+
+/** brackets round a tall, lopsided thing (cases over a fraction's line) close in on it, centred, instead of reaching as far below as above */
+function snugBrackets(tex: string): string {
+  let out = '', i = 0;
+  for (;;) {
+    const at = tex.indexOf('\\left', i);
+    if (at < 0) return out + tex.slice(i);
+    // the matching \right
+    let depth = 0, end = -1;
+    for (const m of tex.slice(at).matchAll(/\\(left|right)(?![a-z])/g)) {
+      depth += m[1] === 'left' ? 1 : -1;
+      if (!depth) {
+        end = at + m.index;
+        break;
+      }
+    }
+    const open = /^\\left(?:\\[a-z]+|\\.|.)/.exec(tex.slice(at));
+    if (end < 0 || !open) return out + tex.slice(i);
+    const inner = snugBrackets(tex.slice(at + open[0].length, end));
+    out += tex.slice(i, at) + open[0] + (inner.includes('\\begin{cases}') ? ` \\vcenter{${inner}} ` : inner);
+    i = end;
+  }
+}
+
+/**
+ * The ways to write `name = formula` in a limited width: on one line, over up to `most` lines (broken
+ * between terms, or between a product's factors), and with long lists of numbers set in rows.
+ */
+export function texVariants(name: string, ast: Ast, most = 5): string[] {
+  const lhs = `\\mathrm{${name}} = `;
+  const parts = texParts(ast);
+  const out = [lhs + toTex(ast)];
+  for (let n = 2; n <= Math.min(most, parts.length); n++) {
+    // lines of about equal length, in order
+    const total = parts.reduce((s, p) => s + p.length, 0);
+    const lines: string[] = [];
+    let line = '', done = 0;
+    parts.forEach((p, i) => {
+      if (line && lines.length < n - 1 && (done + p.length / 2 > ((lines.length + 1) * total) / n || parts.length - i <= n - 1 - lines.length)) {
+        lines.push(line);
+        line = '';
+      }
+      line += (line ? ' ' : '') + p;
+      done += p.length;
+    });
+    lines.push(line);
+    // no line for a scrap (a lone − 18)
+    if (lines.slice(1).some((l) => l.length < (0.2 * total) / n)) continue;
+    out.push(`\\begin{aligned} ${lhs.replace('= ', '={} & ')}${lines.join(' \\\\ & \\quad ')} \\end{aligned}`);
+  }
+  const rows = (tex: string, n: number) =>
+    tex.replace(/\\left\(((?:-?[\d.]+,\\ ){11,}-?[\d.]+)\\right\)_/g, (_m, list: string) => {
+      const v = list.split(',\\ ');
+      const per = Math.ceil(v.length / n);
+      const set = Array.from({ length: Math.ceil(v.length / per) }, (_, i) => v.slice(i * per, (i + 1) * per).join(',\\ '));
+      return `\\left(\\begin{array}{l} ${set.join(', \\\\ ')} \\end{array}\\right)_`;
+    });
+  for (const tex of [...out]) for (let n = 2; n <= 4; n++) if (rows(tex, n) !== tex) out.push(rows(tex, n));
+  return out.map(snugBrackets);
 }
 
 // ---------- printing: JavaScript & Python ----------

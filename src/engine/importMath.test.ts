@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { compileAst, FUNCTIONS, type Ast } from './expr';
+import { compileAst, FUNCTIONS, parse, type Ast } from './expr';
 import { importMath, ImportError } from './importMath';
 import { readNative, type NativeChannel } from './importChannel';
-import { compose, trackDocument, trackFormulas, trackTex, fmtNum } from './symbolic';
+import { compose, trackDocument, trackFormulas, trackTex, fmtNum, texVariants, toTex } from './symbolic';
 import { PRESETS, defaultProject, trackFromPreset } from './presets';
 import { scaleLength, type Track } from './project';
 
@@ -226,5 +226,31 @@ describe('telling SoundFunc’s writing from a function from elsewhere', () => {
   });
   it('reports a broken line instead of guessing', () => {
     expect(() => readNative('pitch = n +\nvelocity = 1')).toThrow(/pitch/);
+  });
+});
+
+describe('how the LaTeX is laid out', () => {
+  it('writes if … else if … otherwise as one list of cases, and reads it back', () => {
+    const src = '(n < 10 ? 1 : n < 20 ? 2 : n < 30 ? 3 : 4) * 2 + (n % 2 == 0 ? (n < 4 ? 7 : 8) : 9)';
+    const ast = parse(src).ast;
+    const tex = toTex(ast);
+    expect(toTex(parse('n < 10 ? 1 : n < 20 ? 2 : 3').ast).match(/begin\{cases\}/g)).toHaveLength(1);
+    const back = compileAst(importMath(tex, { native: true }).value), want = compileAst(ast);
+    for (const n of [0, 1, 4, 5, 12, 13, 25, 26, 40, 41]) expect(back({ n }), `n=${n}`).toBe(want({ n }));
+  });
+  it('breaks a long formula between its terms or factors, losing nothing, and sets long lists in rows', () => {
+    const sum = texVariants('pitch', parse('7.29 + 10.39 * sin(3 * t) - 1.61 * sin(8 * t) + 4.82 * sin(12 * t)').ast);
+    expect(sum).toHaveLength(4); // one line, then 2, 3 and 4
+    const bare = (t: string) => t.replace(/\\begin\{aligned\}|\\end\{aligned\}|\\\\|&|\\quad|\{\}|\s|[{}=]/g, '');
+    for (const v of sum) expect(bare(v)).toBe(bare(sum[0]));
+    expect(sum.map((v) => v.split(' \\\\ ').length)).toEqual([1, 2, 3, 4]);
+    const product = texVariants('velocity', parse('0.95 * bits(0x8120, n) * (0.88 + 0.12 * rand(n, 3))').ast);
+    expect(product.length).toBeGreaterThan(1);
+    const list = texVariants('pitch', parse('h + pick(n, 0,0,0,0,8,0,6,0,0,0,4,0,6,0,0,0)').ast);
+    expect(list.some((v) => v.includes('begin{array}'))).toBe(true);
+    // brackets round cases close in on them, and nothing else changes
+    const lead = texVariants('pitch', parse('floor((n < 4 ? 12 : 34) / 10^(n % 2)) % 10 - floor(n / 2)').ast)[0];
+    expect(lead.match(/vcenter/g)).toHaveLength(1);
+    expect(lead.match(/\\left(?![a-z])/g)).toHaveLength(lead.match(/\\right(?![a-z])/g)!.length);
   });
 });

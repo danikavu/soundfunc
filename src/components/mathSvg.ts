@@ -54,11 +54,16 @@ export function mathImage(tex: string, colour: string): MathImage | null {
       const img = new Image();
       img.onload = () => cache.set(key, { img, wEx, hEx });
       img.onerror = () => cache.set(key, 'failed');
-      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg.includes('xmlns=') ? svg : svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'))}`;
+      // drawn larger than its natural size, so it stays sharp wherever an SVG is turned to pixels first
+      const big = svg.replace(/(width|height)="([\d.]+)ex"/g, (_m, k: string, v: string) => `${k}="${(Number(v) * 24).toFixed(1)}px"`);
+      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(big.includes('xmlns=') ? big : big.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'))}`;
     })
     .catch(() => cache.set(key, 'failed'));
   return null;
 }
+
+/** is this image still being made? */
+export const mathPending = (tex: string, colour: string) => cache.get(`${colour}|${tex}`) === 'loading';
 
 /** start loading MathJax ahead of time (the first formula then appears sooner) */
 export const preloadMath = () => void loadMathJax();
