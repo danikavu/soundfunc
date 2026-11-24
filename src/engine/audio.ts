@@ -245,9 +245,14 @@ export class AudioEngine {
   /** channels fading in or out: from → to between two audio-clock times (and the fade before, until this one starts) */
   private fades = new Map<string, Fade>();
 
-  /** a channel's fade level now, 0 … 1 (1 when it was never faded) */
+  /**
+   * A channel's level as it is heard now, 0 … 1 (1 when it was never switched). Read on the same
+   * clock as position() — the audio clock less the output's latency — so a channel switched on for
+   * the next loop appears exactly as the playhead wraps, not a moment before it.
+   */
   levelOf(trackId: string): number {
-    return levelAt(this.fades.get(trackId), this.ctx?.currentTime ?? 0);
+    const ctx = this.ctx;
+    return levelAt(this.fades.get(trackId), ctx ? ctx.currentTime - (ctx.outputLatency || 0) : 0);
   }
 
   /**
