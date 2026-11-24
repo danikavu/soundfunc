@@ -316,11 +316,8 @@ export function VideoStudio() {
   const L = useMemo(() => layoutOf(format, showFns), [format, showFns]);
   const tracks = useMemo(() => audibleTracks(project.tracks), [project.tracks]);
   const loopBeats = songBeats(tracks, project.song);
-  /** the channels a build-up brings in, in turn: those that are on (the ones switched off stay out) */
-  const buildOrder = useMemo(() => {
-    const on = tracks.filter((t) => !down.has(t.id));
-    return build === 'random' ? shuffled(on, shuffle) : on;
-  }, [tracks, down, build, shuffle]);
+  /** the channels a build-up brings in, in turn: every one, the switched-off ones too */
+  const buildOrder = useMemo(() => (build === 'random' ? shuffled(tracks, shuffle) : tracks), [tracks, build, shuffle]);
   /** during a take: the order it was started with */
   const [running, setRunning] = useState<Track[] | null>(null);
   const order = running ?? buildOrder;
@@ -635,23 +632,27 @@ export function VideoStudio() {
     setPhase('armed');
   };
 
-  /** a build-up's channels, while one runs */
-  const buildRef = useRef<Track[] | null>(null);
-  /** only its first channel is left up — at the start of the next loop, when the song is playing */
+  /** a build-up's channels, while one runs, and which were switched off before it */
+  const buildRef = useRef<{ order: Track[]; before: Set<string> } | null>(null);
+  /** switch to its first channel alone — at the start of the next loop, when the song is playing */
   const beginBuild = (onLoop: boolean) => {
     if (buildRef.current) return;
-    buildRef.current = order;
+    buildRef.current = { order, before: new Set(downRef.current) };
     setRunning(order);
-    for (const t of order.slice(1)) {
-      markDown(t.id, true);
-      engine.fadeChannel(t.id, 0, CUT, onLoop);
-    }
+    setCued(new Set());
+    order.forEach((t, i) => {
+      if (downRef.current.has(t.id) === i > 0) return;
+      markDown(t.id, i > 0);
+      engine.fadeChannel(t.id, i ? 0 : 1, CUT, onLoop);
+    });
   };
-  /** every channel it was bringing in is up again */
+  /** every channel is as it was before it */
   const endBuild = () => {
-    for (const t of buildRef.current ?? []) {
-      markDown(t.id, false);
-      engine.fadeChannel(t.id, 1, CUT);
+    const run = buildRef.current;
+    if (!run) return;
+    for (const t of run.order) {
+      markDown(t.id, run.before.has(t.id));
+      engine.fadeChannel(t.id, run.before.has(t.id) ? 0 : 1, CUT);
     }
     buildRef.current = null;
     setRunning(null);
@@ -764,7 +765,7 @@ export function VideoStudio() {
       const now = Math.floor(((engine.position() ?? 0) - (at ?? 0)) / loopBeats + 1e-6);
       if (buildRef.current && now > loop && engine.secondsTo((at ?? 0) + now * loopBeats) < 0) {
         loop = now;
-        const next = buildRef.current[loop + 1];
+        const next = buildRef.current.order[loop + 1];
         if (next && downRef.current.has(next.id) && (loops === FREE || loop + 1 < loops)) toggleChannel(next.id);
       }
       setElapsed((performance.now() - began) / 1000);
@@ -976,13 +977,12 @@ export function VideoStudio() {
                     </span>
                   ))}
                   {loops !== FREE && loops < order.length ? ` · ${loops} of ${order.length} come in` : ''}
-                  {down.size && !running ? (order.length < 2 ? ' · switch on the channels to bring in' : ' · those switched off stay out') : ''}
                 </small>
               )}
             </div>
             <div className="field">
               <span>Length</span>
-              <Seg<number> value={length} onChange={(n) => !busy && setLength(n)} options={[...(build === 'off' ? [] : [{ value: AUTO, label: 'Auto' }]), ...[1, 2, 4, 8].map((n) => ({ value: n, label: build === 'off' ? `${n} loop${n > 1 ? 's' : ''}` : String(n) })), { value: FREE, label: 'Free' }]} />
+              <Seg<number> value={length} onChange={(n) => !busy && setLength(n)} options={[...(build === 'off' ? [] : [{ value: AUTO, label: `Auto · ${order.length}` }]), ...[1, 2, 4, 8].map((n) => ({ value: n, label: build === 'off' ? `${n} loop${n > 1 ? 's' : ''}` : String(n) })), { value: FREE, label: 'Free' }]} />
               <small className="muted">{loops === FREE ? 'Records until you stop it' : `${build === 'off' ? '' : `${loops} loop${loops > 1 ? 's' : ''} · `}${building ? `${pattern} · ` : ''}${fmtTime(seconds)} · ${fits}`}</small>
             </div>
             {!mime && <p className="import-warn">This browser can’t record video. Try Chrome, Edge or Safari.</p>}
