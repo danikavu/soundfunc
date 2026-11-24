@@ -318,6 +318,7 @@ export function Sidebar() {
   const anySolo = project.tracks.some((t) => t.solo);
   const allLocked = project.tracks.length > 0 && project.tracks.every((t) => t.locked);
   const selected = useSelectedTrack();
+  const liveFades = useStore((st) => st.liveFades);
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
   // two halves that scroll on their own: the channels always in view above, kits and functions below
   return (
@@ -386,9 +387,21 @@ export function Sidebar() {
           onClick={() => selectTrack(t.id)}
         >
           <div className="ms-col" onClick={(e) => e.stopPropagation()}>
-            <button className={`ms ${t.muted ? 'on' : ''}`} title="Mute" aria-label={`Mute ${t.name}`} onClick={() => updateTrack(t.id, { muted: !t.muted })}>
-              M
-            </button>
+            {liveFades ? (
+              // video studio: M switches the channel — off at once, back on at the start of the next loop
+              <button
+                className={`ms ${liveFades.down.includes(t.id) ? 'on' : ''} ${liveFades.cued.includes(t.id) ? 'cued' : ''}`}
+                title={liveFades.cued.includes(t.id) ? 'Comes in at the start of the next loop' : liveFades.down.includes(t.id) ? 'Bring in at the start of the next loop' : 'Switch off'}
+                aria-label={`Mute ${t.name}`}
+                onClick={() => liveFades.toggle(t.id)}
+              >
+                M
+              </button>
+            ) : (
+              <button className={`ms ${t.muted ? 'on' : ''}`} title="Mute" aria-label={`Mute ${t.name}`} onClick={() => updateTrack(t.id, { muted: !t.muted })}>
+                M
+              </button>
+            )}
             <button className={`ms solo ${t.solo ? 'on' : ''}`} title="Solo" aria-label={`Solo ${t.name}`} onClick={() => updateTrack(t.id, { solo: !t.solo })}>
               S
             </button>

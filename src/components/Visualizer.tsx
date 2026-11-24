@@ -590,6 +590,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         const now = performance.now() / 1000;
 
         for (const { track, notes, glide } of melodic) {
+          if (levelOf(track.id) < 0.02) continue;
           const isSel = track.id === selected?.id;
           if (glide.length) {
             // a glide track is one fine, glowing line per sounding stretch
@@ -640,7 +641,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           g.lineTo(W - padR, y0 + laneH / 2);
           g.stroke();
           const h = Math.max(3, laneH * 0.62);
-          for (const note of notes) {
+          if (levelOf(track.id) >= 0.02) for (const note of notes) {
             if (!visible(note.beat, note.beat + note.duration) || note.beat > until) continue;
             const x = bx(note.beat);
             const w = Math.max(h * 0.8, Math.min(bx(note.beat + note.duration) - x - 1, h * 1.4));
@@ -756,6 +757,8 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         g.rect(padL - 1, 0, iw + 2, H);
         g.clip();
 
+        // a channel switched off in a video shows no curve until it is back
+        if (levelOf(selected.id) >= 0.02) {
         // the function, as one ink stroke — gaps where it is silent
         g.lineJoin = 'round';
         g.lineCap = 'round';
@@ -819,6 +822,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           g.globalAlpha = 1;
         }
 
+        }
         g.restore();
         // the playhead (or the scrub cursor) rides the curve
         const beat = scrubRef.current ?? (pos === null ? null : pos % fnFull.total);
@@ -840,7 +844,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           // the spark burns while a note of this channel sounds (a glide: while its curve does)
           const own = [...score.melodic, ...score.drums].find((it) => it.track.id === selected.id);
           const sounding = glide ? fnFull.vel[i] >= 0.01 : !!own?.notes.some((nt) => beat >= nt.beat && beat < nt.beat + Math.max(nt.duration, 0.05));
-          if (sounding) sparkHead(g, x, y, performance.now() / 1000, 7, selected.color, 1.15);
+          if (sounding && levelOf(selected.id) >= 0.02) sparkHead(g, x, y, performance.now() / 1000, 7, selected.color, 1.15);
           else {
             // silent here: the fuse waits, unlit
             g.fillStyle = P.accent;

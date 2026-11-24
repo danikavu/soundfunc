@@ -63,6 +63,12 @@ interface State {
   /** the video studio: record the visuals, the functions and the sound for socials */
   showVideo: boolean;
   setShowVideo: (open: boolean) => void;
+  /**
+   * While the video studio is open, a channel's M fades it instead of muting it (out at once, back
+   * in on the next loop): the channels faded out, the ones waiting to come in, and the fade itself.
+   */
+  liveFades: { down: string[]; cued: string[]; toggle: (id: string) => void } | null;
+  setLiveFades: (f: State['liveFades']) => void;
   /** plant a multi-track kit (and its tempo/key); replaces the current tracks unless layering */
   /** a kit by id (built in), or the kit itself (a saved one) */
   addKit: (kit: string | Kit, layer?: boolean) => void;
@@ -244,6 +250,8 @@ export const useStore = create<State>()(
         setShowImport: (showImport) => set({ showImport }),
         showVideo: false,
         setShowVideo: (showVideo) => set({ showVideo }),
+        liveFades: null,
+        setLiveFades: (liveFades) => set({ liveFades }),
         addKitTracks: (which, trackIndexes, adoptSong = false) => {
           const kit = typeof which === 'string' ? KITS.find((k) => k.id === which) : which;
           if (!kit || !trackIndexes.length) return;

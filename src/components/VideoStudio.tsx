@@ -25,13 +25,8 @@ const FORMATS: Record<Format, { w: number; h: number; label: string; hint: strin
 type View = 'score' | 'function';
 /** how the functions are written in the frame: SoundFunc formulas, or typeset math */
 type MathView = 'formulas' | 'latex';
-/** fade lengths, in beats */
-const FADES: { beats: number; label: string }[] = [
-  { beats: 2, label: '½ bar' },
-  { beats: 4, label: '1 bar' },
-  { beats: 8, label: '2 bars' },
-  { beats: 16, label: '4 bars' },
-];
+/** switching a channel is a click-free cut, not a fade (seconds) */
+const CUT = 0.006;
 /** the stage's pixel ratio: the visualizer is drawn as on a 2× screen, whatever this one is */
 const RATIO = 2;
 const FPS = 30;
@@ -144,7 +139,6 @@ export function VideoStudio() {
   /** the studio steps aside while the whole app is recorded */
   const [hidden, setHidden] = useState(false);
   const [mathView, setMathView] = useState<MathView>('formulas');
-  const [fadeBeats, setFadeBeats] = useState(4);
   /** which channels are up (fading in or in) or down (fading out or out) */
   const [down, setDown] = useState<Set<string>>(new Set());
   /** channels brought back that are waiting for the next loop to begin */
@@ -170,33 +164,57 @@ export function VideoStudio() {
   const stage = useMemo(() => ({ view, pixelRatio: RATIO, onCanvas, level: (id: string) => engine.levelOf(id) }), [view, onCanvas]);
 
   /** fade a channel out, or back in, over the chosen length — the sound and the picture together */
-  const toggleChannel = (id: string) =>
-    setDown((d) => {
-      const next = new Set(d);
-      const out = !next.has(id);
-      if (out) next.add(id);
-      else next.delete(id);
-      // out: at once; back in: on the first beat of the next loop
-      const wait = engine.fadeChannel(id, out ? 0 : 1, (fadeBeats * 60) / project.song.bpm, !out);
-      setCued((c) => {
-        const n = new Set(c);
-        if (!out && wait > 0.02) n.add(id);
-        else n.delete(id);
-        return n;
-      });
-      if (!out && wait > 0.02)
-        timers.current.push(
-          window.setTimeout(() => setCued((c) => (c.has(id) ? new Set([...c].filter((x) => x !== id)) : c)), wait * 1000),
-        );
-      return next;
+  const downRef = useRef(new Set<string>());
+  const toggleChannel = useCallback((id: string) => {
+    const d = new Set(downRef.current);
+    const out = !d.has(id);
+    if (out) d.add(id);
+    else d.delete(id);
+    downRef.current = d;
+    setDown(d);
+    // off: at once; back on: on the first beat of the next loop — no fades either way
+    const wait = engine.fadeChannel(id, out ? 0 : 1, CUT, !out);
+    setCued((c) => {
+      const n = new Set(c);
+      if (!out && wait > 0.02) n.add(id);
+      else n.delete(id);
+      return n;
     });
-  // every channel up again when the studio opens and when it closes
+    if (!out && wait > 0.02) timers.current.push(window.setTimeout(() => setCued((c) => (c.has(id) ? new Set([...c].filter((x) => x !== id)) : c)), wait * 1000));
+  }, []);
+  /**
+   * Opening: every channel up, except the muted ones — they join the studio faded out, so they can
+   * be brought in. Closing: the ones that were muted and are still out are muted again.
+   */
   useEffect(() => {
     engine.resetFades();
-    setDown(new Set());
+    const muted = new Set<string>();
+    if (open) {
+      const { project: p, updateTrack } = useStore.getState();
+      for (const t of p.tracks)
+        if (t.muted) {
+          muted.add(t.id);
+          engine.fadeChannel(t.id, 0, CUT);
+        }
+      for (const id of muted) updateTrack(id, { muted: false }, false);
+    }
+    downRef.current = new Set(muted);
+    setDown(new Set(muted));
     setCued(new Set());
-    return () => engine.resetFades();
+    return () => {
+      if (open) {
+        const st = useStore.getState();
+        for (const id of muted) if (downRef.current.has(id) && st.project.tracks.some((t) => t.id === id)) st.updateTrack(id, { muted: true }, false);
+      }
+      engine.resetFades();
+    };
   }, [open]);
+  // the channel list's M keys fade too, while the studio is open (in a full-screen take, they are the way to play it)
+  const setLiveFades = useStore((st) => st.setLiveFades);
+  useEffect(() => {
+    setLiveFades(open ? { down: [...down], cued: [...cued], toggle: toggleChannel } : null);
+  }, [open, down, cued, toggleChannel, setLiveFades]);
+  useEffect(() => () => setLiveFades(null), [setLiveFades]);
   useEffect(() => {
     if (open && mathView === 'latex') preloadMath();
   }, [open, mathView]);
@@ -596,7 +614,7 @@ export function VideoStudio() {
               <small className="muted">The backdrop, its strength and the fuse follow the main view.</small>
             </div>
             <div className="field">
-              <span>Channels — fade in and out, live (keys 1–9)</span>
+              <span>Channels — on and off, live (keys 1–9)</span>
               <div className="video-channels">
                 {tracks.map((t, i) => (
                   <button
@@ -604,15 +622,14 @@ export function VideoStudio() {
                     className={`btn small video-ch ${down.has(t.id) ? 'off' : 'on'} ${cued.has(t.id) ? 'cued' : ''}`}
                     aria-pressed={!down.has(t.id)}
                     onClick={() => toggleChannel(t.id)}
-                    title={`${cued.has(t.id) ? `${t.name} comes in at the start of the next loop` : `${down.has(t.id) ? 'Bring in' : 'Fade out'} ${t.name}`}${i < 9 ? ` (key ${i + 1})` : ''}`}
+                    title={`${cued.has(t.id) ? `${t.name} comes in at the start of the next loop` : `${down.has(t.id) ? 'Bring in' : 'Switch off'} ${t.name}`}${i < 9 ? ` (key ${i + 1})` : ''}`}
                   >
                     <i style={{ background: t.color }} />
                     {i < 9 && <small>{i + 1}</small>} {t.name}
                   </button>
                 ))}
               </div>
-              <Seg<number> value={fadeBeats} onChange={setFadeBeats} options={FADES.map((f) => ({ value: f.beats, label: f.label }))} />
-              <small className="muted">A channel fades out at once and comes back in on the start of the next loop. Fades run on the tempo, are heard and seen, and are recorded. Set channels out before Record to bring them in during the take.</small>
+              <small className="muted">A channel goes off at once — sound and picture — and comes back on at the start of the next loop. It's all recorded. Switch channels off before Record to bring them in during the take; muted channels start off. In a full-screen take, the channel list’s M keys do the same.</small>
             </div>
             <label className="field">
               <span>Title</span>

@@ -3727,6 +3727,7 @@ aside.panel:last-of-type .info-pop {
 .video-ch small {
   opacity: 0.55;
 }
+.ms.cued,
 .video-ch.cued {
   opacity: 1;
   animation: video-blink 0.8s steps(2) infinite;
