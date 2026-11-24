@@ -1,0 +1,457 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { engine } from '../engine/audio';
+import { audibleTracks, isDrum, keyLabel, patternBeats, songBeats, stretchOf, type Track } from '../engine/project';
+import { compose, toSource } from '../engine/symbolic';
+import { useStore } from '../state/store';
+import { sparkHead } from './fuse';
+import { toast } from './TopBar';
+import { Icon, Seg, TextField, download, fileSafe, getRender } from './ui';
+import { Visualizer } from './Visualizer';
+
+/**
+ * Video mode: the visualizer, every channel's functions and the sound, recorded together as a clip
+ * sized for socials. The frame is composed on a canvas — a title, the Score (or Function view) drawn
+ * fresh at the video's own size, the functions lighting up as their channels play — and recorded
+ * with the mix, from the top of the song, for as many loops as you choose.
+ */
+
+type Format = 'story' | 'square' | 'wide';
+const FORMATS: Record<Format, { w: number; h: number; label: string; hint: string }> = {
+  story: { w: 1080, h: 1920, label: '9:16', hint: 'Reels, TikTok, Shorts, Stories' },
+  square: { w: 1080, h: 1080, label: '1:1', hint: 'Instagram and X feeds' },
+  wide: { w: 1920, h: 1080, label: '16:9', hint: 'YouTube, X, LinkedIn' },
+};
+type View = 'score' | 'function';
+/** the stage's pixel ratio: the visualizer is drawn as on a 2× screen, whatever this one is */
+const RATIO = 2;
+const FPS = 30;
+/** the ring of reverb after the last loop, in seconds, kept in the clip */
+const TAIL = 0.9;
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** where everything sits in a frame */
+function layoutOf(format: Format, fns: boolean): { head: Box; viz: Box; fns: Box | null; foot: Box; font: number } {
+  if (format === 'story')
+    return {
+      head: { x: 64, y: 70, w: 952, h: 170 },
+      viz: { x: 32, y: 260, w: 1016, h: fns ? 900 : 1520 },
+      fns: fns ? { x: 64, y: 1200, w: 952, h: 600 } : null,
+      foot: { x: 64, y: 1840, w: 952, h: 50 },
+      font: 28,
+    };
+  if (format === 'square')
+    return {
+      head: { x: 56, y: 44, w: 968, h: 120 },
+      viz: { x: 28, y: 170, w: 1024, h: fns ? 540 : 820 },
+      fns: fns ? { x: 56, y: 730, w: 968, h: 290 } : null,
+      foot: { x: 56, y: 1032, w: 968, h: 36 },
+      font: 21,
+    };
+  return {
+    head: { x: 60, y: 40, w: 1800, h: 110 },
+    viz: fns ? { x: 28, y: 160, w: 1240, h: 860 } : { x: 28, y: 160, w: 1864, h: 860 },
+    fns: fns ? { x: 1300, y: 176, w: 580, h: 830 } : null,
+    foot: { x: 60, y: 1032, w: 1800, h: 36 },
+    font: 21,
+  };
+}
+
+/** the recording formats to try, best for socials first: MP4 (H.264 + AAC) where the browser can write it */
+const MIMES = ['video/mp4;codecs=avc1.42E01F,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+const pickMime = () => (typeof MediaRecorder === 'undefined' ? null : MIMES.find((m) => MediaRecorder.isTypeSupported(m)) ?? null);
+
+/** a channel's lines for the frame: its name and its formulas (drums: just when they hit) */
+function channelLines(track: Track): { port: string; text: string }[] {
+  const outs = compose(track, true).math.outputs;
+  const ports = isDrum(track.waveform) ? ['velocity'] : ['pitch', 'velocity'];
+  return outs.filter((o) => ports.includes(o.port)).map((o) => ({ port: o.port, text: toSource(o.ast) }));
+}
+
+/** break text into lines no wider than `max`, at spaces where it can, anywhere where it must */
+function wrapText(g: CanvasRenderingContext2D, text: string, max: number): string[] {
+  const out: string[] = [];
+  let line = '';
+  for (const word of text.split(/(?<=[ ,])/)) {
+    if (g.measureText(line + word).width <= max) {
+      line += word;
+      continue;
+    }
+    if (line) out.push(line.trimEnd());
+    line = '';
+    let w = word;
+    while (g.measureText(w).width > max) {
+      let cut = w.length;
+      while (cut > 1 && g.measureText(w.slice(0, cut)).width > max) cut--;
+      out.push(w.slice(0, cut));
+      w = w.slice(cut);
+    }
+    line = w;
+  }
+  if (line.trim()) out.push(line.trimEnd());
+  return out;
+}
+
+/** the colours of the screen, read from the page so a video looks like the app */
+function themeColours() {
+  // the screen's own ink (light on the dark display), read where the visualizer reads it
+  const viz = document.querySelector('.viz') ?? document.documentElement;
+  const root = getComputedStyle(viz);
+  const v = (n: string, d: string) => root.getPropertyValue(n).trim() || d;
+  // the screen's own background: the first colour up from the visualizer that isn't see-through
+  let bg = '';
+  for (let el: Element | null = document.querySelector('.viz'); el && !bg; el = el.parentElement) {
+    const c = getComputedStyle(el).backgroundColor;
+    if (c && c !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(c)) bg = c;
+  }
+  return { bg: bg || v('--lcd', '#0d1513'), ink: v('--ink', '#e8e4d8'), ink2: v('--ink-2', '#b8b2a4'), ink3: v('--ink-3', '#7d786c'), accent: v('--accent', '#e8742c'), mono: v('--mono', 'monospace'), sans: v('--sans', 'sans-serif') };
+}
+
+export function VideoStudio() {
+  const open = useStore((s) => s.showVideo);
+  const setOpen = useStore((s) => s.setShowVideo);
+  const project = useStore((s) => s.project);
+  const setPlaying = useStore((s) => s.setPlaying);
+  const [format, setFormat] = useState<Format>('story');
+  const [view, setView] = useState<View>('score');
+  const [showFns, setShowFns] = useState(true);
+  const [loops, setLoops] = useState(2);
+  const [title, setTitle] = useState('');
+  const [phase, setPhase] = useState<'idle' | 'recording' | 'done'>('idle');
+  const [progress, setProgress] = useState(0);
+  const [result, setResult] = useState<{ url: string; ext: string; bytes: number; seconds: number } | null>(null);
+  const frameRef = useRef<HTMLCanvasElement>(null);
+  const stageCanvas = useRef<HTMLCanvasElement | null>(null);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const timers = useRef<number[]>([]);
+  const cancelled = useRef(false);
+
+  const F = FORMATS[format];
+  const L = useMemo(() => layoutOf(format, showFns), [format, showFns]);
+  const tracks = useMemo(() => audibleTracks(project.tracks), [project.tracks]);
+  const loopSeconds = (songBeats(tracks, project.song) * 60) / project.song.bpm;
+  const seconds = loops * loopSeconds;
+  const mime = useMemo(pickMime, []);
+  const onCanvas = useCallback((c: HTMLCanvasElement | null) => {
+    stageCanvas.current = c;
+  }, []);
+  const stage = useMemo(() => ({ view, pixelRatio: RATIO, onCanvas }), [view, onCanvas]);
+
+  useEffect(() => {
+    if (open) setTitle((t) => t || project.name);
+  }, [open, project.name]);
+
+  // each channel's formulas, laid out to fit the functions box: as many lines each as there is room for
+  const fnLayout = useMemo(() => {
+    if (!L.fns) return null;
+    const g = document.createElement('canvas').getContext('2d')!;
+    const { mono } = themeColours();
+    const box = L.fns;
+    const channels = tracks.map((t) => ({ track: t, lines: channelLines(t) }));
+    for (let size = L.font; size >= 13; size -= 1) {
+      g.font = `400 ${size}px ${mono}`;
+      const lh = Math.round(size * 1.35);
+      const room = Math.floor(box.h / lh);
+      // as many channels as fit (each needs its name and a line), then a share of the room for each one's formulas
+      const count = Math.max(1, Math.min(channels.length, Math.floor((room + 0.35) / 2.35)));
+      const shown = channels.slice(0, count);
+      const extra = channels.length > count ? 1 : 0;
+      const perChannel = Math.max(1, Math.floor((room - extra - count * 1.35 + 0.35) / count));
+      const blocks = shown.map(({ track, lines }) => {
+        const text: string[] = [];
+        for (const l of lines) for (const w of wrapText(g, `${l.port} = ${l.text}`, box.w - size * 1.6)) text.push(w);
+        const kept = text.slice(0, perChannel);
+        if (text.length > perChannel && kept.length) kept[kept.length - 1] = `${kept[kept.length - 1].slice(0, -1)}…`;
+        return { track, text: kept };
+      });
+      const used = (blocks.reduce((n, b) => n + 1 + b.text.length, 0) + extra) * lh + (blocks.length - 1) * lh * 0.35;
+      if ((used <= box.h && count === channels.length) || size === 13 || (used <= box.h && size <= L.font * 0.75)) return { size, lh, blocks, more: channels.length - shown.length };
+    }
+    return null;
+  }, [L, tracks]);
+
+  // which channels sound right now, from the first pass of each (as the Score shows it)
+  const renders = useMemo(() => tracks.map((t) => ({ track: t, r: getRender(t, project.song), len: patternBeats(t) })), [tracks, project.song]);
+  const sounding = (pos: number | null): Set<string> => {
+    const out = new Set<string>();
+    if (pos === null) return out;
+    for (const { track, r, len } of renders) {
+      if (!(len > 0)) continue;
+      const pb = pos % len;
+      if (track.playMode === 'glide' && !isDrum(track.waveform)) {
+        const sb = track.stepBeats * stretchOf(track);
+        const i = Math.min(r.curve.velocity.length - 1, Math.max(0, Math.floor((pb / sb) * r.curve.res)));
+        if (r.curve.velocity[i] >= 0.01) out.add(track.id);
+      } else if (r.notes.some((n) => pb >= n.beat && pb < n.beat + Math.max(n.duration, 0.08))) out.add(track.id);
+    }
+    return out;
+  };
+
+  // compose the frame, every animation frame, while the studio is open
+  useEffect(() => {
+    if (!open) return;
+    let raf = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const c = frameRef.current;
+      if (!c) return;
+      const g = c.getContext('2d')!;
+      const T = themeColours();
+      const now = performance.now() / 1000;
+      g.fillStyle = T.bg;
+      g.fillRect(0, 0, F.w, F.h);
+      // the title, and the song under it
+      const { head, foot } = L;
+      g.textBaseline = 'top';
+      g.fillStyle = T.accent;
+      g.font = `700 ${Math.round(head.h * 0.42)}px ${T.mono}`;
+      g.fillText(title || project.name, head.x, head.y, head.w);
+      g.fillStyle = T.ink3;
+      g.font = `400 ${Math.round(head.h * 0.2)}px ${T.mono}`;
+      g.fillText(`${project.song.bpm} bpm · ${keyLabel(project.song)} · harmony ${project.song.harmony}`, head.x, head.y + head.h * 0.6, head.w);
+      // the visualizer, drawn for this frame size
+      const s = stageCanvas.current;
+      if (s && s.width) g.drawImage(s, L.viz.x, L.viz.y, L.viz.w, L.viz.h);
+      // the functions: each channel's name in its colour (a spark while it sounds), its formulas under it
+      if (L.fns && fnLayout) {
+        const on = sounding(engine.position());
+        let y = L.fns.y;
+        g.textBaseline = 'middle';
+        for (const { track, text } of fnLayout.blocks) {
+          const lit = on.has(track.id);
+          g.globalAlpha = lit ? 1 : 0.7;
+          g.fillStyle = track.color;
+          g.font = `700 ${fnLayout.size}px ${T.mono}`;
+          g.fillText(track.name, L.fns.x + fnLayout.size * 1.6, y + fnLayout.lh / 2);
+          if (lit) sparkHead(g, L.fns.x + fnLayout.size * 0.6, y + fnLayout.lh / 2, now, track.id.length * 7, track.color, fnLayout.size / 22);
+          else {
+            g.beginPath();
+            g.arc(L.fns.x + fnLayout.size * 0.6, y + fnLayout.lh / 2, fnLayout.size * 0.18, 0, Math.PI * 2);
+            g.fill();
+          }
+          y += fnLayout.lh;
+          g.font = `400 ${fnLayout.size}px ${T.mono}`;
+          g.fillStyle = T.ink;
+          g.globalAlpha = lit ? 0.95 : 0.5;
+          for (const line of text) {
+            g.fillText(line, L.fns.x + fnLayout.size * 1.6, y + fnLayout.lh / 2);
+            y += fnLayout.lh;
+          }
+          y += fnLayout.lh * 0.35;
+        }
+        if (fnLayout.more > 0) {
+          g.globalAlpha = 0.6;
+          g.fillStyle = T.ink3;
+          g.fillText(`+ ${fnLayout.more} more channel${fnLayout.more > 1 ? 's' : ''}`, L.fns.x + fnLayout.size * 1.6, y + fnLayout.lh / 2);
+        }
+        g.globalAlpha = 1;
+      }
+      // the maker's mark
+      g.textBaseline = 'middle';
+      g.fillStyle = T.ink3;
+      g.globalAlpha = 0.8;
+      g.font = `400 ${Math.round(foot.h * 0.55)}px ${T.mono}`;
+      g.fillText('made with SoundFunc — music written as functions', foot.x, foot.y + foot.h / 2, foot.w);
+      g.globalAlpha = 1;
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [open, F, L, fnLayout, title, project, renders]);
+
+  const clearTimers = () => {
+    timers.current.forEach((t) => clearTimeout(t));
+    timers.current = [];
+  };
+
+  const stopPlayback = () => {
+    engine.stop();
+    setPlaying(false);
+  };
+
+  /** record from the top: the song plays for the chosen loops, the clip ends after the reverb's tail */
+  const record = async () => {
+    const c = frameRef.current;
+    if (!c || !mime) return;
+    if (result) URL.revokeObjectURL(result.url);
+    setResult(null);
+    cancelled.current = false;
+    if (useStore.getState().playing) stopPlayback();
+    const stream = c.captureStream(FPS);
+    for (const t of engine.audioStream().getAudioTracks()) stream.addTrack(t);
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10_000_000, audioBitsPerSecond: 192_000 });
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    rec.onstop = () => {
+      stream.getVideoTracks().forEach((t) => t.stop());
+      if (cancelled.current) return;
+      const blob = new Blob(chunks, { type: mime.split(';')[0] });
+      setResult({ url: URL.createObjectURL(blob), ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm', bytes: blob.size, seconds: seconds + TAIL });
+      setPhase('done');
+    };
+    recorder.current = rec;
+    // a beat of silence first, so a platform's first frame isn't mid-note
+    rec.start(250);
+    setPhase('recording');
+    setProgress(0);
+    await new Promise((r) => setTimeout(r, 250));
+    await engine.play();
+    setPlaying(true);
+    const began = performance.now();
+    const tick = () => {
+      const p = Math.min(1, (performance.now() - began) / 1000 / (seconds + TAIL));
+      setProgress(p);
+      if (recorder.current === rec && rec.state === 'recording') timers.current.push(window.setTimeout(tick, 200));
+    };
+    tick();
+    timers.current.push(
+      window.setTimeout(() => {
+        stopPlayback();
+        timers.current.push(window.setTimeout(() => rec.state === 'recording' && rec.stop(), TAIL * 1000));
+      }, seconds * 1000),
+    );
+  };
+
+  /** stop now: what was recorded so far becomes the clip */
+  const finishEarly = () => {
+    clearTimers();
+    stopPlayback();
+    if (recorder.current?.state === 'recording') recorder.current.stop();
+  };
+
+  const close = () => {
+    if (phase === 'recording') {
+      cancelled.current = true;
+      finishEarly();
+      setPhase('idle');
+    }
+    clearTimers();
+    setOpen(false);
+  };
+
+  // closing with Esc; a finished clip's file is let go when the studio closes
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+  useEffect(() => {
+    if (open) return;
+    if (result) URL.revokeObjectURL(result.url);
+    setResult(null);
+    setPhase('idle');
+  }, [open]);
+
+  if (!open) return null;
+
+  const busy = phase === 'recording';
+  const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+  const fits = seconds <= 60 ? 'fits Reels, TikTok and Shorts' : seconds <= 90 ? 'fits Reels and TikTok — over Shorts’ 60 s' : seconds <= 180 ? 'fits TikTok (and Shorts up to 3 min)' : 'longer than most short-video limits';
+
+  return (
+    <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && close()}>
+      <div className="sheet video-sheet" role="dialog" aria-label="Video">
+        <header className="sheet-head">
+          <div>
+            <div className="eyebrow" style={{ margin: 0 }}>
+              Video
+            </div>
+            <p className="muted" style={{ margin: '6px 0 0', fontSize: 'var(--fs-md)' }}>
+              The visuals, every channel’s functions and the sound, recorded from the top of the song — sized for socials.
+            </p>
+          </div>
+          <button className="icon-btn" onClick={close} title="Close (Esc)">
+            <Icon name="close" />
+          </button>
+        </header>
+        <div className="sheet-body video-body">
+          <div className={`video-preview ${format}`}>
+            {result && phase === 'done' ? (
+              <video className="video-frame" src={result.url} controls playsInline />
+            ) : (
+              <canvas ref={frameRef} className="video-frame" width={F.w} height={F.h} />
+            )}
+            {busy && (
+              <div className="video-rec">
+                <span className="video-rec-dot" /> REC {fmtTime(progress * (seconds + TAIL))} / {fmtTime(seconds + TAIL)}
+              </div>
+            )}
+          </div>
+          <div className="video-options">
+            <div className="field">
+              <span>Format</span>
+              <Seg<Format> value={format} onChange={(f) => !busy && setFormat(f)} options={(Object.keys(FORMATS) as Format[]).map((f) => ({ value: f, label: FORMATS[f].label }))} />
+              <small className="muted">{F.hint} · {F.w}×{F.h}</small>
+            </div>
+            <div className="field">
+              <span>Show</span>
+              <Seg<View>
+                value={view}
+                onChange={(v) => !busy && setView(v)}
+                options={[
+                  { value: 'score', label: 'Score' },
+                  { value: 'function', label: 'Function' },
+                ]}
+              />
+              <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }}>
+                <input type="checkbox" checked={showFns} disabled={busy} onChange={(e) => setShowFns(e.target.checked)} /> the functions, lighting up as they play
+              </label>
+              <small className="muted">The backdrop, its strength and the fuse follow the main view.</small>
+            </div>
+            <label className="field">
+              <span>Title</span>
+              <TextField className="input" value={title} onValue={setTitle} />
+            </label>
+            <div className="field">
+              <span>Length</span>
+              <Seg<number> value={loops} onChange={(n) => !busy && setLoops(n)} options={[1, 2, 4, 8].map((n) => ({ value: n, label: `${n} loop${n > 1 ? 's' : ''}` }))} />
+              <small className="muted">
+                {fmtTime(seconds)} · {fits}
+              </small>
+            </div>
+            {!mime && <p className="import-warn">This browser can’t record video. Try Chrome, Edge or Safari.</p>}
+            {mime && !mime.startsWith('video/mp4') && <p className="import-warn">This browser records WebM. Most platforms take it; for Instagram, convert it to MP4 first.</p>}
+            <div className="video-actions">
+              {busy ? (
+                <button className="btn" onClick={finishEarly}>
+                  <Icon name="stop" size={12} /> Stop here
+                </button>
+              ) : (
+                <button className="btn primary" disabled={!mime} onClick={() => void record()}>
+                  <span className="video-rec-dot" /> {result ? 'Record again' : 'Record'}
+                </button>
+              )}
+              {result && phase === 'done' && (
+                <button
+                  className="btn primary"
+                  onClick={async () => {
+                    const blob = await (await fetch(result.url)).blob();
+                    download(`${fileSafe(title || project.name)}-${F.label.replace(':', 'x')}.${result.ext}`, blob, blob.type);
+                    toast(`Saved the video — ${(result.bytes / 1e6).toFixed(1)} MB, ${result.ext.toUpperCase()}`);
+                  }}
+                >
+                  <Icon name="download" size={13} /> Download .{result.ext}
+                </button>
+              )}
+            </div>
+            {result && phase === 'done' && (
+              <button className="btn small ghost" onClick={() => setPhase('idle')}>
+                Back to the live preview
+              </button>
+            )}
+            <small className="muted">Keep this tab in front while it records: a hidden tab stops drawing.</small>
+          </div>
+        </div>
+        {/* the visualizer, drawn off screen at the size it fills in the frame */}
+        <div className="video-stage" style={{ width: L.viz.w / RATIO, height: L.viz.h / RATIO }} aria-hidden>
+          <Visualizer key={`${format}-${view}-${showFns}`} stage={stage} />
+        </div>
+      </div>
+    </div>
+  );
+}

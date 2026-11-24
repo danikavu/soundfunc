@@ -221,6 +221,17 @@ export class AudioEngine {
     return this.originTime + ((beat - this.originBeat) * 60) / this.bpm;
   }
 
+  private streamOut: MediaStreamAudioDestinationNode | null = null;
+  /** the whole mix, as heard (after the master volume), as a stream — for recording a video */
+  audioStream(): MediaStream {
+    const ctx = this.ensure();
+    if (!this.streamOut) {
+      this.streamOut = ctx.createMediaStreamDestination();
+      this.master.connect(this.streamOut);
+    }
+    return this.streamOut.stream;
+  }
+
   /** Current beat position (since play started), or null when stopped. */
   position(): number | null {
     if (!this.playing || !this.ctx) return null;

@@ -130,13 +130,30 @@ function passLoops(track: Track, song: Song, offset: number, total: number, with
 // plot layout for the Function view, shared by drawing and scrubbing
 const PLOT = { padL: 54, padR: 46, padT: 48, padB: 18 };
 
-export function Visualizer() {
+/**
+ * A stage is the Visualizer drawn for a video: only its canvas, at a fixed pixel ratio (so a frame
+ * looks the same on any screen), showing the given view, the canvas handed to whoever composes the frame.
+ */
+export interface VizStage {
+  view: Mode;
+  pixelRatio: number;
+  onCanvas: (canvas: HTMLCanvasElement | null) => void;
+}
+
+export function Visualizer({ stage }: { stage?: VizStage } = {}) {
   const project = useStore((s) => s.project);
   const theme = useStore((s) => s.theme);
   const playing = useStore((s) => s.playing);
   const selectTrack = useStore((s) => s.selectTrack);
   const selected = useSelectedTrack();
-  const [mode, setMode] = useState<Mode>('score');
+  const [chosenMode, setMode] = useState<Mode>('score');
+  const mode = stage?.view ?? chosenMode;
+  const ratio = () => stage?.pixelRatio ?? (window.devicePixelRatio || 1);
+  const onCanvas = stage?.onCanvas;
+  useEffect(() => {
+    onCanvas?.(canvasRef.current);
+    return () => onCanvas?.(null);
+  }, [onCanvas]);
   /** the Score draws the notes in as the playhead reaches them — remembered between visits */
   const [drawIn, setDrawIn] = useState(() => {
     try {
@@ -303,7 +320,7 @@ export function Visualizer() {
     const canvas = canvasRef.current!;
     // the canvas, not the frame: the Score's functions can take room under it
     const ro = new ResizeObserver(() => {
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = ratio();
       canvas.width = canvas.clientWidth * dpr;
       canvas.height = canvas.clientHeight * dpr;
       dirty.current = true;
@@ -380,7 +397,7 @@ export function Visualizer() {
       dirty.current = false;
       const canvas = canvasRef.current!;
       const g = canvas.getContext('2d')!;
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = ratio();
       const W = canvas.width / dpr, H = canvas.height / dpr;
       const P = (palette.current ??= readPalette(wrapRef.current!));
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -875,6 +892,13 @@ export function Visualizer() {
     engine.scrubEnd();
     setTip(null);
   };
+
+  if (stage)
+    return (
+      <div className="viz viz-stage" ref={wrapRef}>
+        <canvas ref={canvasRef} />
+      </div>
+    );
 
   return (
     <div className="viz" ref={wrapRef}>

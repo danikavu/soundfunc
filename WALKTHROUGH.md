@@ -6,7 +6,7 @@ A tour of the core of SoundFunc: you plant functions, shape them as nodes, watch
 
 The screen has six parts:
 
-- **Top strip** — the SoundFunc name, the clock, and on the right **Import** and **Export**.
+- **Top strip** — the SoundFunc name, the clock, and on the right **Video**, **Import** and **Export**.
 - **Top bar** — the whole song: play, record, tempo, length, key, scale, the harmony (a formula of `bar`) and the controls that act on every channel.
 - **Left** — the channels on top; rhythm kits and functions to plant below.
 - **Middle, top** — the visualizer: *Score* and *Function*, with a backdrop of the live sound behind them.
@@ -155,6 +155,12 @@ Mix, then the voice: a stock patch, one of the ten **Sonic Menagerie** voices, o
 **Export** writes MIDI with notes only, or with automation (glides and bends as pitch bend, volume as expression, pressure, CC74). It also writes CSV note data, or the whole project to reopen later.
 
 ![The Export menu](docs/walkthrough/export.png)
+
+### Video
+
+The **Video** key in the top strip records a clip for socials: the visualizer with its backdrop and fuse, every channel's functions lighting up as they play, and the sound, from the top of the song for as many loops as you choose. Pick 9:16, 1:1 or 16:9, press **Record**, then download the MP4.
+
+![A 9:16 video frame: the score, and the functions lighting up as they play](docs/walkthrough/video.png)
 
 ### Jam
 
