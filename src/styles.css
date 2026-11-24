@@ -3697,7 +3697,7 @@ aside.panel:last-of-type .info-pop {
 }
 .video-rec {
   position: absolute;
-  top: 12px;
+  bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -3729,6 +3729,72 @@ aside.panel:last-of-type .info-pop {
 .video-away {
   visibility: hidden;
   pointer-events: none;
+}
+/* while this tab is captured, the app alone is the picture (Chrome needs it to be a layer of its own) */
+.capturing #root {
+  isolation: isolate;
+  transform-style: flat;
+  background: var(--paper);
+}
+/* the take's controls, over the app in full screen */
+.take-bar {
+  position: fixed;
+  z-index: 1000;
+  left: 50%;
+  bottom: 18px;
+  margin-left: -210px;
+  width: 420px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  font: 400 var(--fs-sm) var(--mono);
+  white-space: nowrap;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.take-bar:active {
+  cursor: grabbing;
+}
+.take-bar .icon-btn {
+  color: #fff;
+}
+.take-bar .btn.cued {
+  animation: video-blink 0.8s steps(2) infinite;
+}
+.take-time {
+  opacity: 0.75;
+}
+.bar-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.bar-count.idle {
+  opacity: 0.6;
+}
+.bar-beats {
+  display: inline-flex;
+  gap: 4px;
+}
+.bar-beats i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.25;
+}
+.bar-beats i.on {
+  opacity: 1;
+  background: var(--accent);
 }
 /* the channels: a key each, lit while up, dim once faded out */
 .video-channels {

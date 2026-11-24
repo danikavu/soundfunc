@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { engine } from '../engine/audio';
-import { audibleTracks, isDrum, keyLabel, patternBeats, songBeats, stretchOf, type Track } from '../engine/project';
+import { BEATS_PER_BAR, audibleTracks, isDrum, keyLabel, patternBeats, songBeats, stretchOf, type Track } from '../engine/project';
 import { compose, texVariants, toSource } from '../engine/symbolic';
 import { useStore } from '../state/store';
 import { sparkHead } from './fuse';
@@ -13,7 +14,8 @@ import { mathImage, mathPending, preloadMath } from './mathSvg';
  * Video mode: the visualizer, every channel's functions and the sound, recorded together as a clip
  * sized for socials. The frame is composed on a canvas — a title, the Score (or Function view) drawn
  * fresh at the video's own size, the functions lighting up as their channels play — and recorded
- * with the mix, from the top of the song, for as many loops as you choose.
+ * with the mix, from the top of the song, for as many loops as you choose — or until you stop it. The
+ * whole app can be recorded instead: it fills the screen and waits for Record.
  */
 
 type Format = 'story' | 'square' | 'wide';
@@ -32,6 +34,81 @@ const RATIO = 2;
 const FPS = 30;
 /** the ring of reverb after the last loop, in seconds, kept in the clip */
 const TAIL = 0.9;
+/** the Length that has no end: the take runs until it is stopped */
+const FREE = 0;
+/** a take's last loop stops this much before the next one's first beat could sound (seconds) */
+const EARLY = 0.06;
+
+/** what a take records, and how to let go of it */
+interface Source {
+  stream: MediaStream;
+  /** the control bar is left out of the picture */
+  clean: boolean;
+  done: () => void;
+}
+
+/**
+ * Leave everything but the app itself out of a capture of this tab — the control bar floats outside
+ * it. Chrome and Edge can; where a browser can't, the bar is in the picture.
+ */
+async function onlyTheApp(track: MediaStreamTrack): Promise<boolean> {
+  const R = (window as unknown as { RestrictionTarget?: { fromElement(el: Element): Promise<unknown> } }).RestrictionTarget;
+  const t = track as MediaStreamTrack & { restrictTo?: (target: unknown) => Promise<void> };
+  const root = document.getElementById('root');
+  if (!R || !t.restrictTo || !root) return false;
+  try {
+    await t.restrictTo(await R.fromElement(root));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** the first bar line of the song after the beat heard now (bars are counted from the start of each loop) */
+function nextBar(loopBeats: number): number {
+  let at = engine.position() ?? 0;
+  do {
+    const start = Math.floor(at / loopBeats + 1e-9) * loopBeats;
+    const bar = Math.floor((at - start) / BEATS_PER_BAR + 1e-9);
+    at = Math.min(start + (bar + 1) * BEATS_PER_BAR, start + loopBeats);
+  } while (engine.secondsTo(at) < 0.1);
+  return at;
+}
+
+/** where the song is: the bar, the beat within it, and the loop — of the take, once it records */
+function BarCount({ loopBeats, from, loops }: { loopBeats: number; from: number | null; loops: number }) {
+  const [at, setAt] = useState<{ bar: number; beat: number; loop: number } | null>(null);
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const pos = engine.position();
+      const inLoop = pos === null ? 0 : pos % loopBeats;
+      const next = pos === null ? null : { bar: Math.floor(inLoop / BEATS_PER_BAR) + 1, beat: Math.floor(inLoop % BEATS_PER_BAR), loop: Math.floor(Math.max(0, pos - (from ?? 0)) / loopBeats) + 1 };
+      setAt((p) => (p && next && p.bar === next.bar && p.beat === next.beat && p.loop === next.loop ? p : next));
+    };
+    tick();
+    return () => cancelAnimationFrame(raf);
+  }, [loopBeats, from]);
+  const bars = Math.ceil(loopBeats / BEATS_PER_BAR);
+  const counted = from !== null && loops !== FREE;
+  return (
+    <span className={`bar-count ${at ? '' : 'idle'}`}>
+      <b>
+        Bar {at ? at.bar : '–'} / {bars}
+      </b>
+      <span className="bar-beats" aria-hidden>
+        {Array.from({ length: BEATS_PER_BAR }, (_, i) => (
+          <i key={i} className={at?.beat === i ? 'on' : ''} />
+        ))}
+      </span>
+      <span>
+        Loop {at ? (counted ? Math.min(at.loop, loops) : at.loop) : '–'}
+        {counted ? ` / ${loops}` : ''}
+      </span>
+    </span>
+  );
+}
 
 interface Box {
   x: number;
@@ -177,13 +254,25 @@ export function VideoStudio() {
   const [down, setDown] = useState<Set<string>>(new Set());
   /** channels brought back that are waiting for the next loop to begin */
   const [cued, setCued] = useState<Set<string>>(new Set());
-  const [phase, setPhase] = useState<'idle' | 'recording' | 'done'>('idle');
-  const [progress, setProgress] = useState(0);
+  const [phase, setPhase] = useState<'idle' | 'armed' | 'recording' | 'done'>('idle');
+  /** the take so far, in seconds, and the beat of the song it began on */
+  const [elapsed, setElapsed] = useState(0);
+  const [from, setFrom] = useState<number | null>(null);
+  /** full screen, with the song playing: the beat the take will begin on */
+  const [cueAt, setCueAt] = useState<number | null>(null);
   const [result, setResult] = useState<{ url: string; name: string; ext: string; bytes: number } | null>(null);
   const frameRef = useRef<HTMLCanvasElement>(null);
   const stageCanvas = useRef<HTMLCanvasElement | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const timers = useRef<number[]>([]);
+  const takeTimers = useRef<number[]>([]);
+  /** full screen: the capture, held from stepping aside until the take is done */
+  const session = useRef<Source | null>(null);
+  /** which wait for a bar line is current (a newer number cancels the older) */
+  const cueing = useRef(0);
+  const [clean, setClean] = useState(true);
+  /** where the control bar was dragged to, from its place */
+  const [barAt, setBarAt] = useState({ x: 0, y: 0 });
   const cancelled = useRef(false);
   /** between pressing Record and the take: a second press does nothing */
   const preparing = useRef(false);
@@ -191,8 +280,8 @@ export function VideoStudio() {
   const F = FORMATS[format];
   const L = useMemo(() => layoutOf(format, showFns), [format, showFns]);
   const tracks = useMemo(() => audibleTracks(project.tracks), [project.tracks]);
-  const loopSeconds = (songBeats(tracks, project.song) * 60) / project.song.bpm;
-  const seconds = loops * loopSeconds;
+  const loopBeats = songBeats(tracks, project.song);
+  const seconds = (loops * loopBeats * 60) / project.song.bpm;
   const mime = useMemo(pickMime, []);
   const onCanvas = useCallback((c: HTMLCanvasElement | null) => {
     stageCanvas.current = c;
@@ -308,9 +397,9 @@ export function VideoStudio() {
     return out;
   };
 
-  // compose the frame, every animation frame, while the studio is open
+  // compose the frame, every animation frame, while the studio is open (and not stepped aside)
   useEffect(() => {
-    if (!open) return;
+    if (!open || hidden) return;
     let raf = 0;
     const draw = () => {
       raf = requestAnimationFrame(draw);
@@ -412,27 +501,27 @@ export function VideoStudio() {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [open, F, L, fnLayout, title, project, renders, mathView, texBlocks]);
+  }, [open, hidden, F, L, fnLayout, title, project, renders, mathView, texBlocks]);
 
   const clearTimers = () => {
-    timers.current.forEach((t) => clearTimeout(t));
-    timers.current = [];
+    for (const list of [timers, takeTimers]) {
+      list.current.forEach((t) => clearTimeout(t));
+      list.current = [];
+    }
   };
+  const later = (f: () => void, ms: number) => takeTimers.current.push(window.setTimeout(f, ms));
 
   const stopPlayback = () => {
     engine.stop();
     setPlaying(false);
   };
 
-  /**
-   * The video to record: the composed frame, or — for the whole app — this tab, captured by the
-   * browser while SoundFunc fills the screen. Null when that was refused.
-   */
-  const videoSource = async (): Promise<{ stream: MediaStream; done: () => void } | null> => {
-    if (source === 'frame') {
-      const c = frameRef.current;
-      return c ? { stream: c.captureStream(FPS), done: () => undefined } : null;
-    }
+  /** this tab, captured by the browser while SoundFunc fills the screen — null when that was refused */
+  const appSource = async (): Promise<Source | null> => {
+    const leaveFull = () => {
+      document.documentElement.classList.remove('capturing');
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    };
     // both asked for at once, while the click still counts: full screen, then this tab
     const full = document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => undefined);
     try {
@@ -444,46 +533,121 @@ export function VideoStudio() {
         surfaceSwitching: 'exclude',
       } as DisplayMediaStreamOptions);
       await full;
+      document.documentElement.classList.add('capturing');
+      const track = display.getVideoTracks()[0];
+      const isClean = await onlyTheApp(track);
+      // the screen let go of — Esc out of full screen, or the browser's Stop sharing — ends it all
+      const left = () => !document.fullscreenElement && leave();
+      document.addEventListener('fullscreenchange', left);
+      track.addEventListener('ended', leave);
       return {
-        stream: new MediaStream(display.getVideoTracks()),
+        stream: new MediaStream([track]),
+        clean: isClean,
         done: () => {
+          document.removeEventListener('fullscreenchange', left);
           display.getTracks().forEach((t) => t.stop());
-          if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+          leaveFull();
         },
       };
     } catch {
-      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      leaveFull();
       toast('Screen recording was not allowed — choose “This tab” when the browser asks');
       return null;
     }
   };
 
-  /** record from the top: the song plays for the chosen loops, the clip ends after the reverb's tail */
+  /** record the composed frame, from the top */
   const record = async () => {
     if (!mime || preparing.current) return;
     preparing.current = true;
-    if (result) URL.revokeObjectURL(result.url);
-    setResult(null);
-    setPhase('idle');
-    cancelled.current = false;
+    forgetClip();
     if (useStore.getState().playing) stopPlayback();
     // the math is all typeset before the take, so nothing pops in during it
-    if (source === 'frame' && showFns && mathView === 'latex') {
+    if (showFns && mathView === 'latex') {
       const ink = themeColours().ink;
       for (let i = 0; i < 50 && texBlocks.some((b) => b.tex.some((v) => v.some((t) => mathPending(t, ink)))); i++) await new Promise((r) => setTimeout(r, 100));
     }
-    // the file is named after the take, whatever is changed afterwards
-    const name = `${fileSafe(title || project.name)}-${source === 'app' ? 'screen' : F.label.replace(':', 'x')}`;
-    const src = await videoSource();
+    preparing.current = false;
+    const c = frameRef.current;
+    if (c) await take({ stream: c.captureStream(FPS), clean: true, done: () => undefined }, F.label.replace(':', 'x'));
+  };
+
+  /** the whole app: fill the screen, step aside, and wait for Record */
+  const arm = async () => {
+    if (!mime || preparing.current) return;
+    preparing.current = true;
+    const src = await appSource();
     preparing.current = false;
     if (!src) return;
+    session.current = src;
+    setClean(src.clean);
+    setBarAt({ x: 0, y: 0 });
+    setFrom(null);
+    setHidden(true);
+    setPhase('armed');
+  };
+
+  /** back to the studio without a take */
+  const disarm = () => {
+    cueing.current++;
+    setCueAt(null);
+    const src = session.current;
+    if (!src) return;
+    session.current = null;
+    src.done();
+    setHidden(false);
+    setPhase('idle');
+  };
+
+  /**
+   * Record, in full screen: from the top of the song — or, when it is already playing, from the next
+   * bar line, without stopping it. Pressed again while it waits, it waits no more.
+   */
+  const recordApp = async () => {
+    const src = session.current;
+    if (!src || preparing.current) return;
+    const turn = ++cueing.current;
+    if (cueAt !== null) return setCueAt(null);
+    let at: number | null = null;
+    if (useStore.getState().playing && engine.position() !== null) {
+      at = nextBar(loopBeats);
+      setCueAt(at);
+      for (let wait = engine.secondsTo(at); wait > 0.02; wait = engine.secondsTo(at)) {
+        await new Promise((r) => setTimeout(r, Math.min(50, (wait - 0.01) * 1000)));
+        if (turn !== cueing.current) return;
+        if (engine.position() === null) return setCueAt(null);
+      }
+      setCueAt(null);
+    }
+    preparing.current = true;
+    forgetClip();
+    await take(src, 'screen', at);
+    preparing.current = false;
+  };
+
+  const forgetClip = () => {
+    if (result) URL.revokeObjectURL(result.url);
+    setResult(null);
+    setPhase((ph) => (ph === 'done' ? 'idle' : ph));
+    cancelled.current = false;
+  };
+
+  /** record `src` — from the top, or from beat `at` of the song that is playing — for the Length chosen */
+  const take = async (src: Source, suffix: string, at: number | null = null) => {
+    if (!mime) return;
+    // the file is named after the take, whatever is changed afterwards
+    const name = `${fileSafe(title || project.name)}-${suffix}`;
+    const app = src === session.current;
     const stream = src.stream;
     for (const t of engine.audioStream().getAudioTracks()) stream.addTrack(t);
-    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: source === 'app' ? 14_000_000 : 10_000_000, audioBitsPerSecond: 192_000 });
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: app ? 14_000_000 : 10_000_000, audioBitsPerSecond: 192_000 });
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     rec.onstop = () => {
+      takeTimers.current.forEach((t) => clearTimeout(t));
+      takeTimers.current = [];
       stream.getVideoTracks().forEach((t) => t.stop());
+      session.current = null;
       src.done();
       setHidden(false);
       if (cancelled.current) return;
@@ -491,65 +655,83 @@ export function VideoStudio() {
       setResult({ url: URL.createObjectURL(blob), name, ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm', bytes: blob.size });
       setPhase('done');
     };
-    // the whole app ends when the screen is let go of: Esc out of full screen, or the browser's Stop sharing
-    if (source === 'app') {
-      stream.getVideoTracks()[0]?.addEventListener('ended', () => finishEarly());
-      const left = () => {
-        if (!document.fullscreenElement) {
-          document.removeEventListener('fullscreenchange', left);
-          finishEarly();
-        }
-      };
-      document.addEventListener('fullscreenchange', left);
-      // the studio steps aside, so the app is what is recorded
-      setHidden(true);
-      await new Promise((r) => setTimeout(r, 500));
-    }
     recorder.current = rec;
-    // a beat of silence first, so a platform's first frame isn't mid-note
     rec.start(250);
+    setElapsed(0);
+    setFrom(at ?? 0);
     setPhase('recording');
-    setProgress(0);
-    await new Promise((r) => setTimeout(r, 250));
-    await engine.play();
-    setPlaying(true);
     const began = performance.now();
+    if (at === null) {
+      // a beat of silence first, so a platform's first frame isn't mid-note
+      await new Promise((r) => setTimeout(r, 250));
+      if (rec.state !== 'recording') return;
+      if (useStore.getState().playing) stopPlayback();
+      await engine.play();
+      setPlaying(true);
+    }
+    const end = loops === FREE ? null : (at ?? 0) + loops * loopBeats;
+    // the end is a beat of the song, not a moment: a tempo changed during the take still ends on it
     const tick = () => {
-      const p = Math.min(1, (performance.now() - began) / 1000 / (seconds + TAIL));
-      setProgress(p);
-      if (recorder.current === rec && rec.state === 'recording') timers.current.push(window.setTimeout(tick, 200));
+      if (rec.state !== 'recording') return;
+      setElapsed((performance.now() - began) / 1000);
+      const left = end === null ? Infinity : engine.secondsTo(end) - EARLY;
+      // stopped by hand (Space) ends the take too
+      if (left <= 0 || engine.position() === null) finish();
+      else later(tick, Math.min(100, left * 1000));
     };
     tick();
-    timers.current.push(
-      window.setTimeout(() => {
-        stopPlayback();
-        timers.current.push(window.setTimeout(() => rec.state === 'recording' && rec.stop(), TAIL * 1000));
-      }, seconds * 1000),
-    );
   };
 
-  /** stop now: what was recorded so far becomes the clip */
-  const finishEarly = () => {
-    clearTimers();
-    stopPlayback();
-    if (recorder.current?.state === 'recording') recorder.current.stop();
+  /** end the take: the music stops, and the clip keeps its ring — unless the picture is already gone (`now`) */
+  const finish = (now = false) => {
+    takeTimers.current.forEach((t) => clearTimeout(t));
+    takeTimers.current = [];
+    const rec = recorder.current;
+    if (engine.position() !== null) stopPlayback();
+    if (rec?.state !== 'recording') return;
+    if (now) rec.stop();
+    else later(() => rec.state === 'recording' && rec.stop(), TAIL * 1000);
+  };
+
+  /** the screen was let go of */
+  const leave = () => {
+    if (recorder.current?.state === 'recording') finish(true);
+    else disarm();
   };
 
   const close = () => {
     if (phase === 'recording') {
       cancelled.current = true;
-      finishEarly();
+      finish(true);
       setPhase('idle');
     }
+    disarm();
     clearTimers();
     setOpen(false);
+  };
+
+  /** drag the control bar out of the way */
+  const dragBar = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if ((e.target as Element).closest('button')) return;
+    const el = e.currentTarget;
+    const x0 = e.clientX - barAt.x, y0 = e.clientY - barAt.y;
+    const move = (m: PointerEvent) => setBarAt({ x: m.clientX - x0, y: m.clientY - y0 });
+    const up = () => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+    };
+    el.setPointerCapture(e.pointerId);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
   };
 
   // closing with Esc; a finished clip's file is let go when the studio closes
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') return hidden ? finishEarly() : close();
+      if (e.key === 'Escape') return hidden ? leave() : close();
       // 1–9 fade the channels in and out, as you play — unless you're typing
       const typing = e.target instanceof HTMLElement && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
       const n = Number(e.key);
@@ -570,8 +752,9 @@ export function VideoStudio() {
 
   if (!open) return null;
 
-  const busy = phase === 'recording';
+  const busy = phase === 'recording' || phase === 'armed';
   const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+  const recTime = `${fmtTime(elapsed)}${loops === FREE ? '' : ` / ${fmtTime(seconds)}`}`;
   const fits = seconds <= 60 ? 'fits Reels, TikTok and Shorts' : seconds <= 90 ? 'fits Reels and TikTok — over Shorts’ 60 s' : seconds <= 180 ? 'fits TikTok (and Shorts up to 3 min)' : 'longer than most short-video limits';
 
   return (
@@ -591,7 +774,8 @@ export function VideoStudio() {
             {result && phase === 'done' && <video className="video-frame" src={result.url} controls playsInline />}
             {busy && (
               <div className="video-rec">
-                <span className="video-rec-dot" /> REC {fmtTime(progress * (seconds + TAIL))} / {fmtTime(seconds + TAIL)}
+                <span className="video-rec-dot" /> REC {recTime}
+                <BarCount loopBeats={loopBeats} from={from} loops={loops} />
               </div>
             )}
           </div>
@@ -608,7 +792,7 @@ export function VideoStudio() {
               />
               {source === 'app' && (
                 <small className="muted">
-                  SoundFunc fills the screen and records itself with the sound — the browser asks once to share this tab. Esc stops; fades (keys 1–9) still work.
+                  SoundFunc fills the screen — the browser asks once to share this tab — and waits: press Record there when you’re ready. Stopped, the take starts from the top; playing, it starts at the next bar. Esc comes back here.
                 </small>
               )}
             </div>
@@ -668,21 +852,19 @@ export function VideoStudio() {
             </div>
             <div className="field">
               <span>Length</span>
-              <Seg<number> value={loops} onChange={(n) => !busy && setLoops(n)} options={[1, 2, 4, 8].map((n) => ({ value: n, label: `${n} loop${n > 1 ? 's' : ''}` }))} />
-              <small className="muted">
-                {fmtTime(seconds)} · {fits}
-              </small>
+              <Seg<number> value={loops} onChange={(n) => !busy && setLoops(n)} options={[...[1, 2, 4, 8].map((n) => ({ value: n, label: `${n} loop${n > 1 ? 's' : ''}` })), { value: FREE, label: 'Free' }]} />
+              <small className="muted">{loops === FREE ? 'Records until you stop it' : `${fmtTime(seconds)} · ${fits}`}</small>
             </div>
             {!mime && <p className="import-warn">This browser can’t record video. Try Chrome, Edge or Safari.</p>}
             {mime && !mime.startsWith('video/mp4') && <p className="import-warn">This browser records WebM. Most platforms take it; for Instagram, convert it to MP4 first.</p>}
             <div className="video-actions">
               {busy ? (
-                <button className="btn" onClick={finishEarly}>
-                  <Icon name="stop" size={12} /> Stop here
+                <button className="btn" onClick={() => finish()}>
+                  <Icon name="stop" size={12} /> {loops === FREE ? 'Stop' : 'Stop here'}
                 </button>
               ) : (
-                <button className="btn primary" disabled={!mime} onClick={() => void record()}>
-                  <span className="video-rec-dot" /> {result ? 'Record again' : 'Record'}
+                <button className="btn primary" disabled={!mime} onClick={() => void (source === 'app' ? arm() : record())}>
+                  <span className="video-rec-dot" /> {source === 'app' ? 'Go full screen' : result ? 'Record again' : 'Record'}
                 </button>
               )}
               {result && !busy && (
@@ -708,9 +890,32 @@ export function VideoStudio() {
         </div>
         {/* the visualizer, drawn off screen at the size it fills in the frame */}
         <div className="video-stage" style={{ width: L.viz.w / RATIO, height: L.viz.h / RATIO }} aria-hidden>
-          <Visualizer key={`${format}-${view}-${showFns}`} stage={stage} />
+          {!hidden && <Visualizer key={`${format}-${view}-${showFns}`} stage={stage} />}
         </div>
       </div>
+      {/* full screen: the take's controls, outside the app so they stay out of the picture */}
+      {hidden &&
+        createPortal(
+          <div className="take-bar" role="toolbar" aria-label="Recording" style={{ translate: `${barAt.x}px ${barAt.y}px` }} onPointerDown={dragBar} onMouseDown={(e) => e.preventDefault()} title={clean ? 'Not in the video — drag it out of the way' : 'This browser can’t leave this out of the video — drag it out of the way'}>
+            {phase === 'recording' ? (
+              <button className="btn" onClick={() => finish()}>
+                <Icon name="stop" size={12} /> Stop
+              </button>
+            ) : (
+              <button className={`btn primary ${cueAt !== null ? 'cued' : ''}`} onClick={() => void recordApp()} title={cueAt !== null ? 'Press again to cancel' : 'From the top — or, while the song plays, from the next bar'}>
+                <span className="video-rec-dot" /> {cueAt !== null ? `Starts at bar ${Math.floor(((cueAt + 1e-6) % loopBeats) / BEATS_PER_BAR + 1e-6) + 1}…` : 'Record'}
+              </button>
+            )}
+            <BarCount loopBeats={loopBeats} from={from} loops={loops} />
+            <span className="take-time">{phase === 'recording' ? recTime : loops === FREE ? 'Free' : fmtTime(seconds)}</span>
+            {phase !== 'recording' && (
+              <button className="icon-btn" onClick={disarm} title="Back to the studio (Esc)">
+                <Icon name="close" />
+              </button>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

@@ -401,7 +401,9 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
       // a backdrop moves on its own, even while stopped
       if (!dirty.current && pos === null && backdropRef.current === 'off' && !stageRef.current) return;
       dirty.current = false;
-      const canvas = canvasRef.current!;
+      // a last frame can come after the canvas is gone
+      const canvas = canvasRef.current;
+      if (!canvas) return;
       const g = canvas.getContext('2d')!;
       const dpr = ratio();
       const W = canvas.width / dpr, H = canvas.height / dpr;

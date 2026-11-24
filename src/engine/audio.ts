@@ -314,6 +314,11 @@ export class AudioEngine {
     return Math.max(0, this.beatAt(this.ctx.currentTime - (this.ctx.outputLatency || 0)));
   }
 
+  /** seconds from now until a beat is played, as the mix has it (before the output's latency) */
+  secondsTo(beat: number): number {
+    return this.playing && this.ctx ? this.timeAt(beat) - this.ctx.currentTime : 0;
+  }
+
   /** start playing — and, with `record`, recording a take from the very first beat */
   async play(record = false) {
     const ctx = this.ensure();
