@@ -27,6 +27,20 @@ function levelAt(f: Fade | undefined, time: number): number {
   return f.from + ((f.to - f.from) * (time - f.t0)) / (f.t1 - f.t0);
 }
 
+/**
+ * Where the channels meet: the dry mix and the reverb. Everything that sounds — voices, delays, the
+ * reverb's tail — is inside one, so closing it silences all of it, and a new one starts clean.
+ */
+interface Room {
+  dry: GainNode;
+  wet: GainNode;
+  verb: ConvolverNode;
+  out: GainNode;
+}
+
+/** a fade-out that starts gently and lands on silence without a corner (cos²) */
+const FADE_CURVE = Float32Array.from({ length: 129 }, (_, i) => (i === 128 ? 0 : Math.cos((Math.PI / 2) * (i / 128)) ** 2));
+
 interface Bus {
   gain: GainNode;
   pan: StereoPannerNode;
@@ -72,8 +86,10 @@ export const masterLevel = (v: number | undefined) => Math.pow(Math.min(1, Math.
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
-  private dry!: GainNode;
-  private wet!: GainNode;
+  /** after the master volume: where the whole sound is faded out at the end of a recording */
+  private end!: GainNode;
+  private impulse!: AudioBuffer;
+  private room!: Room;
   private analyser!: AnalyserNode;
   /** the mix before the master volume: what a jam take records */
   private mix!: DynamicsCompressorNode;
@@ -96,7 +112,6 @@ export class AudioEngine {
   private bpm = 90;
   /** the master gain the top bar's Volume sets */
   private volume = masterLevel(undefined);
-  private fadeUntil = 0;
   playing = false;
 
   private ensure(): AudioContext {
@@ -111,20 +126,68 @@ export class AudioEngine {
     this.analyser.fftSize = 2048;
     this.master = ctx.createGain();
     this.master.gain.value = this.volume;
-    this.dry = ctx.createGain();
-    this.wet = ctx.createGain();
-    const verb = ctx.createConvolver();
-    verb.buffer = this.makeImpulse(3.6);
-
-    this.dry.connect(comp);
-    this.wet.connect(verb).connect(comp);
-    comp.connect(this.master).connect(this.analyser).connect(ctx.destination);
+    this.end = ctx.createGain();
+    this.impulse = this.makeImpulse(3.6);
+    comp.connect(this.master).connect(this.end).connect(this.analyser).connect(ctx.destination);
     this.mix = comp;
+    this.room = this.makeRoom();
 
     this.noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = this.noise.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     return ctx;
+  }
+
+  private makeRoom(): Room {
+    const ctx = this.ctx!;
+    const dry = ctx.createGain(), wet = ctx.createGain(), out = ctx.createGain();
+    const verb = ctx.createConvolver();
+    verb.buffer = this.impulse;
+    dry.connect(out);
+    wet.connect(verb).connect(out);
+    out.connect(this.mix);
+    const r = this.project?.song.reverb;
+    if (r !== undefined) {
+      wet.gain.value = r * 0.9;
+      dry.gain.value = 1 - r * 0.45;
+    }
+    return { dry, wet, verb, out };
+  }
+
+  /**
+   * Everything that sounds now — held notes, delays, reverb — is silent by `when`, over the `fade`
+   * before it, and gone for good; whatever is played from here on starts in a clean room.
+   */
+  private closeRoom(when: number, fade: number) {
+    const ctx = this.ctx!;
+    const old = this.room;
+    const now = ctx.currentTime;
+    old.out.gain.setValueAtTime(1, Math.max(now, when - fade));
+    old.out.gain.linearRampToValueAtTime(0, Math.max(now + 0.002, when));
+    for (const [id, v] of this.glides) {
+      this.take?.hush(id, this.beatAt(Math.max(now, when)));
+      for (const n of v.nodes) n.stop(Math.max(now, when) + 0.02);
+      v.nodes[0].onended = () => v.amp.disconnect();
+    }
+    this.glides.clear();
+    const buses = [...this.buses.values()];
+    this.buses.clear();
+    this.room = this.makeRoom();
+    window.setTimeout(
+      () => {
+        buses.forEach((b) => b.pan.disconnect());
+        old.out.disconnect();
+        old.verb.disconnect();
+      },
+      (Math.max(0, when - now) + 0.1) * 1000,
+    );
+  }
+
+  /** silence, at once: no held note, delay or reverb is left over (before recording a video) */
+  hush() {
+    const ctx = this.ensure();
+    this.settle();
+    this.closeRoom(ctx.currentTime + 0.01, 0.01);
   }
 
   private makeImpulse(seconds: number): AudioBuffer {
@@ -152,6 +215,7 @@ export class AudioEngine {
   private bus(track: Track): Bus {
     const ctx = this.ensure();
     let b = this.buses.get(track.id);
+    const made = !b;
     if (!b) {
       const gain = ctx.createGain();
       const pan = ctx.createStereoPanner();
@@ -188,22 +252,30 @@ export class AudioEngine {
       delay.connect(tone).connect(feedback).connect(delay);
       tone.connect(delayWet).connect(pan);
       const fade = ctx.createGain();
-      fade.gain.value = this.levelOf(track.id);
+      // a fade still to come happens on this strip too
+      const f = this.fades.get(track.id);
+      fade.gain.value = levelAt(f, ctx.currentTime);
+      if (f && f.t1 > ctx.currentTime) {
+        fade.gain.setValueAtTime(f.from, Math.max(ctx.currentTime, f.t0));
+        fade.gain.linearRampToValueAtTime(f.to, f.t1);
+      }
       pan.connect(fade);
-      fade.connect(this.dry);
-      fade.connect(send).connect(this.wet);
+      fade.connect(this.room.dry);
+      fade.connect(send).connect(this.room.wet);
       b = { gain, pan, send, chorusWet, delay, delayWet, feedback, fade };
       this.buses.set(track.id, b);
     }
     const now = ctx.currentTime;
-    b.gain.gain.setTargetAtTime(track.volume, now, 0.02);
-    b.pan.pan.setTargetAtTime(track.pan, now, 0.02);
-    b.send.gain.setTargetAtTime(track.send, now, 0.02);
     const fx = isDrum(track.waveform) ? { chorus: 0, delay: 0, delayTime: 0.75 } : synthOf(track.waveform, track.synth);
-    b.chorusWet.gain.setTargetAtTime(fx.chorus * 0.7, now, 0.05);
-    b.delayWet.gain.setTargetAtTime(fx.delay * 0.5, now, 0.05);
-    b.feedback.gain.setTargetAtTime(0.25 + fx.delay * 0.3, now, 0.05);
-    b.delay.delayTime.setTargetAtTime(Math.min(3.9, (fx.delayTime * 60) / this.bpm), now, 0.05);
+    // a new strip starts where it is set; after that it glides there
+    const to = (param: AudioParam, value: number, tau: number) => (made ? (param.value = value) : param.setTargetAtTime(value, now, tau));
+    to(b.gain.gain, track.volume, 0.02);
+    to(b.pan.pan, track.pan, 0.02);
+    to(b.send.gain, track.send, 0.02);
+    to(b.chorusWet.gain, fx.chorus * 0.7, 0.05);
+    to(b.delayWet.gain, fx.delay * 0.5, 0.05);
+    to(b.feedback.gain, 0.25 + fx.delay * 0.3, 0.05);
+    to(b.delay.delayTime, Math.min(3.9, (fx.delayTime * 60) / this.bpm), 0.05);
     return b;
   }
 
@@ -226,10 +298,9 @@ export class AudioEngine {
     this.renderCache.clear();
     if (this.ctx) {
       const r = project.song.reverb;
-      this.wet.gain.setTargetAtTime(r * 0.9, this.ctx.currentTime, 0.05);
-      this.dry.gain.setTargetAtTime(1 - r * 0.45, this.ctx.currentTime, 0.05);
-      // after a stop's fade-out, never in the middle of it
-      this.master.gain.setTargetAtTime(this.volume, Math.max(this.ctx.currentTime, this.fadeUntil), 0.03);
+      this.room.wet.gain.setTargetAtTime(r * 0.9, this.ctx.currentTime, 0.05);
+      this.room.dry.gain.setTargetAtTime(1 - r * 0.45, this.ctx.currentTime, 0.05);
+      this.master.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.03);
       for (const t of project.tracks) if (this.buses.has(t.id)) this.bus(t);
     }
   }
@@ -303,7 +374,7 @@ export class AudioEngine {
     const ctx = this.ensure();
     if (!this.streamOut) {
       this.streamOut = ctx.createMediaStreamDestination();
-      this.master.connect(this.streamOut);
+      this.end.connect(this.streamOut);
     }
     return this.streamOut.stream;
   }
@@ -311,7 +382,47 @@ export class AudioEngine {
   /** Current beat position (since play started), or null when stopped. */
   position(): number | null {
     if (!this.playing || !this.ctx) return null;
-    return Math.max(0, this.beatAt(this.ctx.currentTime - (this.ctx.outputLatency || 0)));
+    const beat = this.beatAt(this.ctx.currentTime - (this.ctx.outputLatency || 0));
+    return beat >= this.lastBeat ? null : Math.max(0, beat);
+  }
+
+  /** nothing starts from this beat on (the end of a recording) */
+  private lastBeat = Infinity;
+  endAt(beat: number) {
+    this.lastBeat = beat;
+  }
+
+  /**
+   * From this beat on, only what starts there or later is heard: everything before it is cut,
+   * delays and reverb too, without stopping the music. Ask at least a fifth of a second ahead.
+   */
+  private cutBeat: number | null = null;
+  cutAt(beat: number | null) {
+    this.cutBeat = beat;
+  }
+
+  /** how long a stop lets the sound ring, fading smoothly to silence (seconds); 0: it stops at once */
+  ring = 0;
+  private ringing: number | null = null;
+  private ringOut(seconds: number) {
+    const ctx = this.ctx!;
+    const now = ctx.currentTime;
+    this.end.gain.cancelScheduledValues(now);
+    this.end.gain.setValueCurveAtTime(FADE_CURVE, now, seconds);
+    for (const id of [...this.glides.keys()]) this.killGlide(id, 0.2);
+    this.ringing = window.setTimeout(() => this.settle(), (seconds + 0.2) * 1000);
+  }
+
+  /** after (or instead of) the rest of a ring: what was ringing is gone, and the output is open again */
+  private settle() {
+    if (this.ringing === null || !this.ctx) return;
+    clearTimeout(this.ringing);
+    this.ringing = null;
+    const now = this.ctx.currentTime;
+    this.closeRoom(now + 0.01, 0.01);
+    this.end.gain.cancelScheduledValues(0);
+    this.end.gain.setValueAtTime(this.end.gain.value, now);
+    this.end.gain.setValueAtTime(1, now + 0.02);
   }
 
   /** seconds from now until a beat is played, as the mix has it (before the output's latency) */
@@ -324,6 +435,9 @@ export class AudioEngine {
     const ctx = this.ensure();
     if (ctx.state !== 'running') await ctx.resume();
     if (record) await this.connectTap();
+    this.settle();
+    this.lastBeat = Infinity;
+    this.cutBeat = null;
     if (this.project) this.setProject(this.project);
     this.originTime = ctx.currentTime + 0.05;
     this.originBeat = 0;
@@ -348,20 +462,12 @@ export class AudioEngine {
     this.playing = false;
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
-    if (this.ctx) {
-      // quick fade so ringing voices don't click
-      const now = this.ctx.currentTime;
-      this.master.gain.cancelScheduledValues(now);
-      this.master.gain.setValueAtTime(this.master.gain.value, now);
-      this.master.gain.linearRampToValueAtTime(0, now + 0.08);
-      this.master.gain.setValueAtTime(this.volume, now + 0.25);
-      this.fadeUntil = now + 0.25;
-      for (const id of [...this.glides.keys()]) this.killGlide(id, 0.08);
-      // detach the old buses (and every voice already scheduled on them) once faded
-      const old = [...this.buses.values()];
-      this.buses.clear();
-      window.setTimeout(() => old.forEach((b) => b.pan.disconnect()), 150);
-    }
+    this.lastBeat = Infinity;
+    this.cutBeat = null;
+    if (!this.ctx || this.ringing !== null) return;
+    if (this.ring > 0) this.ringOut(this.ring);
+    // a quick fade so nothing clicks, and no tail comes back after it
+    else this.closeRoom(this.ctx.currentTime + 0.08, 0.08);
   }
 
   private renderFor(track: Track, loop: number): TrackRender {
@@ -383,6 +489,23 @@ export class AudioEngine {
     if (to <= from) return;
     this.scheduledBeat = to;
     this.watchTake(ctx.currentTime);
+    const last = Math.min(to, this.lastBeat);
+    const cut = this.cutBeat;
+    if (cut !== null && to > cut) {
+      this.cutBeat = null;
+      if (cut > from) this.scheduleSpan(from, Math.min(cut, last));
+      this.closeRoom(this.timeAt(cut), 0.008);
+      if (last > cut) this.scheduleSpan(Math.max(from, cut), last);
+    } else if (last > from) this.scheduleSpan(from, last);
+    // the last beat is reached: gliding voices let go there
+    if (last < to && last >= from) {
+      const end = Math.max(ctx.currentTime, this.timeAt(last));
+      for (const v of this.glides.values()) v.amp.gain.setTargetAtTime(0, end, 0.06);
+    }
+  }
+
+  private scheduleSpan(from: number, to: number) {
+    if (!this.project) return;
     const secPerBeat = 60 / this.bpm;
     const live = new Set<string>();
     const tracks = audibleTracks(this.project.tracks);
@@ -720,6 +843,7 @@ export class AudioEngine {
   scrub(track: Track, midi: number, velocity: number) {
     const ctx = this.ensure();
     if (ctx.state !== 'running') void ctx.resume();
+    this.settle();
     if (this.project) this.setProject(this.project);
     if (!this.scrubVoice || this.scrubVoice.key !== glideKey(track)) {
       this.scrubEnd();
@@ -752,6 +876,7 @@ export class AudioEngine {
   preview(track: Track, midi: number, velocity = 0.8) {
     const ctx = this.ensure();
     if (ctx.state !== 'running') void ctx.resume();
+    this.settle();
     if (this.project) this.setProject(this.project);
     const freq = isDrum(track.waveform) ? 1 : midiToFreq(midi);
     this.voice(track, this.bus(track), ctx.currentTime + 0.01, 0.35, freq, velocity);

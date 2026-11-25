@@ -32,16 +32,18 @@ const CUT = 0.006;
 /** the stage's pixel ratio: the visualizer is drawn as on a 2× screen, whatever this one is */
 const RATIO = 2;
 const FPS = 30;
-/** the ring of reverb after the last loop, in seconds, kept in the clip */
-const TAIL = 0.9;
+/** after the last loop nothing new sounds: what rings fades smoothly to silence over this (seconds)… */
+const RING = 1.6;
+/** …and the clip ends a breath after that */
+const TAIL = RING + 0.3;
+/** the hush before a take that starts from the top: nothing from before it is left to hear */
+const HUSH = 0.12;
 /** the Length that has no end: the take runs until it is stopped */
 const FREE = 0;
 /** the Length of a build-up: a loop for each channel */
 const AUTO = -1;
 /** how the channels come in during a take: as they are switched by hand, or one more each loop */
 type Build = 'off' | 'order' | 'random';
-/** a take's last loop stops this much before the next one's first beat could sound (seconds) */
-const EARLY = 0.06;
 
 /** what a take records, and how to let go of it */
 interface Source {
@@ -96,14 +98,14 @@ function nextBar(loopBeats: number): number {
     const start = Math.floor(at / loopBeats + 1e-9) * loopBeats;
     const bar = Math.floor((at - start) / BEATS_PER_BAR + 1e-9);
     at = Math.min(start + (bar + 1) * BEATS_PER_BAR, start + loopBeats);
-  } while (engine.secondsTo(at) < 0.1);
+  } while (engine.secondsTo(at) < 0.3);
   return at;
 }
 
 /** the first beat of the song's next loop */
 function nextLoop(loopBeats: number): number {
   let n = Math.floor((engine.position() ?? 0) / loopBeats + 1e-9) + 1;
-  while (engine.secondsTo(n * loopBeats) < 0.2) n++;
+  while (engine.secondsTo(n * loopBeats) < 0.3) n++;
   return n * loopBeats;
 }
 
@@ -309,6 +311,8 @@ export function VideoStudio() {
   /** where the control bar was dragged to, from its place */
   const [barAt, setBarAt] = useState({ x: 0, y: 0 });
   const cancelled = useRef(false);
+  /** the take is ringing out */
+  const ending = useRef(false);
   /** between pressing Record and the take: a second press does nothing */
   const preparing = useRef(false);
 
@@ -665,6 +669,7 @@ export function VideoStudio() {
   const disarm = () => {
     cueing.current++;
     setCueAt(null);
+    engine.cutAt(null);
     if (recorder.current?.state !== 'recording') endBuild();
     const src = session.current;
     if (!src) return;
@@ -683,6 +688,7 @@ export function VideoStudio() {
     if (!src || preparing.current) return;
     const turn = ++cueing.current;
     if (cueAt !== null) {
+      engine.cutAt(null);
       endBuild();
       return setCueAt(null);
     }
@@ -691,6 +697,8 @@ export function VideoStudio() {
       // a build-up begins with a loop: its channels come in on the one
       at = building ? nextLoop(loopBeats) : nextBar(loopBeats);
       setCueAt(at);
+      // whatever sounds before it — held notes, echoes, reverb — is not in the take
+      engine.cutAt(at);
       let ready = !building;
       for (let wait = engine.secondsTo(at); wait > 0.02; wait = engine.secondsTo(at)) {
         await new Promise((r) => setTimeout(r, Math.min(50, (wait - 0.01) * 1000)));
@@ -699,7 +707,7 @@ export function VideoStudio() {
           endBuild();
           return setCueAt(null);
         }
-        if (!ready && engine.secondsTo(at) < 0.15) {
+        if (!ready && engine.secondsTo(at) < 0.25) {
           ready = true;
           beginBuild(true);
         }
@@ -726,6 +734,13 @@ export function VideoStudio() {
     const name = `${fileSafe(title || project.name)}-${suffix}`;
     const app = src === session.current;
     if (building) beginBuild(false);
+    // from the top: silence first, so no echo or reverb of what was playing is in it
+    if (at === null) {
+      if (useStore.getState().playing) stopPlayback();
+      engine.hush();
+      await new Promise((r) => setTimeout(r, HUSH * 1000));
+      if (cancelled.current || (app && session.current !== src)) return;
+    }
     const stream = src.stream;
     for (const t of engine.audioStream().getAudioTracks()) stream.addTrack(t);
     const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: app ? 14_000_000 : 10_000_000, audioBitsPerSecond: 192_000 });
@@ -734,6 +749,7 @@ export function VideoStudio() {
     rec.onstop = () => {
       takeTimers.current.forEach((t) => clearTimeout(t));
       takeTimers.current = [];
+      engine.ring = 0;
       stream.getVideoTracks().forEach((t) => t.stop());
       session.current = null;
       src.done();
@@ -745,6 +761,7 @@ export function VideoStudio() {
       setPhase('done');
     };
     recorder.current = rec;
+    ending.current = false;
     rec.start(250);
     setElapsed(0);
     setFrom(at ?? 0);
@@ -758,7 +775,10 @@ export function VideoStudio() {
       await engine.play();
       setPlaying(true);
     }
+    // however the music stops from here on, it rings out
+    engine.ring = RING;
     const end = loops === FREE ? null : (at ?? 0) + loops * loopBeats;
+    if (end !== null) engine.endAt(end);
     // the end is a beat of the song, not a moment: a tempo changed during the take still ends on it
     let loop = -1;
     const tick = () => {
@@ -771,23 +791,25 @@ export function VideoStudio() {
         if (next && downRef.current.has(next.id) && (loops === FREE || loop + 1 < loops)) toggleChannel(next.id);
       }
       setElapsed((performance.now() - began) / 1000);
-      const left = end === null ? Infinity : engine.secondsTo(end) - EARLY;
-      // stopped by hand (Space) ends the take too
-      if (left <= 0 || engine.position() === null) finish();
-      else later(tick, Math.min(100, left * 1000));
+      // the last loop is over — or the music was stopped by hand (Space), which ends the take too
+      if (engine.position() === null) finish();
+      else later(tick, end === null ? 100 : Math.min(100, Math.max(5, engine.secondsTo(end) * 1000)));
     };
     tick();
   };
 
-  /** end the take: the music stops, and the clip keeps its ring — unless the picture is already gone (`now`) */
+  /** end the take: the music rings out into the clip — unless the picture is already gone (`now`): a quick fade */
   const finish = (now = false) => {
+    // already ringing out: let it
+    if (ending.current && !now) return;
+    ending.current = true;
     takeTimers.current.forEach((t) => clearTimeout(t));
     takeTimers.current = [];
     const rec = recorder.current;
-    if (engine.position() !== null) stopPlayback();
-    if (rec?.state !== 'recording') return;
-    if (now) rec.stop();
-    else later(() => rec.state === 'recording' && rec.stop(), TAIL * 1000);
+    if (now) engine.ring = 0;
+    if (useStore.getState().playing || engine.playing) stopPlayback();
+    else if (now) engine.hush();
+    if (rec?.state === 'recording') later(() => rec.state === 'recording' && rec.stop(), now ? 350 : TAIL * 1000);
   };
 
   /** the screen was let go of */
@@ -800,6 +822,7 @@ export function VideoStudio() {
     if (phase === 'recording') {
       cancelled.current = true;
       finish(true);
+      if (recorder.current?.state === 'recording') recorder.current.stop();
       endBuild();
       setPhase('idle');
     }
