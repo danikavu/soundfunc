@@ -134,7 +134,7 @@ export function runMutate(scope: 'track' | 'garden') {
   const skipped = scope === 'garden' && r.locked ? ` (${r.locked} locked left alone)` : '';
   toast(
     r.tracks
-      ? `${scope === 'garden' ? `Mutated ${r.tracks} channels${skipped}${useStore.getState().project.song.harmonyLocked ? '' : ' and the harmony'}` : 'Mutated'} · ${mood} · best of ${r.tried} candidates — ⌘Z to undo`
+      ? `${scope === 'garden' ? `Mutated ${r.tracks} channels${skipped}${useStore.getState().project.song.harmonyLocked ? '' : ' and the harmony'}` : r.tracks > 1 ? `Mutated ${r.tracks} channels` : 'Mutated'} · ${mood} · best of ${r.tried} candidates — ⌘Z to undo`
       : r.locked && scope === 'track'
         ? 'This channel is locked — unlock it (the padlock beside M / S) to mutate it'
         : r.locked

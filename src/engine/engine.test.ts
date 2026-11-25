@@ -81,7 +81,7 @@ const ALL_PRESETS = [...PRESETS, ...FIXTURES];
 import { HARMONY_VARS, SONG_DEFAULTS, harmonyAt, normalizeProject, renderTrack, scaleLength, songBeats, type Project, type Track } from './project';
 import { chordName, chordTones, limitPitch, PROGRESSIONS, spellDegree } from './music';
 import { mulberry32, mutateFormula, mutateOneNode, mutateTimbre, mutateTrack, musicalScore } from './mutate';
-import { useStore } from '../state/store';
+import { pickedIds, useStore } from '../state/store';
 import { parsePattern } from './graph';
 import { WAVE_VOICES, timbreHarmonics, timbreSamples, waveVoiceOf } from './timbre';
 import { PATCHES, applySauce, cutoffHz, drumOf, surprise, synthOf } from './synth';
@@ -1867,5 +1867,85 @@ describe('the date a function joined My functions', () => {
     // …and one the library never had joins now
     mergeFunctions([{ ...old, name: 'Dropped in Finder', savedAt: 7 }]);
     expect(useLibrary.getState().functions.find((f) => f.name === 'Dropped in Finder')!.savedAt).toBeGreaterThanOrEqual(before);
+  });
+});
+
+describe('reordering and selecting several channels', () => {
+  const st = () => useStore.getState();
+  const order = () => st().project.tracks.map((t) => t.id).join('');
+  const picked = () => pickedIds(st()).join('');
+  const fresh = () => {
+    const [base] = defaultProject().tracks;
+    const make = (id: string, over: Partial<Track> = {}): Track => ({ ...structuredClone(base), id, name: id, waveform: 'sine', ...over });
+    const tracks = [make('a', { octave: 3, swing: 0 }), make('b', { waveform: 'kick', octave: 4 }), make('c', { octave: 5, synth: { drive: 0.5 } }), make('d')];
+    useStore.setState({ project: { ...defaultProject(), tracks }, past: [], future: [], selectedTrackId: 'a', picked: [] });
+  };
+
+  it('moves channels up, down and together, as one undo step — and not at all when nothing moves', () => {
+    fresh();
+    st().moveTracks(['a'], 3);
+    expect(order()).toBe('bcad');
+    st().moveTracks(['d'], 0);
+    expect(order()).toBe('dbca');
+    st().moveTracks(['a', 'd'], 2);
+    expect(order()).toBe('bdac');
+    st().moveTracks(['b', 'a'], 4);
+    expect(order()).toBe('dcba');
+    const steps = st().past.length;
+    st().moveTracks(['c'], 1);
+    st().moveTracks(['c'], 2);
+    expect(order()).toBe('dcba');
+    expect(st().past.length).toBe(steps);
+    st().undo();
+    expect(order()).toBe('bdac');
+  });
+
+  it('toggles, takes runs, and ends when another channel is selected or one is gone', () => {
+    fresh();
+    expect(picked()).toBe('a');
+    st().pickTrack('c', 'toggle');
+    expect(picked()).toBe('ac');
+    st().pickTrack('c', 'toggle');
+    expect(picked()).toBe('a');
+    st().pickTrack('a', 'toggle'); // the last one stays
+    expect(picked()).toBe('a');
+    st().pickTrack('c', 'range');
+    expect(picked()).toBe('abc');
+    st().pickTrack('b', 'range'); // again from the same end
+    expect(picked()).toBe('ab');
+    st().removeTrack('b');
+    expect(picked()).toBe('a');
+    st().pickTrack('d', 'toggle');
+    st().addTrack('blank');
+    expect(pickedIds(st())).toHaveLength(1);
+    expect(st().picked).toEqual([]);
+  });
+
+  it('changes every selected channel at once — or only those alike', () => {
+    fresh();
+    st().pickTrack('c', 'range');
+    const steps = st().past.length;
+    st().editPicked({ swing: 0.4 });
+    expect(st().project.tracks.map((t) => t.swing === 0.4)).toEqual([true, true, true, false]);
+    expect(st().past.length).toBe(steps + 1);
+    st().editPicked((t) => ({ octave: t.octave + 1, synth: { ...t.synth, sauce: 0.3 } }), { alike: true });
+    const [a, b, c] = st().project.tracks;
+    expect([a.octave, b.octave, c.octave]).toEqual([4, 4, 6]);
+    expect(a.synth).toEqual({ sauce: 0.3 });
+    expect(b.synth).toBeUndefined();
+    expect(c.synth).toEqual({ drive: 0.5, sauce: 0.3 });
+    st().setGrid(['a', 'c'], { steps: 8 });
+    expect(st().project.tracks.filter((t) => t.steps === 8).map((t) => t.id)).toEqual(expect.arrayContaining(['a', 'c']));
+  });
+
+  it('duplicates and removes them together', () => {
+    fresh();
+    st().pickTrack('c', 'toggle');
+    st().duplicateTracks(['a', 'c']);
+    expect(st().project.tracks.map((t) => t.name)).toEqual(['a', 'b', 'c', 'a copy', 'c copy', 'd']);
+    expect(pickedIds(st())).toHaveLength(2);
+    st().removeTracks(pickedIds(st()));
+    expect(order()).toBe('abcd');
+    expect(picked()).toBe('d');
   });
 });

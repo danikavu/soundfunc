@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { GEdge, GNode, Graph, NodeData } from '../engine/graph';
@@ -20,6 +21,8 @@ export interface NodeClip {
   from: string;
 }
 
+export type TrackEdit = Partial<Track> | ((t: Track) => Partial<Track>);
+
 interface State {
   project: Project;
   selectedTrackId: string | null;
@@ -40,6 +43,19 @@ interface State {
   setSong: (patch: Partial<Song>, record?: boolean) => void;
   updateTrack: (id: string, patch: Partial<Track>, record?: boolean) => void;
   selectTrack: (id: string) => void;
+  /** the channels selected together (see pickedIds; empty = just the selected one) */
+  picked: string[];
+  /** add a channel to the selection or take it out, or select every channel from the selected one to it */
+  pickTrack: (id: string, how: 'toggle' | 'range') => void;
+  setPicked: (ids: string[]) => void;
+  /** change several channels at once (one undo step) — the same for all, or worked out for each */
+  editTracks: (ids: string[], edit: TrackEdit, record?: boolean) => void;
+  /** change every selected channel — with `alike`, only those of the selected one's kind (drum or melodic) */
+  editPicked: (edit: TrackEdit, opts?: { record?: boolean; alike?: boolean }) => void;
+  /** move channels, keeping their order, to before the channel at index `to` (the count = the end) */
+  moveTracks: (ids: string[], to: number) => void;
+  duplicateTracks: (ids: string[]) => void;
+  removeTracks: (ids: string[]) => void;
   addTrack: (presetId: string) => void;
   /** add a ready-made track (e.g. an imported function) and select it */
   plantTrack: (track: Track) => void;
@@ -96,7 +112,7 @@ interface State {
   /** give every track the same step length (one undo step) */
   setStepBeatsAll: (stepBeats: number) => void;
   /** change a track's steps or step length — with a fixed song length, the track still fills it exactly */
-  setGrid: (trackId: string, patch: Partial<Grid>) => void;
+  setGrid: (trackId: string | string[], patch: Partial<Grid>) => void;
   /** the song's length (every track fills it) or 'free' (each track loops on its own) */
   setSongLength: (length: number | 'free') => void;
   /** remove every track at once (one undo step) */
@@ -110,7 +126,7 @@ interface State {
   toggleTheme: () => void;
   setPlaying: (on: boolean) => void;
   setChaos: (chaos: number) => void;
-  /** mutate the selected track, or every track plus the harmony; one undo step */
+  /** mutate the selected track (or tracks), or every track plus the harmony; one undo step */
   mutate: (scope: 'track' | 'garden') => { tracks: number; tried: number; locked: number };
   checkpoint: () => void;
   undo: () => void;
@@ -150,7 +166,61 @@ export const useStore = create<State>()(
         setProjectName: (name) => commit((p) => ({ ...p, name }), false),
         setSong: (patch, record = true) => commit((p) => ({ ...p, song: { ...p.song, ...patch } }), record),
         updateTrack: (id, patch, record = true) => commit(mapTrack(id, (t) => ({ ...t, ...patch })), record),
-        selectTrack: (id) => set({ selectedTrackId: id }),
+        selectTrack: (id) => set({ selectedTrackId: id, picked: [] }),
+        picked: [],
+        pickTrack: (id, how) => {
+          const s = get();
+          const tracks = s.project.tracks;
+          const now = pickedIds(s);
+          const main = primaryOf(s)?.id ?? id;
+          if (how === 'range') {
+            const a = tracks.findIndex((t) => t.id === main), b = tracks.findIndex((t) => t.id === id);
+            return set({ selectedTrackId: main, picked: tracks.slice(Math.min(a, b), Math.max(a, b) + 1).map((t) => t.id) });
+          }
+          if (!now.includes(id)) return set({ selectedTrackId: id, picked: [...now, id] });
+          const left = now.filter((x) => x !== id);
+          if (left.length) set({ selectedTrackId: id === main ? left[left.length - 1] : main, picked: left });
+        },
+        setPicked: (picked) => set((s) => ({ picked, selectedTrackId: picked.length && !picked.includes(s.selectedTrackId ?? '') ? picked[0] : s.selectedTrackId })),
+        editTracks: (ids, edit, record = true) =>
+          commit((p) => ({ ...p, tracks: p.tracks.map((t) => (ids.includes(t.id) ? { ...t, ...(typeof edit === 'function' ? edit(t) : edit) } : t)) }), record),
+        editPicked: (edit, { record = true, alike = false } = {}) => {
+          const s = get();
+          const main = primaryOf(s);
+          if (!main) return;
+          const ids = pickedIds(s);
+          get().editTracks(alike ? s.project.tracks.filter((t) => ids.includes(t.id) && isDrum(t.waveform) === isDrum(main.waveform)).map((t) => t.id) : ids, edit, record);
+        },
+        moveTracks: (ids, to) => {
+          const tracks = get().project.tracks;
+          const moved = movedTo(tracks, ids, to);
+          if (moved.some((t, i) => t !== tracks[i])) commit((p) => ({ ...p, tracks: moved }));
+        },
+        duplicateTracks: (ids) => {
+          const { tracks } = get().project;
+          const names = tracks.map((t) => t.name), colours = tracks.map((t) => t.color);
+          const copies = tracks
+            .filter((t) => ids.includes(t.id))
+            .map((src): Track => {
+              const copy = { ...structuredClone(src), id: uid('track'), name: copyName(src.name, names), color: pickColor(colours), solo: false };
+              names.push(copy.name);
+              colours.push(copy.color);
+              return copy;
+            });
+          if (!copies.length) return;
+          const last = tracks.reduce((n, t, i) => (ids.includes(t.id) ? i : n), 0);
+          commit((p) => ({ ...p, tracks: [...p.tracks.slice(0, last + 1), ...copies, ...p.tracks.slice(last + 1)] }));
+          set({ selectedTrackId: copies[0].id, picked: copies.map((t) => t.id) });
+        },
+        removeTracks: (ids) => {
+          const { tracks } = get().project;
+          const first = tracks.findIndex((t) => ids.includes(t.id));
+          if (first < 0) return;
+          commit((p) => ({ ...p, tracks: p.tracks.filter((t) => !ids.includes(t.id)) }));
+          const left = get().project.tracks;
+          if (!left.some((t) => t.id === get().selectedTrackId)) set({ selectedTrackId: left[Math.min(first, left.length - 1)]?.id ?? null });
+          set({ picked: [] });
+        },
         addTrack: (presetId) => {
           const preset = PRESETS.find((p) => p.id === presetId) ?? PRESETS[0];
           const made = trackFromPreset(preset, get().project.tracks.length);
@@ -319,7 +389,10 @@ export const useStore = create<State>()(
         },
         setStepBeatsAll: (stepBeats) =>
           commit((p) => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, ...applyGrid(gridOf(t), { stepBeats }, songGridLength(p.song)) })) })),
-        setGrid: (trackId, patch) => commit((p) => mapTrack(trackId, (t) => ({ ...t, ...applyGrid(gridOf(t), patch, songGridLength(p.song)) }))(p)),
+        setGrid: (which, patch) => {
+          const ids = Array.isArray(which) ? which : [which];
+          commit((p) => ({ ...p, tracks: p.tracks.map((t) => (ids.includes(t.id) ? { ...t, ...applyGrid(gridOf(t), patch, songGridLength(p.song)) } : t)) }));
+        },
         setSongLength: (length) =>
           commit((p) => {
             // free: every track keeps the loop it has; fixed: every track fills the new length
@@ -368,14 +441,14 @@ export const useStore = create<State>()(
         setPlaying: (playing) => set({ playing }),
         setChaos: (chaos) => set({ chaos }),
         mutate: (scope) => {
-          const { project, chaos, selectedTrackId } = get();
+          const { project, chaos } = get();
           const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
-          const targetId = selectedTrackId ?? project.tracks[0]?.id;
+          const targets = pickedIds(get());
           let song = project.song;
           if (scope === 'garden' && chaos > 0.15 && !song.harmonyLocked) song = { ...song, harmony: mutateHarmony(song.harmony, chaos, seed) };
           let tried = 0, changed = 0, locked = 0;
           const tracks = project.tracks.map((t, i) => {
-            if (scope === 'track' && t.id !== targetId) return t;
+            if (scope === 'track' && !targets.includes(t.id)) return t;
             if (t.locked) {
               locked++;
               return t;
@@ -423,6 +496,40 @@ export const useStore = create<State>()(
     },
   ),
 );
+
+// selecting another channel any other way (a new one, another project…) ends a selection of several
+useStore.subscribe((s, prev) => {
+  if (s.selectedTrackId !== prev.selectedTrackId && s.picked.length && !s.picked.includes(s.selectedTrackId ?? '')) useStore.setState({ picked: [] });
+});
+
+/** the channel the panels show: the selected one, else the first */
+const primaryOf = (s: Pick<State, 'project' | 'selectedTrackId'>): Track | undefined => s.project.tracks.find((t) => t.id === s.selectedTrackId) ?? s.project.tracks[0];
+
+/** every selected channel, in the list's order: the ones selected together, or just the one */
+export function pickedIds(s: Pick<State, 'project' | 'selectedTrackId' | 'picked'>): string[] {
+  const main = primaryOf(s);
+  if (!main) return [];
+  const ids = s.project.tracks.filter((t) => s.picked.includes(t.id)).map((t) => t.id);
+  return ids.length > 1 && ids.includes(main.id) ? ids : [main.id];
+}
+
+/** the selected channels (always the one the panels show among them) */
+export function usePicked(): Track[] {
+  const project = useStore((s) => s.project);
+  const selectedTrackId = useStore((s) => s.selectedTrackId);
+  const picked = useStore((s) => s.picked);
+  return useMemo(() => {
+    const ids = pickedIds({ project, selectedTrackId, picked });
+    return project.tracks.filter((t) => ids.includes(t.id));
+  }, [project, selectedTrackId, picked]);
+}
+
+/** the list with some of its items moved, in their own order, to before the one at `to` */
+function movedTo<T extends { id: string }>(list: T[], ids: string[], to: number): T[] {
+  const moving = list.filter((t) => ids.includes(t.id));
+  const before = list.slice(0, to).filter((t) => !ids.includes(t.id)), after = list.slice(to).filter((t) => !ids.includes(t.id));
+  return [...before, ...moving, ...after];
+}
 
 /** the song's Length — set only by the user, never by an import */
 const lengthOf = (s: Song) => ({ lengthMode: s.lengthMode, lengthBeats: s.lengthBeats });

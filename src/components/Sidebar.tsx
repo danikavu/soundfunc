@@ -2,9 +2,9 @@ import { PRESET_GROUPS, PRESETS, TRACK_COLORS, groupOf, trackFromPreset, trackFr
 import { MiniScore } from './MiniScore';
 import { KitPicker } from './KitPicker';
 import { audibleTracks, stretchOf, voiceLabel } from '../engine/project';
-import { useSelectedTrack, useStore } from '../state/store';
+import { usePicked, useSelectedTrack, useStore } from '../state/store';
 import { Icon, download, fileSafe } from './ui';
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { functionFile, functionOf, readFunctionFile, useLibrary, type SavedFunction } from '../state/library';
 import { toast } from './TopBar';
 import { canLinkFolder, forgetPresetFolder, mergeFunctions, mergeKits, mergeVoices, openPresetFolder, readFolderFiles, usePresetFolder } from '../state/presetFolder';
@@ -312,8 +312,104 @@ function Fold({ id, title, count, defaultOpen = false, children }: { id: string;
   );
 }
 
+/** how far the pointer goes before a press on a channel is a drag (px) */
+const DRAG_FROM = 5;
+
+/**
+ * Dragging channels to another place: the pressed one — or, when it is one of several selected, all
+ * of them — goes where the line shows. Near the top or bottom the list scrolls; Esc lets go.
+ */
+function useChannelDrag() {
+  const list = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<{ ids: string[]; at: number } | null>(null);
+  /** a drag just ended: the click that follows isn't one */
+  const justDragged = useRef(false);
+  const stop = useRef<(() => void) | null>(null);
+  useEffect(() => () => stop.current?.(), []);
+  const onPointerDown = (e: ReactPointerEvent, id: string, ids: string[]) => {
+    if (e.button !== 0 || e.pointerType === 'touch' || (e.target as Element).closest('.ms-col, .track-actions')) return;
+    stop.current?.();
+    const x0 = e.clientX, y0 = e.clientY;
+    const ends = new AbortController();
+    const { signal } = ends;
+    let moving: string[] | null = null;
+    let at = 0, y = y0, raf = 0;
+    const place = () => {
+      const rows = [...(list.current?.querySelectorAll('.track') ?? [])].map((r) => r.getBoundingClientRect());
+      at = rows.filter((r) => y > r.top + r.height / 2).length;
+      setDrag((d) => (d && d.at === at ? d : { ids: moving!, at }));
+    };
+    const scroll = () => {
+      raf = requestAnimationFrame(scroll);
+      const box = list.current;
+      if (!box) return;
+      const b = box.getBoundingClientRect();
+      // the header stays put over the top of the list
+      const top = (box.querySelector('.side-channels-head')?.getBoundingClientRect().bottom ?? b.top) + 16;
+      const over = y < top ? y - top : y > b.bottom - 24 ? y - b.bottom + 24 : 0;
+      if (!over) return;
+      box.scrollTop += Math.max(-12, Math.min(12, over / 4));
+      place();
+    };
+    const done = (drop: boolean) => {
+      ends.abort();
+      cancelAnimationFrame(raf);
+      stop.current = null;
+      document.documentElement.classList.remove('dragging-channels');
+      if (!moving) return;
+      setDrag(null);
+      justDragged.current = true;
+      setTimeout(() => (justDragged.current = false), 0);
+      if (drop) useStore.getState().moveTracks(moving, at);
+    };
+    stop.current = () => done(false);
+    window.addEventListener(
+      'pointermove',
+      (m) => {
+        y = m.clientY;
+        if (!moving) {
+          if (Math.hypot(m.clientX - x0, m.clientY - y0) < DRAG_FROM) return;
+          moving = ids.includes(id) ? ids : [id];
+          document.documentElement.classList.add('dragging-channels');
+          scroll();
+        }
+        place();
+      },
+      { signal },
+    );
+    window.addEventListener('pointerup', () => done(true), { signal });
+    window.addEventListener('pointercancel', () => done(false), { signal });
+    window.addEventListener(
+      'keydown',
+      (k) => {
+        if (k.key !== 'Escape' || !moving) return;
+        k.stopPropagation();
+        done(false);
+      },
+      { signal, capture: true },
+    );
+  };
+  return { list, drag, justDragged, onPointerDown };
+}
+
 export function Sidebar() {
-  const { project, selectTrack, updateTrack, addTrack, removeTrack, duplicateTrack, setAllTracks } = useStore();
+  const { project, selectTrack, pickTrack, updateTrack, editTracks, addTrack, removeTrack, duplicateTrack, duplicateTracks, removeTracks, setAllTracks } = useStore();
+  const picked = usePicked().map((t) => t.id);
+  const many = picked.length > 1;
+  const { list, drag, justDragged, onPointerDown } = useChannelDrag();
+  /** a channel's M, S or lock: on one of several selected, it sets them all */
+  const flag = (t: (typeof project.tracks)[number], patch: { muted?: boolean; solo?: boolean; locked?: boolean }) =>
+    many && picked.includes(t.id) ? editTracks(picked, patch) : updateTrack(t.id, patch);
+  // Esc: back to one channel
+  useEffect(() => {
+    if (!many) return;
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName));
+      if (e.key === 'Escape' && !typing && !document.querySelector('.sheet-backdrop') && !useStore.getState().audition) useStore.getState().setPicked([]);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [many]);
   const allMuted = project.tracks.length > 0 && project.tracks.every((t) => t.muted);
   const anySolo = project.tracks.some((t) => t.solo);
   const allLocked = project.tracks.length > 0 && project.tracks.every((t) => t.locked);
@@ -323,10 +419,33 @@ export function Sidebar() {
   // two halves that scroll on their own: the channels always in view above, kits and functions below
   return (
     <aside className="panel side-split">
-      <div className="side-half side-channels">
+      <div className="side-half side-channels" ref={list}>
       {/* the header and its keys stay put while a long list of channels scrolls under them */}
       <div className="side-channels-head">
-      <div className="eyebrow">Channels</div>
+      <div className="channels-title">
+        <div className={`eyebrow ${many ? 'eyebrow-picked' : ''}`}>{many ? `${picked.length} selected` : 'Channels'}</div>
+        {many && (
+          <div className="picked-tools" role="toolbar" aria-label="Selected channels">
+            <button className="icon-btn" onClick={() => duplicateTracks(picked)} title={`Duplicate the ${picked.length} selected channels`} aria-label="Duplicate the selected channels">
+              <Icon name="copy" size={12} />
+            </button>
+            <button
+              className="icon-btn"
+              onClick={() => {
+                removeTracks(picked);
+                toast(`Removed ${picked.length} channels — ⌘Z brings them back`);
+              }}
+              title={`Remove the ${picked.length} selected channels (⌘Z to undo)`}
+              aria-label="Remove the selected channels"
+            >
+              <Icon name="trash" size={12} />
+            </button>
+            <button className="icon-btn" onClick={() => useStore.getState().setPicked([])} title="Select just one again (Esc)" aria-label="Clear the selection">
+              <Icon name="close" size={12} />
+            </button>
+          </div>
+        )}
+      </div>
       <div className="tracks-head">
         {project.tracks.length > 0 && (
           <div className="ms-col">
@@ -380,11 +499,18 @@ export function Sidebar() {
         </div>
       </div>
       </div>
-      {project.tracks.map((t) => (
+      {project.tracks.map((t, i) => (
         <div
           key={t.id}
-          className={`track ${selected?.id === t.id ? 'selected' : ''} ${audible.has(t.id) ? '' : 'dim'}`}
-          onClick={() => selectTrack(t.id)}
+          className={`track ${selected?.id === t.id ? 'selected' : ''} ${many && picked.includes(t.id) ? 'picked' : ''} ${audible.has(t.id) ? '' : 'dim'} ${drag?.ids.includes(t.id) ? 'dragged' : ''} ${drag?.at === i ? 'drop-before' : ''} ${drag && drag.at === project.tracks.length && i === drag.at - 1 ? 'drop-after' : ''}`}
+          aria-selected={picked.includes(t.id)}
+          onPointerDown={(e) => onPointerDown(e, t.id, picked)}
+          onClick={(e) => {
+            if (justDragged.current) return;
+            if (e.shiftKey) pickTrack(t.id, 'range');
+            else if (e.metaKey || e.ctrlKey) pickTrack(t.id, 'toggle');
+            else selectTrack(t.id);
+          }}
         >
           <div className="ms-col" onClick={(e) => e.stopPropagation()}>
             {liveFades ? (
@@ -398,11 +524,11 @@ export function Sidebar() {
                 M
               </button>
             ) : (
-              <button className={`ms ${t.muted ? 'on' : ''}`} title="Mute" aria-label={`Mute ${t.name}`} onClick={() => updateTrack(t.id, { muted: !t.muted })}>
+              <button className={`ms ${t.muted ? 'on' : ''}`} title="Mute" aria-label={`Mute ${t.name}`} onClick={() => flag(t, { muted: !t.muted })}>
                 M
               </button>
             )}
-            <button className={`ms solo ${t.solo ? 'on' : ''}`} title="Solo" aria-label={`Solo ${t.name}`} onClick={() => updateTrack(t.id, { solo: !t.solo })}>
+            <button className={`ms solo ${t.solo ? 'on' : ''}`} title="Solo" aria-label={`Solo ${t.name}`} onClick={() => flag(t, { solo: !t.solo })}>
               S
             </button>
             <button
@@ -410,13 +536,23 @@ export function Sidebar() {
               title={t.locked ? 'Locked — Mutate leaves this channel alone. Click to unlock' : 'Lock this channel against Mutate'}
               aria-label={`${t.locked ? 'Unlock' : 'Lock'} ${t.name}`}
               aria-pressed={!!t.locked}
-              onClick={() => updateTrack(t.id, { locked: !t.locked })}
+              onClick={() => flag(t, { locked: !t.locked })}
             >
               <Icon name={t.locked ? 'lock' : 'unlock'} size={10} />
             </button>
           </div>
-          <span className="ch-num" style={{ background: t.color }}>
-            {project.tracks.indexOf(t) + 1}
+          {/* the number is a tick: click it to select several */}
+          <span
+            className="ch-num"
+            style={{ background: t.color }}
+            title={`${many && picked.includes(t.id) ? 'Take out of' : 'Add to'} the selection (also ⌘-click the channel, ⇧-click for a run). Drag the channel to move it`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (justDragged.current) return;
+              pickTrack(t.id, e.shiftKey ? 'range' : 'toggle');
+            }}
+          >
+            {i + 1}
           </span>
           <div style={{ minWidth: 0 }} title={`${voiceLabel(t.waveform)}${t.playMode === 'glide' ? ' · glide' : ''} · ${t.steps} steps`}>
             <div className="track-name">

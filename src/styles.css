@@ -369,6 +369,98 @@ input[type='range']:hover::-webkit-slider-thumb {
   cursor: pointer;
   transition: background 0.25s var(--ease);
 }
+/* several selected: each keeps a mark down its side; the one the panels show keeps its frame */
+.track {
+  position: relative;
+  user-select: none;
+}
+.track.picked {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.ch-num {
+  cursor: copy;
+}
+.ch-num:hover,
+.track.picked .ch-num {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* being dragged: dim where it was, a line where it will land */
+.track.dragged > * {
+  opacity: 0.35;
+}
+.track.drop-before::before,
+.track.drop-after::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: -2px;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.track.drop-after::before {
+  top: auto;
+  bottom: -2px;
+}
+.dragging-channels,
+.dragging-channels * {
+  cursor: grabbing !important;
+}
+.channels-title {
+  position: relative;
+}
+.picked-tools {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: var(--sp-2);
+  background: var(--paper);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.eyebrow-picked {
+  color: var(--accent);
+}
+.picked-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-2);
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.picked-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+.picked-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 0;
+  border: none;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.picked-chips button.on {
+  color: var(--accent);
+}
+.picked-chips i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
 .track.dim {
   opacity: 0.45;
 }
