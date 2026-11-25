@@ -463,7 +463,7 @@ export function VideoStudio() {
       g.fillText(title || project.name, head.x, head.y, head.w);
       g.fillStyle = T.ink3;
       g.font = `400 ${Math.round(head.h * 0.2)}px ${T.mono}`;
-      g.fillText(`${project.song.bpm} bpm · ${keyLabel(project.song)} · harmony ${project.song.harmony}`, head.x, head.y + head.h * 0.6, head.w);
+      g.fillText(`${project.song.bpm} bpm · ${keyLabel(project.song)}`, head.x, head.y + head.h * 0.6, head.w);
       // the visualizer, drawn for this frame size
       const s = stageCanvas.current;
       if (s && s.width) g.drawImage(s, L.viz.x, L.viz.y, L.viz.w, L.viz.h);
@@ -541,7 +541,9 @@ export function VideoStudio() {
       g.fillStyle = T.ink3;
       g.globalAlpha = 0.8;
       g.font = `400 ${Math.round(foot.h * 0.55)}px ${T.mono}`;
-      g.fillText('made with SoundFunc — music written as functions', foot.x, foot.y + foot.h / 2, foot.w);
+      g.textAlign = 'center';
+      g.fillText('SoundFunc', foot.x + foot.w / 2, foot.y + foot.h / 2, foot.w);
+      g.textAlign = 'left';
       g.globalAlpha = 1;
     };
     raf = requestAnimationFrame(draw);
