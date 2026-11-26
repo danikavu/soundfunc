@@ -3910,6 +3910,96 @@ aside.panel:last-of-type .info-pop {
   opacity: 0.45;
   text-decoration: line-through;
 }
+.video-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  padding: 3px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+.video-group-key {
+  font-weight: 700;
+}
+/* a group in the channel list: a header, its channels set in under it */
+.group-head {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  margin: var(--sp-2) calc(-1 * var(--sp-2)) 2px;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+.group-head:hover {
+  background: var(--paper-2);
+}
+.group-head .ms-col {
+  gap: 1px;
+}
+.group-fold {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transform: rotate(90deg);
+  transition: transform 0.15s;
+}
+.group-head.collapsed .group-fold {
+  transform: none;
+}
+.group-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.group-name small {
+  margin-left: 4px;
+  opacity: 0.6;
+}
+.group-name-input {
+  min-width: 0;
+  height: 22px;
+  font-size: var(--fs-sm);
+}
+.group-tools {
+  visibility: hidden;
+}
+.group-head:hover .group-tools {
+  visibility: visible;
+}
+.group-head.dragged > * {
+  opacity: 0.35;
+}
+.group-head.drop-before::before,
+.group-head.drop-after::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: -2px;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.track.in-group {
+  margin-left: 0;
+  border-left: 2px solid var(--line);
+  padding-left: calc(var(--sp-2) - 2px);
+}
+.track.drop-in::before {
+  left: 16px;
+}
 .video-ch small {
   opacity: 0.55;
 }

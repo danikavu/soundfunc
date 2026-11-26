@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { engine } from '../engine/audio';
-import { BEATS_PER_BAR, audibleTracks, isDrum, keyLabel, patternBeats, songBeats, stretchOf, type Track } from '../engine/project';
+import { BEATS_PER_BAR, audibleTracks, groupRuns, isDrum, keyLabel, patternBeats, songBeats, stretchOf, type Track } from '../engine/project';
 import { compose, texVariants, toSource } from '../engine/symbolic';
 import { useStore } from '../state/store';
 import { sparkHead } from './fuse';
@@ -79,10 +79,17 @@ function shuffleRank(id: string, shuffle: number): number {
   return (h ^ (h >>> 16)) >>> 0;
 }
 
-const shuffled = (tracks: Track[], shuffle: number) => [...tracks].sort((a, b) => shuffleRank(a.id, shuffle) - shuffleRank(b.id, shuffle));
+/** what a build-up brings in at a time: a channel, or a whole group */
+interface Unit {
+  id: string;
+  name: string;
+  tracks: Track[];
+}
+
+const shuffled = <T extends { id: string }>(tracks: T[], shuffle: number) => [...tracks].sort((a, b) => shuffleRank(a.id, shuffle) - shuffleRank(b.id, shuffle));
 
 /** a shuffle that puts the channels in another order than they are in now (where there is one) */
-function reshuffle(now: Track[], shuffle: number): number {
+function reshuffle(now: { id: string }[], shuffle: number): number {
   let next = shuffle;
   for (let i = 0; i < 20; i++) {
     next = Math.floor(Math.random() * 1e9);
@@ -311,6 +318,22 @@ export function VideoStudio() {
   /** where the control bar was dragged to, from its place */
   const [barAt, setBarAt] = useState({ x: 0, y: 0 });
   const cancelled = useRef(false);
+  /** Free: Stop waits for the end of the loop */
+  const [stopAtLoop, setStopAtLoop] = useState(false);
+  /** …the beat it waits for */
+  const [stopping, setStopping] = useState<number | null>(null);
+  /** the beat of the song the take began on */
+  const takeFrom = useRef(0);
+  /** Stop: at once — or, in Free with the box ticked, at the end of the loop it is in (pressed again: at once) */
+  const stopTake = () => {
+    const pos = engine.position();
+    if (loops !== FREE || !stopAtLoop || stopping !== null || pos === null) return finish();
+    const from = takeFrom.current;
+    let end = from + Math.ceil((pos - from) / loopBeats + 1e-9) * loopBeats;
+    while (engine.secondsTo(end) < 0.3) end += loopBeats;
+    engine.endAt(end);
+    setStopping(end);
+  };
   /** the take is ringing out */
   const ending = useRef(false);
   /** between pressing Record and the take: a second press does nothing */
@@ -321,9 +344,23 @@ export function VideoStudio() {
   const tracks = useMemo(() => audibleTracks(project.tracks), [project.tracks]);
   const loopBeats = songBeats(tracks, project.song);
   /** the channels a build-up brings in, in turn: every one, the switched-off ones too */
-  const buildOrder = useMemo(() => (build === 'random' ? shuffled(tracks, shuffle) : tracks), [tracks, build, shuffle]);
+  /** the groups, as the studio plays them: only the channels that sound */
+  const groups = useMemo(
+    () =>
+      groupRuns(project)
+        .map((r) => ({ group: r.group, tracks: r.tracks.filter((t) => tracks.includes(t)) }))
+        .filter((r) => r.tracks.length),
+    [project, tracks],
+  );
+  /** a build-up brings in a whole group at a time */
+  const [byGroup, setByGroup] = useState(true);
+  const units = useMemo<Unit[]>(
+    () => groups.flatMap((r) => (r.group && byGroup ? [{ id: r.group.id, name: r.group.name, tracks: r.tracks }] : r.tracks.map((t) => ({ id: t.id, name: t.name, tracks: [t] })))),
+    [groups, byGroup],
+  );
+  const buildOrder = useMemo(() => (build === 'random' ? shuffled(units, shuffle) : units), [units, build, shuffle]);
   /** during a take: the order it was started with */
-  const [running, setRunning] = useState<Track[] | null>(null);
+  const [running, setRunning] = useState<Unit[] | null>(null);
   const order = running ?? buildOrder;
   const building = build !== 'off' && order.length > 0;
   const loops = length === AUTO ? Math.max(1, order.length) : length;
@@ -356,6 +393,14 @@ export function VideoStudio() {
     });
     if (!out && wait > 0.02) timers.current.push(window.setTimeout(() => setCued((c) => (c.has(id) ? new Set([...c].filter((x) => x !== id)) : c)), wait * 1000));
   }, []);
+  /** a group's key: off, if any of it is on; otherwise all of it back on */
+  const toggleMany = useCallback(
+    (ids: string[]) => {
+      const up = ids.filter((id) => !downRef.current.has(id));
+      for (const id of up.length ? up : ids) toggleChannel(id);
+    },
+    [toggleChannel],
+  );
   /**
    * Opening: every channel up, except the muted ones — they join the studio faded out, so they can
    * be brought in. Closing: the ones that were muted and are still out are muted again.
@@ -386,8 +431,8 @@ export function VideoStudio() {
   // the channel list's M keys fade too, while the studio is open (in a full-screen take, they are the way to play it)
   const setLiveFades = useStore((st) => st.setLiveFades);
   useEffect(() => {
-    setLiveFades(open ? { down: [...down], cued: [...cued], toggle: toggleChannel } : null);
-  }, [open, down, cued, toggleChannel, setLiveFades]);
+    setLiveFades(open ? { down: [...down], cued: [...cued], toggle: toggleChannel, toggleMany } : null);
+  }, [open, down, cued, toggleChannel, toggleMany, setLiveFades]);
   useEffect(() => () => setLiveFades(null), [setLiveFades]);
   useEffect(() => {
     if (open && mathView === 'latex') preloadMath();
@@ -639,24 +684,26 @@ export function VideoStudio() {
   };
 
   /** a build-up's channels, while one runs, and which were switched off before it */
-  const buildRef = useRef<{ order: Track[]; before: Set<string> } | null>(null);
+  const buildRef = useRef<{ order: Unit[]; before: Set<string> } | null>(null);
   /** switch to its first channel alone — at the start of the next loop, when the song is playing */
   const beginBuild = (onLoop: boolean) => {
     if (buildRef.current) return;
     buildRef.current = { order, before: new Set(downRef.current) };
     setRunning(order);
     setCued(new Set());
-    order.forEach((t, i) => {
-      if (downRef.current.has(t.id) === i > 0) return;
-      markDown(t.id, i > 0);
-      engine.fadeChannel(t.id, i ? 0 : 1, CUT, onLoop);
-    });
+    order.forEach((u, i) =>
+      u.tracks.forEach((t) => {
+        if (downRef.current.has(t.id) === i > 0) return;
+        markDown(t.id, i > 0);
+        engine.fadeChannel(t.id, i ? 0 : 1, CUT, onLoop);
+      }),
+    );
   };
   /** every channel is as it was before it */
   const endBuild = () => {
     const run = buildRef.current;
     if (!run) return;
-    for (const t of run.order) {
+    for (const t of run.order.flatMap((u) => u.tracks)) {
       markDown(t.id, run.before.has(t.id));
       engine.fadeChannel(t.id, run.before.has(t.id) ? 0 : 1, CUT);
     }
@@ -750,6 +797,7 @@ export function VideoStudio() {
       takeTimers.current.forEach((t) => clearTimeout(t));
       takeTimers.current = [];
       engine.ring = 0;
+      setStopping(null);
       stream.getVideoTracks().forEach((t) => t.stop());
       session.current = null;
       src.done();
@@ -762,6 +810,8 @@ export function VideoStudio() {
     };
     recorder.current = rec;
     ending.current = false;
+    takeFrom.current = at ?? 0;
+    setStopping(null);
     rec.start(250);
     setElapsed(0);
     setFrom(at ?? 0);
@@ -788,7 +838,7 @@ export function VideoStudio() {
       if (buildRef.current && now > loop && engine.secondsTo((at ?? 0) + now * loopBeats) < 0) {
         loop = now;
         const next = buildRef.current.order[loop + 1];
-        if (next && downRef.current.has(next.id) && (loops === FREE || loop + 1 < loops)) toggleChannel(next.id);
+        if (next && (loops === FREE || loop + 1 < loops)) for (const t of next.tracks) if (downRef.current.has(t.id)) toggleChannel(t.id);
       }
       setElapsed((performance.now() - began) / 1000);
       // the last loop is over — or the music was stopped by hand (Space), which ends the take too
@@ -959,7 +1009,10 @@ export function VideoStudio() {
             <div className="field">
               <span>Channels — on and off, live (keys 1–9)</span>
               <div className="video-channels">
-                {tracks.map((t, i) => (
+                {groups.map((r) => {
+                  const keys = r.tracks.map((t) => {
+                    const i = tracks.indexOf(t);
+                    return (
                   <button
                     key={t.id}
                     className={`btn small video-ch ${down.has(t.id) ? 'off' : 'on'} ${cued.has(t.id) ? 'cued' : ''}`}
@@ -970,7 +1023,21 @@ export function VideoStudio() {
                     <i style={{ background: t.color }} />
                     {i < 9 && <small>{i + 1}</small>} {t.name}
                   </button>
-                ))}
+                    );
+                  });
+                  if (!r.group) return keys;
+                  // a group: one key for all of it, its channels beside it
+                  const ids = r.tracks.map((t) => t.id);
+                  const off = ids.every((id) => down.has(id));
+                  return (
+                    <div key={r.group.id} className="video-group">
+                      <button className={`btn small video-ch video-group-key ${off ? 'off' : 'on'} ${ids.some((id) => cued.has(id)) ? 'cued' : ''}`} aria-pressed={!off} onClick={() => toggleMany(ids)} title={off ? `Bring in ${r.group.name} at the start of the next loop` : `Switch off all of ${r.group.name}`}>
+                        {r.group.name}
+                      </button>
+                      {keys}
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div className="field">
@@ -993,6 +1060,11 @@ export function VideoStudio() {
                   ]}
                 />
               </div>
+              {building && groups.some((r) => r.group) && (
+                <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="A group comes in all at once, as one step">
+                  <input type="checkbox" checked={byGroup} disabled={busy} onChange={(e) => setByGroup(e.target.checked)} /> a group at a time
+                </label>
+              )}
               {building && (
                 <small className="muted">
                   {order.map((t, i) => (
@@ -1008,14 +1080,19 @@ export function VideoStudio() {
             <div className="field">
               <span>Length</span>
               <Seg<number> value={length} onChange={(n) => !busy && setLength(n)} options={[...(build === 'off' ? [] : [{ value: AUTO, label: `Auto · ${order.length}` }]), ...[1, 2, 4, 8].map((n) => ({ value: n, label: build === 'off' ? `${n} loop${n > 1 ? 's' : ''}` : String(n) })), { value: FREE, label: 'Free' }]} />
-              <small className="muted">{loops === FREE ? 'Records until you stop it' : `${build === 'off' ? '' : `${loops} loop${loops > 1 ? 's' : ''} · `}${building ? `${pattern} · ` : ''}${fmtTime(seconds)} · ${fits}`}</small>
+              {loops === FREE && (
+                <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="Off: Stop ends the take at once. On: it plays to the end of the loop first (press Stop again to end it at once)">
+                  <input type="checkbox" checked={stopAtLoop} onChange={(e) => setStopAtLoop(e.target.checked)} /> Stop at the end of the loop
+                </label>
+              )}
+              <small className="muted">{loops === FREE ? (stopping !== null ? 'Stopping at the end of this loop…' : 'Records until you stop it') : `${build === 'off' ? '' : `${loops} loop${loops > 1 ? 's' : ''} · `}${building ? `${pattern} · ` : ''}${fmtTime(seconds)} · ${fits}`}</small>
             </div>
             {!mime && <p className="import-warn">This browser can’t record video. Try Chrome, Edge or Safari.</p>}
             {mime && !mime.startsWith('video/mp4') && <p className="import-warn">This browser records WebM. Most platforms take it; for Instagram, convert it to MP4 first.</p>}
             <div className="video-actions">
               {busy ? (
-                <button className="btn" onClick={() => finish()}>
-                  <Icon name="stop" size={12} /> {loops === FREE ? 'Stop' : 'Stop here'}
+                <button className="btn" onClick={stopTake} title={stopping !== null ? 'Stops at the end of this loop — press to stop now' : undefined}>
+                  <Icon name="stop" size={12} /> {stopping !== null ? 'Stop now' : loops === FREE ? 'Stop' : 'Stop here'}
                 </button>
               ) : (
                 <button className="btn primary" disabled={!mime} onClick={() => void (source === 'app' ? arm() : record())}>
@@ -1053,8 +1130,8 @@ export function VideoStudio() {
         createPortal(
           <div className="take-bar" role="toolbar" aria-label="Recording" style={{ translate: `${barAt.x}px ${barAt.y}px` }} onPointerDown={dragBar} onMouseDown={(e) => e.preventDefault()} title={clean ? 'Not in the video — drag it out of the way' : 'This browser can’t leave this out of the video — drag it out of the way'}>
             {phase === 'recording' ? (
-              <button className="btn" onClick={() => finish()}>
-                <Icon name="stop" size={12} /> Stop
+              <button className={`btn ${stopping !== null ? 'cued' : ''}`} onClick={stopTake} title={stopping !== null ? 'Stops at the end of this loop — press to stop now' : undefined}>
+                <Icon name="stop" size={12} /> {stopping !== null ? 'Stop now' : 'Stop'}
               </button>
             ) : (
               <button className={`btn primary ${cueAt !== null ? 'cued' : ''}`} onClick={() => void recordApp()} title={cueAt !== null ? 'Press again to cancel' : 'From the top — or, while the song plays, from the next bar'}>

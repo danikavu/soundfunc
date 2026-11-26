@@ -96,6 +96,8 @@ export interface Track {
   glide: number;
   muted: boolean;
   solo: boolean;
+  /** the group it belongs to in the channel list (an id in the project's groups) */
+  group?: string;
   /** locked against Mutate: R / ⇧R, the per-node dice and Mutate wave all leave this channel alone */
   locked?: boolean;
   /** this channel's changes to its voice's sound (synth settings, or drum tone / decay / drive) — on top of the voice's patch */
@@ -209,10 +211,56 @@ export function harmonyAt(song: Song, beat: number): number {
 
 export const scaleLength = (song: Song) => (SCALES[song.scale] ?? SCALES.major).steps.length;
 
+/** channels kept together in the list, under one name */
+export interface Group {
+  id: string;
+  name: string;
+  /** folded shut in the channel list */
+  collapsed?: boolean;
+}
+
 export interface Project {
   name: string;
   song: Song;
   tracks: Track[];
+  groups?: Group[];
+}
+
+/** the groups that make up a list: as runs of channels, in its order */
+export function groupRuns(p: Project): { group: Group | null; tracks: Track[] }[] {
+  const out: { group: Group | null; tracks: Track[] }[] = [];
+  for (const t of p.tracks) {
+    const g = (t.group && p.groups?.find((x) => x.id === t.group)) || null;
+    const last = out[out.length - 1];
+    if (g && last?.group === g) last.tracks.push(t);
+    else out.push({ group: g, tracks: [t] });
+  }
+  return out;
+}
+
+/**
+ * Groups kept sound: a group's channels stay together (where its first one is), a group with no
+ * channels is gone, and a channel can't belong to a group that isn't there. Unchanged: the same project.
+ */
+export function tidyGroups(p: Project): Project {
+  const groups = p.groups ?? [];
+  if (!groups.length && !p.tracks.some((t) => t.group)) return p;
+  const known = new Set(groups.map((g) => g.id));
+  const tracks: Track[] = [];
+  const placed = new Set<string>();
+  for (const t of p.tracks) {
+    const g = t.group && known.has(t.group) ? t.group : undefined;
+    if (!g) {
+      tracks.push(t.group ? { ...t, group: undefined } : t);
+      continue;
+    }
+    if (placed.has(g)) continue;
+    placed.add(g);
+    tracks.push(...p.tracks.filter((x) => x.group === g));
+  }
+  const kept = groups.filter((g) => placed.has(g.id));
+  const same = kept.length === groups.length && tracks.every((t, i) => t === p.tracks[i]);
+  return same ? p : { ...p, tracks, groups: kept };
 }
 
 /** Fill in fields added since a project was saved. */
@@ -229,8 +277,9 @@ export function normalizeProject(p: Project): Project {
   }
   // the harmony could read the song's sliders; it keeps their values, written in
   if (legacySliders?.length) for (const sl of legacySliders) song.harmony = renameVariable(song.harmony, sl.name, sl.value < 0 ? `(${sl.value})` : String(sl.value));
-  return {
+  return tidyGroups({
     name: p.name ?? 'Untitled',
+    groups: p.groups,
     song,
     tracks: p.tracks.map((t) => {
       // tracks used to carry their own loop length; the song's length rules now
@@ -245,7 +294,7 @@ export function normalizeProject(p: Project): Project {
       }
       return track;
     }),
-  };
+  });
 }
 
 /* the channel colours, as they are now: seven of one lightness and strength, then twelve softer ones and five extras (presets.ts uses them) */

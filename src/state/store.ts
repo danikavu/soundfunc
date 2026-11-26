@@ -8,7 +8,7 @@ import type { SavedFunction } from './library';
 import { defaultProject, KITS, pickColor, PRESETS, trackFromPreset, trackFromTemplate, uid, type Kit } from '../engine/presets';
 import { mutateHarmony, mutateOneNode, mutateTrack } from '../engine/mutate';
 import { blockFromSelection, insertBlock, type Block } from '../engine/graphEdit';
-import { formulaNames, isDrum, normalizeProject, songGridLength, type Project, type Slider, type Song, type Track } from '../engine/project';
+import { formulaNames, isDrum, normalizeProject, songGridLength, tidyGroups, type Group, type Project, type Slider, type Song, type Track } from '../engine/project';
 import { CONSTANTS, FUNCTIONS, renameVariable } from '../engine/expr';
 import { ctxVars } from '../engine/graph';
 
@@ -52,8 +52,13 @@ interface State {
   editTracks: (ids: string[], edit: TrackEdit, record?: boolean) => void;
   /** change every selected channel — with `alike`, only those of the selected one's kind (drum or melodic) */
   editPicked: (edit: TrackEdit, opts?: { record?: boolean; alike?: boolean }) => void;
-  /** move channels, keeping their order, to before the channel at index `to` (the count = the end) */
-  moveTracks: (ids: string[], to: number) => void;
+  /** move channels, keeping their order, to before the channel at index `to` (the count = the end) — into a group, or out of any (null) */
+  moveTracks: (ids: string[], to: number, group?: string | null) => void;
+  /** a new group of these channels, where the first of them is; returns its id */
+  groupTracks: (ids: string[]) => string | null;
+  /** its channels stay, loose */
+  ungroup: (groupId: string) => void;
+  updateGroup: (groupId: string, patch: Partial<Group>) => void;
   duplicateTracks: (ids: string[]) => void;
   removeTracks: (ids: string[]) => void;
   addTrack: (presetId: string) => void;
@@ -83,7 +88,7 @@ interface State {
    * While the video studio is open, a channel's M fades it instead of muting it (out at once, back
    * in on the next loop): the channels faded out, the ones waiting to come in, and the fade itself.
    */
-  liveFades: { down: string[]; cued: string[]; toggle: (id: string) => void } | null;
+  liveFades: { down: string[]; cued: string[]; toggle: (id: string) => void; toggleMany: (ids: string[]) => void } | null;
   setLiveFades: (f: State['liveFades']) => void;
   /** plant a multi-track kit (and its tempo/key); replaces the current tracks unless layering */
   /** a kit by id (built in), or the kit itself (a saved one) */
@@ -142,7 +147,7 @@ export const useStore = create<State>()(
       /** apply a project change, optionally recording an undo step */
       const commit = (fn: (p: Project) => Project, record = true) =>
         set((s) => ({
-          project: fn(s.project),
+          project: tidyGroups(fn(s.project)),
           ...(record ? { past: [...s.past, s.project].slice(-HISTORY_LIMIT), future: [] } : {}),
         }));
       const mapTrack = (id: string, fn: (t: Track) => Track) => (p: Project) => ({
@@ -191,11 +196,25 @@ export const useStore = create<State>()(
           const ids = pickedIds(s);
           get().editTracks(alike ? s.project.tracks.filter((t) => ids.includes(t.id) && isDrum(t.waveform) === isDrum(main.waveform)).map((t) => t.id) : ids, edit, record);
         },
-        moveTracks: (ids, to) => {
-          const tracks = get().project.tracks;
-          const moved = movedTo(tracks, ids, to);
-          if (moved.some((t, i) => t !== tracks[i])) commit((p) => ({ ...p, tracks: moved }));
+        moveTracks: (ids, to, group) => {
+          const p0 = get().project;
+          const joined = group === undefined ? p0.tracks : p0.tracks.map((t) => (ids.includes(t.id) && (t.group ?? null) !== group ? { ...t, group: group ?? undefined } : t));
+          const next = tidyGroups({ ...p0, tracks: movedTo(joined, ids, to) });
+          if (next.tracks.some((t, i) => t !== p0.tracks[i]) || next.tracks.length !== p0.tracks.length || (next.groups?.length ?? 0) !== (p0.groups?.length ?? 0)) commit(() => next);
         },
+        groupTracks: (ids) => {
+          const p0 = get().project;
+          if (!ids.length) return null;
+          const taken = new Set((p0.groups ?? []).map((g) => g.name));
+          let n = 1;
+          while (taken.has(`Group ${n}`)) n++;
+          const g: Group = { id: uid('group'), name: `Group ${n}` };
+          const at = p0.tracks.findIndex((t) => ids.includes(t.id));
+          commit((p) => ({ ...p, groups: [...(p.groups ?? []), g], tracks: movedTo(p.tracks.map((t) => (ids.includes(t.id) ? { ...t, group: g.id } : t)), ids, at) }));
+          return g.id;
+        },
+        ungroup: (id) => commit((p) => ({ ...p, groups: (p.groups ?? []).filter((g) => g.id !== id), tracks: p.tracks.map((t) => (t.group === id ? { ...t, group: undefined } : t)) })),
+        updateGroup: (id, patch) => commit((p) => ({ ...p, groups: (p.groups ?? []).map((g) => (g.id === id ? { ...g, ...patch } : g)) }), !('collapsed' in patch)),
         duplicateTracks: (ids) => {
           const { tracks } = get().project;
           const names = tracks.map((t) => t.name), colours = tracks.map((t) => t.color);
@@ -525,7 +544,7 @@ export function usePicked(): Track[] {
 }
 
 /** the list with some of its items moved, in their own order, to before the one at `to` */
-function movedTo<T extends { id: string }>(list: T[], ids: string[], to: number): T[] {
+export function movedTo<T extends { id: string }>(list: T[], ids: string[], to: number): T[] {
   const moving = list.filter((t) => ids.includes(t.id));
   const before = list.slice(0, to).filter((t) => !ids.includes(t.id)), after = list.slice(to).filter((t) => !ids.includes(t.id));
   return [...before, ...moving, ...after];
