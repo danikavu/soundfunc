@@ -483,6 +483,17 @@ function GroupHead({ group, tracks, row, drop, dragged, onPointerDown, justDragg
         <button className="ms remove" title="Ungroup — the channels stay" aria-label={`Ungroup ${group.name}`} onClick={() => ungroup(group.id)}>
           <Icon name="close" size={11} />
         </button>
+        <button
+          className="ms remove"
+          title="Delete the group and its channels (⌘Z to undo)"
+          aria-label={`Delete group ${group.name}`}
+          onClick={() => {
+            useStore.getState().removeTracks(ids);
+            toast(`Deleted ${group.name} and its ${tracks.length} channels — ⌘Z brings them back`);
+          }}
+        >
+          <Icon name="trash" size={11} />
+        </button>
       </div>
     </div>
   );

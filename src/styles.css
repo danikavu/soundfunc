@@ -511,6 +511,7 @@ input[type='range']:hover::-webkit-slider-thumb {
   transition: width 0.3s var(--ease), opacity 0.25s var(--ease), transform 0.3s var(--ease), background 0.2s, color 0.2s;
 }
 .track:hover .ms.remove,
+.group-head:hover .ms.remove,
 .ms.remove:focus-visible {
   width: 20px;
   opacity: 1;
@@ -3906,10 +3907,6 @@ aside.panel:last-of-type .info-pop {
   border-radius: 2px;
   flex: none;
 }
-.build-out {
-  opacity: 0.45;
-  text-decoration: line-through;
-}
 .video-group {
   display: inline-flex;
   flex-wrap: wrap;
@@ -3982,6 +3979,8 @@ aside.panel:last-of-type .info-pop {
   font-size: var(--fs-sm);
 }
 .group-tools {
+  display: flex;
+  gap: 2px;
   visibility: hidden;
 }
 .group-head:hover .group-tools {

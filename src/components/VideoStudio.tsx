@@ -6,7 +6,7 @@ import { compose, texVariants, toSource } from '../engine/symbolic';
 import { useStore } from '../state/store';
 import { sparkHead } from './fuse';
 import { toast } from './TopBar';
-import { Icon, Seg, Slider, TextField, download, fileSafe, getRender } from './ui';
+import { Icon, Info, Seg, Slider, TextField, download, fileSafe, getRender } from './ui';
 import { Visualizer } from './Visualizer';
 import { mathImage, mathPending, preloadMath } from './mathSvg';
 
@@ -1009,6 +1009,11 @@ export function VideoStudio() {
   const pattern = Array.from({ length: Math.max(0, loops) }, (_, i) => Math.min(i + 1, order.length)).join('-');
   const fits = seconds <= 60 ? 'fits Reels, TikTok and Shorts' : seconds <= 90 ? 'fits Reels and TikTok — over Shorts’ 60 s' : seconds <= 180 ? 'fits TikTok (and Shorts up to 3 min)' : 'longer than most short-video limits';
 
+  const quakeSteps = (() => {
+    const n = loops === FREE ? 4 : loops;
+    const steps = Array.from({ length: Math.min(n, 8) }, (_, i) => `${Math.round(((i + 1) / n) * 100)}%`);
+    return `${steps.join(' → ')}${n > 8 ? ' …' : ''}${loops === FREE ? ', then stays' : ''}`;
+  })();
   return (
     <div className={`sheet-backdrop ${hidden ? 'video-away' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && !busy && close()}>
       <div className="sheet video-sheet" role="dialog" aria-label="Video">
@@ -1033,7 +1038,15 @@ export function VideoStudio() {
           </div>
           <div className="video-options">
             <div className="field">
-              <span>Record</span>
+              <span>
+                Record
+                <Info>
+                  Video frame: a clip of the score in the format below. Whole app: SoundFunc fills the screen (the browser asks once to share this tab) and waits for
+                  you to press Record. Stopped, the take starts from the top; playing, it starts at the next bar. Esc comes back here. Keep this tab in front while it
+                  records: a hidden tab stops drawing.
+                  {mime && !mime.startsWith('video/mp4') && ' This browser records WebM. Most platforms take it; for Instagram, convert it to MP4 first.'}
+                </Info>
+              </span>
               <Seg<'frame' | 'app'>
                 value={source}
                 onChange={(v) => !busy && setSource(v)}
@@ -1042,21 +1055,27 @@ export function VideoStudio() {
                   { value: 'app', label: 'Whole app, full screen' },
                 ]}
               />
-              {source === 'app' && (
-                <small className="muted">
-                  SoundFunc fills the screen — the browser asks once to share this tab — and waits: press Record there when you’re ready. Stopped, the take starts from the top; playing, it starts at the next bar. Esc comes back here.
-                </small>
-              )}
             </div>
             {source === 'frame' && (
             <div className="field">
-              <span>Format</span>
+              <span>
+                Format
+                <Info>
+                  {F.hint} · {F.w}×{F.h}
+                </Info>
+              </span>
               <Seg<Format> value={format} onChange={(f) => !busy && setFormat(f)} options={(Object.keys(FORMATS) as Format[]).map((f) => ({ value: f, label: FORMATS[f].label }))} />
-              <small className="muted">{F.hint} · {F.w}×{F.h}</small>
             </div>
             )}
             <div className="field">
-              <span>Show</span>
+              <span>
+                Show
+                <Info>
+                  Functions: each channel’s function, lighting up as it plays. Quake: the bass shakes the picture — the bottom hardest, the top not at all — and can
+                  build a step each loop{quakeOn && quakeRise ? ` (${quakeSteps})` : ''}. Swell: notes grow and quake while they sound; a gliding line thickens just behind the playhead. The backdrop, its strength and
+                  the fuse follow the main view.
+                </Info>
+              </span>
               <Seg<View>
                 value={view}
                 onChange={(v) => !busy && setView(v)}
@@ -1066,7 +1085,7 @@ export function VideoStudio() {
                 ]}
               />
               <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }}>
-                <input type="checkbox" checked={showFns} disabled={busy} onChange={(e) => setShowFns(e.target.checked)} /> the functions, lighting up as they play
+                <input type="checkbox" checked={showFns} disabled={busy} onChange={(e) => setShowFns(e.target.checked)} /> Functions
               </label>
               {showFns && (
                 <Seg<MathView>
@@ -1080,42 +1099,33 @@ export function VideoStudio() {
               )}
               {showFns && (
                 <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="Leave out the velocities — and the drums, which have no pitch function">
-                  <input type="checkbox" checked={pitchOnly} onChange={(e) => setPitchOnly(e.target.checked)} /> only the pitch functions
+                  <input type="checkbox" checked={pitchOnly} onChange={(e) => setPitchOnly(e.target.checked)} /> Pitch only
                 </label>
               )}
               <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="The bass shakes the picture like a quake: the bottom wiggles hardest, the top not at all, each hit rising through it">
-                <input type="checkbox" checked={quakeOn} onChange={(e) => setQuakeOn(e.target.checked)} /> Quake — the bass shakes the picture, bottom up
+                <input type="checkbox" checked={quakeOn} onChange={(e) => setQuakeOn(e.target.checked)} /> Quake
               </label>
               {quakeOn && <Slider label="Strength" value={quakeAmount} min={0.1} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={setQuakeAmount} reset={0.5} />}
               {quakeOn && (
-                <>
-                  <Seg<boolean>
-                    value={quakeRise}
-                    onChange={setQuakeRise}
-                    options={[
-                      { value: false, label: 'Steady' },
-                      { value: true, label: 'Builds each loop' },
-                    ]}
-                  />
-                  {quakeRise && (
-                    <small className="muted">
-                      {(() => {
-                        const n = loops === FREE ? 4 : loops;
-                        const steps = Array.from({ length: Math.min(n, 8) }, (_, i) => `${Math.round(((i + 1) / n) * 100)}%`);
-                        return `${steps.join(' → ')}${n > 8 ? ' …' : ''}${loops === FREE ? ', then stays' : ''} of the strength, a step each loop`;
-                      })()}
-                    </small>
-                  )}
-                </>
+                <Seg<boolean>
+                  value={quakeRise}
+                  onChange={setQuakeRise}
+                  options={[
+                    { value: false, label: 'Steady' },
+                    { value: true, label: 'Builds each loop' },
+                  ]}
+                />
               )}
               <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="Each note grows a little and quakes while it sounds; a gliding line or the function's curve thickens and quakes just behind the playhead">
-                <input type="checkbox" checked={trembleOn} onChange={(e) => setTrembleOn(e.target.checked)} /> Swell — notes grow and quake while they sound
+                <input type="checkbox" checked={trembleOn} onChange={(e) => setTrembleOn(e.target.checked)} /> Swell
               </label>
               {trembleOn && <Slider label="Strength" value={trembleAmount} min={0.1} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={setTrembleAmount} reset={0.5} />}
-              <small className="muted">The backdrop, its strength and the fuse follow the main view.</small>
             </div>
             <div className="field">
-              <span>Channels — on and off, live (keys 1–9)</span>
+              <span>
+                Channels
+                <Info>Switch channels on and off live, also while recording — keys 1–9. A switched-on channel comes in at the start of the next loop. A group’s key switches all of it.</Info>
+              </span>
               <div className="video-channels">
                 {groups.map((r) => {
                   const keys = r.tracks.map((t) => {
@@ -1149,7 +1159,14 @@ export function VideoStudio() {
               </div>
             </div>
             <div className="field">
-              <span>Smart channels — one more each loop</span>
+              <span>
+                Smart channels
+                <Info>
+                  One more channel comes in each loop{building ? ': ' : '.'}
+                  {building && order.map((t, i) => `${i ? ' → ' : ''}${t.name}`).join('')}
+                  {building && loops !== FREE && loops < order.length ? ` (${loops} of ${order.length} come in)` : ''}
+                </Info>
+              </span>
               <div className="row" style={{ gap: 'var(--sp-2)' }}>
                 <Seg<Build>
                   value={build}
@@ -1173,30 +1190,21 @@ export function VideoStudio() {
                   <input type="checkbox" checked={byGroup} disabled={busy} onChange={(e) => setByGroup(e.target.checked)} /> a group at a time
                 </label>
               )}
-              {building && (
-                <small className="muted">
-                  {order.map((t, i) => (
-                    <span key={t.id} className={loops === FREE || i < loops ? '' : 'build-out'}>
-                      {i ? ' → ' : ''}
-                      {t.name}
-                    </span>
-                  ))}
-                  {loops !== FREE && loops < order.length ? ` · ${loops} of ${order.length} come in` : ''}
-                </small>
-              )}
             </div>
             <div className="field">
-              <span>Length</span>
+              <span>
+                Length
+                <Info>{loops === FREE ? 'Records until you stop it.' : `${build === 'off' ? '' : `${loops} loop${loops > 1 ? 's' : ''} · `}${building ? `${pattern} · ` : ''}${fmtTime(seconds)} · ${fits}`}</Info>
+              </span>
               <Seg<number> value={length} onChange={(n) => !busy && setLength(n)} options={[...(build === 'off' ? [] : [{ value: AUTO, label: `Auto · ${order.length}` }]), ...[1, 2, 4, 8].map((n) => ({ value: n, label: build === 'off' ? `${n} loop${n > 1 ? 's' : ''}` : String(n) })), { value: FREE, label: 'Free' }]} />
               {loops === FREE && (
                 <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="Off: Stop ends the take at once. On: it plays to the end of the loop first (press Stop again to end it at once)">
                   <input type="checkbox" checked={stopAtLoop} onChange={(e) => setStopAtLoop(e.target.checked)} /> Stop at the end of the loop
                 </label>
               )}
-              <small className="muted">{loops === FREE ? (stopping !== null ? 'Stopping at the end of this loop…' : 'Records until you stop it') : `${build === 'off' ? '' : `${loops} loop${loops > 1 ? 's' : ''} · `}${building ? `${pattern} · ` : ''}${fmtTime(seconds)} · ${fits}`}</small>
+              {stopping !== null && <small className="muted">Stopping at the end of this loop…</small>}
             </div>
             {!mime && <p className="import-warn">This browser can’t record video. Try Chrome, Edge or Safari.</p>}
-            {mime && !mime.startsWith('video/mp4') && <p className="import-warn">This browser records WebM. Most platforms take it; for Instagram, convert it to MP4 first.</p>}
             <div className="video-actions">
               {busy ? (
                 <button className="btn" onClick={stopTake} title={stopping !== null ? 'Stops at the end of this loop — press to stop now' : undefined}>
@@ -1225,7 +1233,6 @@ export function VideoStudio() {
                 {phase === 'done' ? 'Back to the live preview' : 'Show the recorded clip'}
               </button>
             )}
-            <small className="muted">Keep this tab in front while it records: a hidden tab stops drawing.</small>
           </div>
         </div>
         {/* the visualizer, drawn off screen at the size it fills in the frame */}
