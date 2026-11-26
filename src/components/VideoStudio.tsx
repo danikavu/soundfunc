@@ -80,12 +80,12 @@ function shuffleRank(id: string, shuffle: number): number {
 }
 
 /**
- * The quake: how far the picture is thrown, frame by frame, by the sound — the low end most. Each
- * band's level jumps up at once and settles back; the shake is a fast, uneven tremble scaled by it.
+ * The quake: the sound's low end, as a level that jumps up at once on a hit and settles back — kept
+ * for a moment, so a hit can be read a little later higher up the picture, as it travels up.
  */
 const spectrum = new Uint8Array(1024);
-const quake = { bass: 0, mid: 0 };
-function shakeOf(amount: number, now: number): { dx: number; dy: number; turn: number } {
+const quake = { bass: 0, mid: 0, past: [] as { t: number; k: number }[] };
+function quakeLevel(now: number): number {
   if (engine.position() === null || !engine.spectrum(spectrum)) {
     quake.bass *= 0.85;
     quake.mid *= 0.85;
@@ -97,14 +97,42 @@ function shakeOf(amount: number, now: number): { dx: number; dy: number; turn: n
       return n ? sum / n / 255 : 0;
     };
     // only what stands out of the quiet counts, and loud counts more
-    const bass = Math.max(0, band(30, 150) - 0.35) / 0.65, mid = Math.max(0, band(150, 700) - 0.35) / 0.65;
-    quake.bass = Math.max(bass * bass, quake.bass * 0.82);
+    const bass = Math.max(0, band(25, 140) - 0.3) / 0.7, mid = Math.max(0, band(140, 400) - 0.35) / 0.65;
+    quake.bass = Math.max(bass * bass, quake.bass * 0.86);
     quake.mid = Math.max(mid * mid, quake.mid * 0.75);
   }
-  const k = amount * (quake.bass + 0.3 * quake.mid);
-  // a few fast, unrelated wobbles: a tremble, not a sway
-  const n = (a: number, b: number, c: number) => Math.sin(now * a) * 0.5 + Math.sin(now * b + 1.3) * 0.3 + Math.sin(now * c + 2.1) * 0.2;
-  return { dx: 26 * k * n(61, 97, 143), dy: 26 * k * n(73, 109, 157), turn: 0.012 * k * n(41, 89, 131) };
+  const k = Math.min(1.2, quake.bass + 0.15 * quake.mid);
+  quake.past.push({ t: now, k });
+  while (quake.past.length && quake.past[0].t < now - 0.5) quake.past.shift();
+  return k;
+}
+/** the level as it was `ago` seconds back */
+const quakeAgo = (now: number, ago: number) => {
+  const p = quake.past;
+  for (let i = p.length - 1; i >= 0; i--) if (p[i].t <= now - ago) return p[i].k;
+  return p[0]?.k ?? 0;
+};
+/** how many bands the picture is cut into: each sways on its own */
+const QUAKE_BANDS = 64;
+/** how long a hit takes to travel from the bottom of the picture to the top (seconds) */
+const QUAKE_RISE = 0.22;
+
+/**
+ * Draw the picture shaken: the bottom wiggles hardest and the top not at all, each band thrown
+ * sideways by the hit as it reaches it — the quake rises through the picture.
+ */
+function drawQuake(g: CanvasRenderingContext2D, src: HTMLCanvasElement, box: Box, amount: number, now: number) {
+  quakeLevel(now);
+  const sh = src.height / QUAKE_BANDS, bh = box.h / QUAKE_BANDS;
+  for (let i = 0; i < QUAKE_BANDS; i++) {
+    const up = 1 - (i + 0.5) / QUAKE_BANDS; // 0 at the bottom, 1 at the top
+    const weight = Math.max(0, 1 - up / 0.85) ** 2;
+    const k = weight > 0 ? amount * weight * quakeAgo(now, up * QUAKE_RISE) : 0;
+    // a hard, fast wiggle, its phase climbing with the band
+    const t = now - up * QUAKE_RISE;
+    const dx = 70 * k * (Math.sin(t * 57) * 0.6 + Math.sin(t * 91 + 1.1) * 0.4);
+    g.drawImage(src, 0, i * sh, src.width, sh + 1, box.x + dx, box.y + i * bh, box.w, bh + 1);
+  }
 }
 
 /** what a build-up brings in at a time: a channel, or a whole group */
@@ -564,16 +592,8 @@ export function VideoStudio() {
       const s = stageCanvas.current;
       if (s && s.width) {
         // the quake shakes the picture, not the words around it
-        const q = shake > 0 ? shakeOf(shake * riseAt(), now) : null;
-        g.save();
-        if (q) {
-          const cx = L.viz.x + L.viz.w / 2, cy = L.viz.y + L.viz.h / 2;
-          g.translate(cx + q.dx, cy + q.dy);
-          g.rotate(q.turn);
-          g.translate(-cx, -cy);
-        }
-        g.drawImage(s, L.viz.x, L.viz.y, L.viz.w, L.viz.h);
-        g.restore();
+        if (shake > 0) drawQuake(g, s, L.viz, shake * riseAt(), now);
+        else g.drawImage(s, L.viz.x, L.viz.y, L.viz.w, L.viz.h);
       }
       // the functions: each channel's name in its colour (a spark while it sounds), its formulas under it,
       // faded as far as the channel is
@@ -1063,8 +1083,8 @@ export function VideoStudio() {
                   <input type="checkbox" checked={pitchOnly} onChange={(e) => setPitchOnly(e.target.checked)} /> only the pitch functions
                 </label>
               )}
-              <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="The picture trembles with the sound, like a quake — the bass shakes it most">
-                <input type="checkbox" checked={quakeOn} onChange={(e) => setQuakeOn(e.target.checked)} /> Quake — shake with the bass
+              <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="The bass shakes the picture like a quake: the bottom wiggles hardest, the top not at all, each hit rising through it">
+                <input type="checkbox" checked={quakeOn} onChange={(e) => setQuakeOn(e.target.checked)} /> Quake — the bass shakes the picture, bottom up
               </label>
               {quakeOn && <Slider label="Strength" value={quakeAmount} min={0.1} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={setQuakeAmount} reset={0.5} />}
               {quakeOn && (

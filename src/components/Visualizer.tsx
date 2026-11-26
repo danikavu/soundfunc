@@ -154,8 +154,8 @@ const wobble = (now: number, seed: number) => Math.sin(now * 53 + seed) * 0.55 +
 function stringAt(b: number, play: number | null, now: number, amp: number): number {
   if (play === null || amp <= 0) return 0;
   const d = play - b;
-  if (d < 0 || d > 1.5) return 0;
-  return amp * Math.exp(-d / 0.4) * Math.sin(b * Math.PI * 6 - now * 40);
+  if (d < 0 || d > 2) return 0;
+  return amp * Math.exp(-d / 0.6) * (Math.sin(b * Math.PI * 7 - now * 45) * 0.7 + Math.sin(b * Math.PI * 13 - now * 71) * 0.3);
 }
 
 export function Visualizer({ stage }: { stage?: VizStage } = {}) {
@@ -503,8 +503,9 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         /** draw-in: while playing, only what the playhead has reached this pass — the score is written as it plays */
         const until = drawIn && playBeat !== null ? playBeat : Infinity;
         const placed: Placed[] = [];
-        /** tremble: how far (px) a sounding note or line may be thrown */
-        const shiver = 3.2 * (stageRef.current?.tremble ?? 0);
+        /** tremble: how far (px) a sounding note or line at the very bottom may be thrown — the top not at all */
+        const shiver = 20 * (stageRef.current?.tremble ?? 0);
+        const lowness = (y: number) => Math.max(0, Math.min(1, (y - padT) / (H - padB - padT)) - 0.25) / 0.75;
         const nowT = performance.now() / 1000;
 
         // raked sand: one line per in-scale pitch, the root a little darker (a video is left clear)
@@ -570,9 +571,11 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           // on a lit screen notes read like a display: brighter, even when not selected
           g.globalAlpha = P.glow > 0 ? (isSel ? 0.55 + 0.45 * note.velocity : 0.35 + 0.35 * note.velocity) : isSel ? 0.35 + 0.65 * note.velocity : 0.2 + 0.3 * note.velocity;
           g.globalAlpha *= levelOf(track.id);
-          // trembling while it sounds: the loud and the low the most
-          if (sounding && shiver > 0) {
-            const k = shiver * (0.5 + 0.5 * note.velocity) * (note.midi < 48 ? 1.4 : 1);
+          // trembling while it sounds, and a moment after it is struck (a drum hit is short): the loud and the low the most
+          const since = playBeat === null ? Infinity : ((playBeat - note.beat + total) % total) * secPerBeat;
+          const shaking = sounding ? 1 : since < 0.4 ? 1 - since / 0.4 : 0;
+          if (shaking > 0 && shiver > 0) {
+            const k = shiver * shaking * (0.4 + 0.6 * note.velocity) * lowness(y) ** 1.5;
             const seed = note.beat * 7.3 + note.midi;
             x += 0.5 * k * wobble(nowT, seed);
             y += k * wobble(nowT, seed + 11);
@@ -633,7 +636,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
                 flush();
                 continue;
               }
-              run.push([bx(b), my(m) + rowH / 2 + stringAt(b, playBeat, nowT, shiver * 1.6 * Math.min(1, v * 1.5))]);
+              run.push([bx(b), my(m) + rowH / 2 + stringAt(b, playBeat, nowT, shiver * 1.2 * Math.min(1, v * 1.5) * lowness(my(m)) ** 1.5)]);
               if (playBeat !== null && b <= playBeat && playBeat - b < 0.05 && levelOf(track.id) > 0.1) {
                 sparks.push({ key: `${track.id}:${Math.floor(b * 4)}`, x: bx(b), y: my(m) + rowH / 2, color: track.color });
                 // a glide burns along its line: the spark rides it at the playhead
@@ -799,7 +802,9 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         let run: [number, number][] = [];
         let runSilent: boolean | null = null;
         // tremble: the curve vibrates behind the playhead, like a plucked string
-        const pluck = 5 * (stageRef.current?.tremble ?? 0);
+        const pluck = 16 * (stageRef.current?.tremble ?? 0);
+        /** low on the plot shakes hard, high not at all */
+        const low = (y: number) => (Math.max(0, Math.min(1, (y - padT) / ch) - 0.25) / 0.75) ** 1.5;
         const fnPlay = pos === null ? null : pos % fnFull.total;
         const fnNow = performance.now() / 1000;
         const flush = () => {
@@ -808,7 +813,8 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         };
         for (let i = Math.max(0, i0 - stride); i < i1; i += stride) {
           const silent = fnFull.vel[i] < 0.01;
-          const pt: [number, number] = [sx(i * dt), sy(fnFull.raw[i]) + (silent ? 0 : stringAt(i * dt, fnPlay, fnNow, pluck * Math.min(1, fnFull.vel[i] * 1.5)))];
+          const y0 = sy(fnFull.raw[i]);
+          const pt: [number, number] = [sx(i * dt), y0 + (silent ? 0 : stringAt(i * dt, fnPlay, fnNow, pluck * Math.min(1, fnFull.vel[i] * 1.5) * low(y0)))];
           if (runSilent !== null && silent !== runSilent) {
             run.push(pt); // join the stretches
             flush();
