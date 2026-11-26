@@ -13,6 +13,7 @@ import { NodeEditor, copySelected, pasteInto, runMutate, toggleLockSelected } fr
 import { Inspector } from './components/Inspector';
 import { FunctionSheet } from './components/FunctionSheet';
 import { ImportSheet } from './components/ImportSheet';
+import { VideoStudio } from './components/VideoStudio';
 import { MidiDropOverlay, MidiImportSheet, isMidiFile, openMidiFile, useMidiImport } from './components/MidiImportSheet';
 import { saveGarden } from './components/GardenMenu';
 import { paintOverlays } from './components/overlays';
@@ -131,6 +132,7 @@ export function App() {
       </div>
       <FunctionSheet />
       <ImportSheet />
+      <VideoStudio />
       <MidiImportSheet />
       <MidiDropOverlay />
     </div>

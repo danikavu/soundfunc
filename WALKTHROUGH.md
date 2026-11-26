@@ -6,7 +6,7 @@ A tour of the core of SoundFunc: you plant functions, shape them as nodes, watch
 
 The screen has six parts:
 
-- **Top strip** — the SoundFunc name, the clock, and on the right **Import** and **Export**.
+- **Top strip** — the SoundFunc name, the clock, and on the right **Video**, **Import** and **Export**.
 - **Top bar** — the whole song: play, record, tempo, length, key, scale, the harmony (a formula of `bar`) and the controls that act on every channel.
 - **Left** — the channels on top; rhythm kits and functions to plant below.
 - **Middle, top** — the visualizer: *Score* and *Function*, with a backdrop of the live sound behind them.
@@ -86,7 +86,7 @@ Each channel is a graph. Clocks (`n`, `x`, `t`, `k`, the chord `h`) flow through
 
 ### Score
 
-Every channel at once, with drums in their own lanes. The chord of each bar is written along the top. Hover a note to see its pitch, velocity and the raw value of `f`.
+Every channel at once, with drums in their own lanes. A note burns like a fuse as it plays: a spark runs along it, charring the cord behind; drum hits catch with a burst of sparks. The chord of each bar is written along the top. Hover a note to see its pitch, velocity and the raw value of `f`.
 
 ![The Score](docs/walkthrough/score.png)
 
@@ -155,6 +155,12 @@ Mix, then the voice: a stock patch, one of the ten **Sonic Menagerie** voices, o
 **Export** writes MIDI with notes only, or with automation (glides and bends as pitch bend, volume as expression, pressure, CC74). It also writes CSV note data, or the whole project to reopen later.
 
 ![The Export menu](docs/walkthrough/export.png)
+
+### Video
+
+The **Video** key in the top strip records a clip for socials: the visualizer with its backdrop and fuse, every channel's functions lighting up as they play, and the sound, from the top of the song for as many loops as you choose. Pick 9:16, 1:1 or 16:9, press **Record**, then download the MP4. While it plays, switch channels off and on with their keys (or 1–9, or the channel list's M keys): off is at once, on waits for the start of the next loop, and a channel that is off isn't seen either. It's all recorded. Muted channels can be brought in too. The functions can be shown as formulas or as typeset LaTeX math. Or choose **Whole app, full screen** to record SoundFunc itself as you play it.
+
+![A 9:16 video frame: the score, and the functions lighting up as they play](docs/walkthrough/video.png)
 
 ### Jam
 

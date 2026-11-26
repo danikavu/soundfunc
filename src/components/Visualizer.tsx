@@ -6,6 +6,7 @@ import { useSelectedTrack, useStore } from '../state/store';
 import { Icon, Seg, getRender } from './ui';
 import { RangeControl } from './RangeControl';
 import { Pixelator } from './pixelate';
+import { POP_SECONDS, burnCord, pop, sparkHead } from './fuse';
 import { BACKDROP_STYLES, BackdropMemory, drawBackdrop, type BackdropFrame, type BackdropStyle } from './backdrop';
 
 type Mode = 'score' | 'function';
@@ -129,13 +130,36 @@ function passLoops(track: Track, song: Song, offset: number, total: number, with
 // plot layout for the Function view, shared by drawing and scrubbing
 const PLOT = { padL: 54, padR: 46, padT: 48, padB: 18 };
 
-export function Visualizer() {
+/**
+ * A stage is the Visualizer drawn for a video: only its canvas, at a fixed pixel ratio (so a frame
+ * looks the same on any screen), showing the given view, the canvas handed to whoever composes the frame.
+ */
+export interface VizStage {
+  view: Mode;
+  pixelRatio: number;
+  onCanvas: (canvas: HTMLCanvasElement | null) => void;
+  /** how much of each channel is heard (0 … 1): faded channels fade on screen too */
+  level?: (trackId: string) => number;
+}
+
+export function Visualizer({ stage }: { stage?: VizStage } = {}) {
   const project = useStore((s) => s.project);
   const theme = useStore((s) => s.theme);
   const playing = useStore((s) => s.playing);
   const selectTrack = useStore((s) => s.selectTrack);
   const selected = useSelectedTrack();
-  const [mode, setMode] = useState<Mode>('score');
+  const [chosenMode, setMode] = useState<Mode>('score');
+  const mode = stage?.view ?? chosenMode;
+  const ratio = () => stage?.pixelRatio ?? (window.devicePixelRatio || 1);
+  const onCanvas = stage?.onCanvas;
+  const stageRef = useRef(stage);
+  stageRef.current = stage;
+  /** a channel's share of the picture: its fade level on a stage, else all of it */
+  const levelOf = (id: string) => stageRef.current?.level?.(id) ?? engine.levelOf(id);
+  useEffect(() => {
+    onCanvas?.(canvasRef.current);
+    return () => onCanvas?.(null);
+  }, [onCanvas]);
   /** the Score draws the notes in as the playhead reaches them — remembered between visits */
   const [drawIn, setDrawIn] = useState(() => {
     try {
@@ -302,7 +326,7 @@ export function Visualizer() {
     const canvas = canvasRef.current!;
     // the canvas, not the frame: the Score's functions can take room under it
     const ro = new ResizeObserver(() => {
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = ratio();
       canvas.width = canvas.clientWidth * dpr;
       canvas.height = canvas.clientHeight * dpr;
       dirty.current = true;
@@ -375,11 +399,13 @@ export function Visualizer() {
         setPass(nowPass);
       }
       // a backdrop moves on its own, even while stopped
-      if (!dirty.current && pos === null && backdropRef.current === 'off') return;
+      if (!dirty.current && pos === null && backdropRef.current === 'off' && !stageRef.current) return;
       dirty.current = false;
-      const canvas = canvasRef.current!;
+      // a last frame can come after the canvas is gone
+      const canvas = canvasRef.current;
+      if (!canvas) return;
       const g = canvas.getContext('2d')!;
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = ratio();
       const W = canvas.width / dpr, H = canvas.height / dpr;
       const P = (palette.current ??= readPalette(wrapRef.current!));
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -462,8 +488,8 @@ export function Visualizer() {
         const until = drawIn && playBeat !== null ? playBeat : Infinity;
         const placed: Placed[] = [];
 
-        // raked sand: one line per in-scale pitch, the root a little darker
-        if (melodic.length) {
+        // raked sand: one line per in-scale pitch, the root a little darker (a video is left clear)
+        if (melodic.length && !stageRef.current) {
           for (let m = lo; m <= hi; m++) {
             const pc = (((m - project.song.root) % 12) + 12) % 12;
             if (!scale.includes(pc)) continue;
@@ -487,7 +513,7 @@ export function Visualizer() {
           let lastX = -Infinity;
           for (let bar = first; bar * BEATS_PER_BAR < Math.min(total, vw.start + vw.span); bar++) {
             const x0 = bx(bar * BEATS_PER_BAR);
-            if (bar % 2 === 1) {
+            if (bar % 2 === 1 && !stageRef.current) {
               const x = Math.max(padL, x0);
               g.fillStyle = P.rake;
               g.fillRect(x, padT - 14, Math.min(W - padR, bx((bar + 1) * BEATS_PER_BAR)) - x, H - padB - padT + 14);
@@ -521,9 +547,10 @@ export function Visualizer() {
         const stone = (track: Track, note: Note, x: number, y: number, w: number, h: number, isSel: boolean) => {
           placed.push({ track, note, x, y, w, h });
           const sounding = playBeat !== null && playBeat >= note.beat && playBeat < note.beat + Math.max(note.duration, 0.05);
-          if (sounding) sparks.push({ key: `${track.id}:${note.beat}:${note.midi}`, x: x + h / 2, y: y + h / 2, color: track.color });
+          if (sounding && levelOf(track.id) > 0.1) sparks.push({ key: `${track.id}:${note.beat}:${note.midi}`, x: x + h / 2, y: y + h / 2, color: track.color });
           // on a lit screen notes read like a display: brighter, even when not selected
           g.globalAlpha = P.glow > 0 ? (isSel ? 0.55 + 0.45 * note.velocity : 0.35 + 0.35 * note.velocity) : isSel ? 0.35 + 0.65 * note.velocity : 0.2 + 0.3 * note.velocity;
+          g.globalAlpha *= levelOf(track.id);
           g.fillStyle = track.color;
           if (P.glow > 0) {
             g.shadowColor = track.color;
@@ -546,29 +573,32 @@ export function Visualizer() {
             });
             g.stroke();
           }
-          // ripples from freshly struck stones
-          if (playBeat !== null) {
+          // the fuse: a note long enough to see it burns from its start to its end; a short one catches with a burst
+          if (playBeat !== null && levelOf(track.id) > 0.1) {
             let age = (playBeat - note.beat) * secPerBeat;
             if (age < 0) age += total * secPerBeat;
-            if (age < 1.2) {
-              const t = age / 1.2;
-              g.globalAlpha = (1 - t) * 0.45 * (isSel ? 1 : 0.5);
-              g.strokeStyle = track.color;
-              g.lineWidth = 1;
-              g.beginPath();
-              g.ellipse(x + h / 2, y + h / 2, 4 + t * 22, 2 + t * 8, 0, 0, Math.PI * 2);
-              g.stroke();
-            }
+            const seed = Math.round(note.beat * 97 + note.midi * 13 + track.color.length);
+            const runs = w > 12 && note.duration * secPerBeat > 0.15;
+            if (sounding && runs) {
+              const head = x + Math.min(1, Math.max(0, (playBeat - note.beat) / note.duration)) * w;
+              g.globalAlpha = 1;
+              burnCord(g, x, y, h, head, h * P.round);
+              fuses.push(() => sparkHead(g, head, y + h / 2, now, seed, track.color, isSel ? 1 : 0.75));
+            } else if (age < POP_SECONDS) fuses.push(() => pop(g, x + Math.min(w, h) / 2, y + h / 2, age, seed, track.color, isSel ? 1 : 0.75));
           }
         };
+        /** sparks are drawn over every note, after them all */
+        const fuses: (() => void)[] = [];
+        const now = performance.now() / 1000;
 
         for (const { track, notes, glide } of melodic) {
+          if (levelOf(track.id) < 0.02) continue;
           const isSel = track.id === selected?.id;
           if (glide.length) {
             // a glide track is one fine, glowing line per sounding stretch
             let run: [number, number][] = [];
             const flush = () => {
-              glowLine(g, run, track.color, track.color, { width: isSel ? 1.3 : 0.9, glow: isSel ? 1 : 0.45, alpha: isSel ? 0.95 : 0.5 });
+              glowLine(g, run, track.color, track.color, { width: isSel ? 1.3 : 0.9, glow: isSel ? 1 : 0.45, alpha: (isSel ? 0.95 : 0.5) * levelOf(track.id) });
               run = [];
             };
             for (const [b, m, v] of glide) {
@@ -578,7 +608,12 @@ export function Visualizer() {
                 continue;
               }
               run.push([bx(b), my(m) + rowH / 2]);
-              if (playBeat !== null && b <= playBeat && playBeat - b < 0.05) sparks.push({ key: `${track.id}:${Math.floor(b * 4)}`, x: bx(b), y: my(m) + rowH / 2, color: track.color });
+              if (playBeat !== null && b <= playBeat && playBeat - b < 0.05 && levelOf(track.id) > 0.1) {
+                sparks.push({ key: `${track.id}:${Math.floor(b * 4)}`, x: bx(b), y: my(m) + rowH / 2, color: track.color });
+                // a glide burns along its line: the spark rides it at the playhead
+                const px = bx(b), py = my(m) + rowH / 2, seed = track.id.length * 17 + Math.floor(b);
+                fuses.push(() => sparkHead(g, px, py, now, seed, track.color, isSel ? 0.9 : 0.65));
+              }
             }
             flush();
             continue;
@@ -602,19 +637,22 @@ export function Visualizer() {
           g.fillStyle = P.ink3;
           g.font = '9.5px Doto, monospace';
           g.textAlign = 'left';
-          g.strokeStyle = P.rake;
-          g.beginPath();
-          g.moveTo(padL, y0 + laneH / 2);
-          g.lineTo(W - padR, y0 + laneH / 2);
-          g.stroke();
+          if (!stageRef.current) {
+            g.strokeStyle = P.rake;
+            g.beginPath();
+            g.moveTo(padL, y0 + laneH / 2);
+            g.lineTo(W - padR, y0 + laneH / 2);
+            g.stroke();
+          }
           const h = Math.max(3, laneH * 0.62);
-          for (const note of notes) {
+          if (levelOf(track.id) >= 0.02) for (const note of notes) {
             if (!visible(note.beat, note.beat + note.duration) || note.beat > until) continue;
             const x = bx(note.beat);
             const w = Math.max(h * 0.8, Math.min(bx(note.beat + note.duration) - x - 1, h * 1.4));
             stone(track, note, x, y0 + (laneH - h) / 2, w, h, isSel);
           }
         });
+        for (const f of fuses) f();
 
         g.restore();
         g.globalAlpha = 1;
@@ -723,6 +761,8 @@ export function Visualizer() {
         g.rect(padL - 1, 0, iw + 2, H);
         g.clip();
 
+        // a channel switched off in a video shows no curve until it is back
+        if (levelOf(selected.id) >= 0.02) {
         // the function, as one ink stroke — gaps where it is silent
         g.lineJoin = 'round';
         g.lineCap = 'round';
@@ -786,6 +826,7 @@ export function Visualizer() {
           g.globalAlpha = 1;
         }
 
+        }
         g.restore();
         // the playhead (or the scrub cursor) rides the curve
         const beat = scrubRef.current ?? (pos === null ? null : pos % fnFull.total);
@@ -803,15 +844,20 @@ export function Visualizer() {
           g.moveTo(x, padT - 6);
           g.lineTo(x, vBase);
           g.stroke();
-          g.globalAlpha = 0.18;
-          g.fillStyle = P.accent;
-          g.beginPath();
-          g.arc(x, y, 12, 0, Math.PI * 2);
-          g.fill();
           g.globalAlpha = 1;
-          g.beginPath();
-          g.arc(x, y, 4.5, 0, Math.PI * 2);
-          g.fill();
+          // the spark burns while a note of this channel sounds (a glide: while its curve does)
+          const own = [...score.melodic, ...score.drums].find((it) => it.track.id === selected.id);
+          const sounding = glide ? fnFull.vel[i] >= 0.01 : !!own?.notes.some((nt) => beat >= nt.beat && beat < nt.beat + Math.max(nt.duration, 0.05));
+          if (sounding && levelOf(selected.id) >= 0.02) sparkHead(g, x, y, performance.now() / 1000, 7, selected.color, 1.15);
+          else {
+            // silent here: the fuse waits, unlit
+            g.fillStyle = P.accent;
+            g.globalAlpha = 0.5;
+            g.beginPath();
+            g.arc(x, y, 3, 0, Math.PI * 2);
+            g.fill();
+            g.globalAlpha = 1;
+          }
         }
       }
     };
@@ -861,6 +907,13 @@ export function Visualizer() {
     engine.scrubEnd();
     setTip(null);
   };
+
+  if (stage)
+    return (
+      <div className="viz viz-stage" ref={wrapRef}>
+        <canvas ref={canvasRef} />
+      </div>
+    );
 
   return (
     <div className="viz" ref={wrapRef}>
