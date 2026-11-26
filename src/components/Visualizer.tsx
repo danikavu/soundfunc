@@ -140,23 +140,15 @@ export interface VizStage {
   onCanvas: (canvas: HTMLCanvasElement | null) => void;
   /** how much of each channel is heard (0 … 1): faded channels fade on screen too */
   level?: (trackId: string) => number;
-  /** 0 … 1: notes tremble while they sound, and a line vibrates like a plucked string behind the playhead */
-  tremble?: number;
+  /** 0 … 1: what sounds swells — a note grows and quakes a little; a line thickens and quakes just behind the playhead */
+  swell?: number;
 }
 
 /** a fast, uneven wobble, −1 … 1, its own for each seed */
 const wobble = (now: number, seed: number) => Math.sin(now * 53 + seed) * 0.55 + Math.sin(now * 89 + seed * 1.7) * 0.3 + Math.sin(now * 131 + seed * 2.3) * 0.15;
 
-/**
- * How far a line is thrown at beat `b` while the playhead is at `play`: a string just plucked —
- * strongest at the playhead, dying away over the beat behind it, a wave running along it.
- */
-function stringAt(b: number, play: number | null, now: number, amp: number): number {
-  if (play === null || amp <= 0) return 0;
-  const d = play - b;
-  if (d < 0 || d > 2) return 0;
-  return amp * Math.exp(-d / 0.6) * (Math.sin(b * Math.PI * 7 - now * 45) * 0.7 + Math.sin(b * Math.PI * 13 - now * 71) * 0.3);
-}
+/** how much a line swells just behind the playhead (0 … 1): full at the playhead, gone a beat back */
+const SWELL_BEATS = 0.75;
 
 export function Visualizer({ stage }: { stage?: VizStage } = {}) {
   const project = useStore((s) => s.project);
@@ -503,9 +495,9 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         /** draw-in: while playing, only what the playhead has reached this pass — the score is written as it plays */
         const until = drawIn && playBeat !== null ? playBeat : Infinity;
         const placed: Placed[] = [];
-        /** tremble: how far (px) a sounding note or line at the very bottom may be thrown — the top not at all */
-        const shiver = 20 * (stageRef.current?.tremble ?? 0);
-        const lowness = (y: number) => Math.max(0, Math.min(1, (y - padT) / (H - padB - padT)) - 0.25) / 0.75;
+        /** swell: how much what sounds grows and quakes */
+        const swell = stageRef.current?.swell ?? 0;
+        const lowness = (y: number) => Math.max(0, Math.min(1, (y - padT) / (H - padB - padT)));
         const nowT = performance.now() / 1000;
 
         // raked sand: one line per in-scale pitch, the root a little darker (a video is left clear)
@@ -571,14 +563,18 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           // on a lit screen notes read like a display: brighter, even when not selected
           g.globalAlpha = P.glow > 0 ? (isSel ? 0.55 + 0.45 * note.velocity : 0.35 + 0.35 * note.velocity) : isSel ? 0.35 + 0.65 * note.velocity : 0.2 + 0.3 * note.velocity;
           g.globalAlpha *= levelOf(track.id);
-          // trembling while it sounds, and a moment after it is struck (a drum hit is short): the loud and the low the most
+          // swelling while it sounds, and a moment after it is struck (a drum hit is short): it grows, and quakes a little — the low a little more
           const since = playBeat === null ? Infinity : ((playBeat - note.beat + total) % total) * secPerBeat;
-          const shaking = sounding ? 1 : since < 0.4 ? 1 - since / 0.4 : 0;
-          if (shaking > 0 && shiver > 0) {
-            const k = shiver * shaking * (0.4 + 0.6 * note.velocity) * lowness(y) ** 1.5;
+          const active = sounding ? 1 : since < 0.35 ? 1 - since / 0.35 : 0;
+          if (active > 0 && swell > 0) {
+            const k = swell * active * (0.6 + 0.4 * note.velocity);
+            const grow = h * 0.6 * k;
+            const quake = 2.6 * k * (0.6 + 0.6 * lowness(y));
             const seed = note.beat * 7.3 + note.midi;
-            x += 0.5 * k * wobble(nowT, seed);
-            y += k * wobble(nowT, seed + 11);
+            x += quake * wobble(nowT, seed) - grow / 2;
+            y += quake * wobble(nowT, seed + 11) - grow / 2;
+            w += grow;
+            h += grow;
           }
           g.fillStyle = track.color;
           if (P.glow > 0) {
@@ -626,6 +622,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           if (glide.length) {
             // a glide track is one fine, glowing line per sounding stretch
             let run: [number, number][] = [];
+            const hot: [number, number][] = [];
             const flush = () => {
               glowLine(g, run, track.color, track.color, { width: isSel ? 1.3 : 0.9, glow: isSel ? 1 : 0.45, alpha: (isSel ? 0.95 : 0.5) * levelOf(track.id) });
               run = [];
@@ -636,7 +633,12 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
                 flush();
                 continue;
               }
-              run.push([bx(b), my(m) + rowH / 2 + stringAt(b, playBeat, nowT, shiver * 1.2 * Math.min(1, v * 1.5) * lowness(my(m)) ** 1.5)]);
+              run.push([bx(b), my(m) + rowH / 2]);
+              // the stretch just played swells: drawn again over it, thicker, quaking a little
+              if (swell > 0 && playBeat !== null && b <= playBeat && playBeat - b < SWELL_BEATS && levelOf(track.id) > 0.1) {
+                const q = 2.2 * swell * Math.min(1, v * 1.5);
+                hot.push([bx(b) + q * wobble(nowT, b * 13), my(m) + rowH / 2 + q * wobble(nowT, b * 13 + 5)]);
+              }
               if (playBeat !== null && b <= playBeat && playBeat - b < 0.05 && levelOf(track.id) > 0.1) {
                 sparks.push({ key: `${track.id}:${Math.floor(b * 4)}`, x: bx(b), y: my(m) + rowH / 2, color: track.color });
                 // a glide burns along its line: the spark rides it at the playhead
@@ -645,6 +647,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
               }
             }
             flush();
+            if (hot.length > 1) glowLine(g, hot, track.color, track.color, { width: (isSel ? 1.3 : 0.9) * (1 + 3 * swell), glow: 1, alpha: levelOf(track.id) });
             continue;
           }
           for (const note of notes) {
@@ -801,10 +804,9 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         // one path per stretch: sounding stretches glow, silent ones are a faint hairline
         let run: [number, number][] = [];
         let runSilent: boolean | null = null;
-        // tremble: the curve vibrates behind the playhead, like a plucked string
-        const pluck = 16 * (stageRef.current?.tremble ?? 0);
-        /** low on the plot shakes hard, high not at all */
-        const low = (y: number) => (Math.max(0, Math.min(1, (y - padT) / ch) - 0.25) / 0.75) ** 1.5;
+        // swell: the stretch of the curve just played thickens and quakes a little
+        const swellFn = stageRef.current?.swell ?? 0;
+        const hotFn: [number, number][] = [];
         const fnPlay = pos === null ? null : pos % fnFull.total;
         const fnNow = performance.now() / 1000;
         const flush = () => {
@@ -813,8 +815,11 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         };
         for (let i = Math.max(0, i0 - stride); i < i1; i += stride) {
           const silent = fnFull.vel[i] < 0.01;
-          const y0 = sy(fnFull.raw[i]);
-          const pt: [number, number] = [sx(i * dt), y0 + (silent ? 0 : stringAt(i * dt, fnPlay, fnNow, pluck * Math.min(1, fnFull.vel[i] * 1.5) * low(y0)))];
+          const pt: [number, number] = [sx(i * dt), sy(fnFull.raw[i])];
+          if (swellFn > 0 && !silent && fnPlay !== null && i * dt <= fnPlay && fnPlay - i * dt < SWELL_BEATS) {
+            const q = 3 * swellFn * Math.min(1, fnFull.vel[i] * 1.5);
+            hotFn.push([pt[0] + q * wobble(fnNow, i * 0.7), pt[1] + q * wobble(fnNow, i * 0.7 + 5)]);
+          }
           if (runSilent !== null && silent !== runSilent) {
             run.push(pt); // join the stretches
             flush();
@@ -824,6 +829,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           run.push(pt);
         }
         flush();
+        if (hotFn.length > 1) glowLine(g, hotFn, P.ink, selected.color, { width: 1.1 * (1 + 3 * swellFn), glow: 1 });
         g.globalAlpha = 1;
 
         // velocity: a continuous wash in glide mode, reeds per step in notes mode

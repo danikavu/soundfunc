@@ -354,7 +354,7 @@ export function VideoStudio() {
   const shake = quakeOn ? quakeAmount : 0;
   /** the quake grows over the take: a step each loop, from 1/n of its strength to all of it in the last loop */
   const [quakeRise, setQuakeRise] = useState(false);
-  /** notes and lines tremble while they sound */
+  /** what sounds swells: notes grow and quake a little, lines thicken just behind the playhead */
   const [trembleOn, setTrembleOn] = useState(false);
   const [trembleAmount, setTrembleAmount] = useState(0.5);
   const tremble = trembleOn ? trembleAmount : 0;
@@ -435,7 +435,7 @@ export function VideoStudio() {
   const onCanvas = useCallback((c: HTMLCanvasElement | null) => {
     stageCanvas.current = c;
   }, []);
-  const stage = useMemo(() => ({ view, pixelRatio: RATIO, onCanvas, level: (id: string) => engine.levelOf(id), tremble }), [view, onCanvas, tremble]);
+  const stage = useMemo(() => ({ view, pixelRatio: RATIO, onCanvas, level: (id: string) => engine.levelOf(id), swell: tremble }), [view, onCanvas, tremble]);
 
   /** fade a channel out, or back in, over the chosen length — the sound and the picture together */
   const downRef = useRef(new Set<string>());
@@ -1108,8 +1108,8 @@ export function VideoStudio() {
                   )}
                 </>
               )}
-              <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="Each note trembles while it sounds, and a gliding line or the function's curve vibrates behind the playhead like a plucked string">
-                <input type="checkbox" checked={trembleOn} onChange={(e) => setTrembleOn(e.target.checked)} /> Tremble — notes and lines shiver as they sound
+              <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="Each note grows a little and quakes while it sounds; a gliding line or the function's curve thickens and quakes just behind the playhead">
+                <input type="checkbox" checked={trembleOn} onChange={(e) => setTrembleOn(e.target.checked)} /> Swell — notes grow and quake while they sound
               </label>
               {trembleOn && <Slider label="Strength" value={trembleAmount} min={0.1} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={setTrembleAmount} reset={0.5} />}
               <small className="muted">The backdrop, its strength and the fuse follow the main view.</small>
