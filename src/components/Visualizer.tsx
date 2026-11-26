@@ -74,8 +74,47 @@ function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number,
 }
 
 /**
- * A thin ink line with a soft glow in the track's colour: the halo is one blurred,
- * translucent pass under the line. Points come in as one continuous run.
+ * A note's glow, made once per colour and blur and stretched around each note (nine slices, so
+ * its soft edge keeps its width on a note of any size). A live shadowBlur on every note, every
+ * frame, is what made playback and video takes stutter.
+ */
+const HALO_CORE = 8;
+const halos = new Map<string, { img: HTMLCanvasElement; m: number }>();
+function halo(color: string, blur: number) {
+  const key = `${color}|${blur}`;
+  let h = halos.get(key);
+  if (!h) {
+    // the shadow reaches about 1.5 × its blur beyond the shape (device pixels, like shadowBlur)
+    const m = Math.ceil(blur * 1.5) + 1;
+    const size = 2 * m + HALO_CORE;
+    const img = document.createElement('canvas');
+    img.width = img.height = size;
+    const c = img.getContext('2d')!;
+    // only the shadow: the shape sits off the canvas, its shadow thrown onto it
+    c.shadowColor = color;
+    c.shadowBlur = blur;
+    c.shadowOffsetX = size * 2;
+    c.fillStyle = color;
+    c.fillRect(m - size * 2, m, HALO_CORE, HALO_CORE);
+    if (halos.size > 400) halos.clear();
+    halos.set(key, (h = { img, m }));
+  }
+  return h;
+}
+/** draw the glow of a note (x, y, w, h in drawing units; `dpr` device pixels to the unit) */
+function drawHalo(g: CanvasRenderingContext2D, color: string, blur: number, dpr: number, x: number, y: number, w: number, h: number) {
+  const { img, m } = halo(color, Math.max(1, Math.round(blur)));
+  const e = m / dpr; // the soft edge, in drawing units
+  const src = [0, m, m + HALO_CORE, 2 * m + HALO_CORE];
+  const sw = [m, HALO_CORE, m];
+  const dx = [x - e, x, x + w], dw = [e, w, e];
+  const dy = [y - e, y, y + h], dh = [e, h, e];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) g.drawImage(img, src[c], src[r], sw[c], sw[r], dx[c], dy[r], dw[c], dh[r]);
+}
+
+/**
+ * A thin ink line with a soft glow in the track's colour: the halo is a few wide, faint strokes
+ * under the line (as soft as a blur, at a fraction of its cost). Points come in as one continuous run.
  */
 function glowLine(g: CanvasRenderingContext2D, pts: [number, number][], ink: string, color: string, opts: { width: number; glow: number; alpha?: number }) {
   if (pts.length < 2) return;
@@ -87,15 +126,17 @@ function glowLine(g: CanvasRenderingContext2D, pts: [number, number][], ink: str
   g.lineJoin = 'round';
   g.lineCap = 'round';
   if (opts.glow > 0) {
-    g.save();
     trace();
     g.strokeStyle = color;
-    g.globalAlpha = 0.32 * opts.glow;
-    g.lineWidth = opts.width + 2.6;
-    g.shadowColor = color;
-    g.shadowBlur = 9 * opts.glow;
-    g.stroke();
-    g.restore();
+    for (const [grow, a] of [
+      [9, 0.07],
+      [5, 0.11],
+      [2.6, 0.2],
+    ]) {
+      g.globalAlpha = a * opts.glow;
+      g.lineWidth = opts.width + grow * Math.min(1, 0.4 + opts.glow);
+      g.stroke();
+    }
   }
   trace();
   g.strokeStyle = ink;
@@ -577,13 +618,9 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
             h += grow;
           }
           g.fillStyle = track.color;
-          if (P.glow > 0) {
-            g.shadowColor = track.color;
-            g.shadowBlur = P.glow * (sounding ? 14 : 7);
-          }
+          if (P.glow > 0) drawHalo(g, track.color, P.glow * (sounding ? 14 : 7), dpr, x, y - (sounding ? 1 : 0), w, h + (sounding ? 2 : 0));
           roundRect(g, x, y - (sounding ? 1 : 0), w, h + (sounding ? 2 : 0), h * P.round);
           g.fill();
-          g.shadowBlur = 0;
           // a note that bends: draw the bend as a line leaving the note (a semitone per row)
           const e = note.expr;
           if (e && e.bend.some((b) => Math.abs(b) > 1e-3) && note.duration > 0) {
