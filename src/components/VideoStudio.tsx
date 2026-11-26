@@ -324,6 +324,12 @@ export function VideoStudio() {
   const [quakeOn, setQuakeOn] = useState(false);
   const [quakeAmount, setQuakeAmount] = useState(0.5);
   const shake = quakeOn ? quakeAmount : 0;
+  /** the quake grows over the take: a step each loop, from 1/n of its strength to all of it in the last loop */
+  const [quakeRise, setQuakeRise] = useState(false);
+  /** notes and lines tremble while they sound */
+  const [trembleOn, setTrembleOn] = useState(false);
+  const [trembleAmount, setTrembleAmount] = useState(0.5);
+  const tremble = trembleOn ? trembleAmount : 0;
   /** write only the pitch functions: no velocities, and so no drums */
   const [pitchOnly, setPitchOnly] = useState(false);
   /** which channels are up (fading in or in) or down (fading out or out) */
@@ -401,7 +407,7 @@ export function VideoStudio() {
   const onCanvas = useCallback((c: HTMLCanvasElement | null) => {
     stageCanvas.current = c;
   }, []);
-  const stage = useMemo(() => ({ view, pixelRatio: RATIO, onCanvas, level: (id: string) => engine.levelOf(id) }), [view, onCanvas]);
+  const stage = useMemo(() => ({ view, pixelRatio: RATIO, onCanvas, level: (id: string) => engine.levelOf(id), tremble }), [view, onCanvas, tremble]);
 
   /** fade a channel out, or back in, over the chosen length — the sound and the picture together */
   const downRef = useRef(new Set<string>());
@@ -534,6 +540,15 @@ export function VideoStudio() {
       const g = c.getContext('2d')!;
       const T = themeColours();
       const now = performance.now() / 1000;
+      /** how far the quake has grown: by the loop of the take (or of the playing, before one) */
+      const riseAt = () => {
+        if (!quakeRise) return 1;
+        const pos = engine.position();
+        const steps = loops === FREE ? 4 : loops;
+        if (pos === null || !(loopBeats > 0)) return 1 / steps;
+        const from = recorder.current?.state === 'recording' ? takeFrom.current : 0;
+        return Math.min(1, (Math.floor(Math.max(0, pos - from) / loopBeats + 1e-9) + 1) / steps);
+      };
       g.fillStyle = T.bg;
       g.fillRect(0, 0, F.w, F.h);
       // the title, and the song under it
@@ -549,7 +564,7 @@ export function VideoStudio() {
       const s = stageCanvas.current;
       if (s && s.width) {
         // the quake shakes the picture, not the words around it
-        const q = shake > 0 ? shakeOf(shake, now) : null;
+        const q = shake > 0 ? shakeOf(shake * riseAt(), now) : null;
         g.save();
         if (q) {
           const cx = L.viz.x + L.viz.w / 2, cy = L.viz.y + L.viz.h / 2;
@@ -641,7 +656,7 @@ export function VideoStudio() {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [open, hidden, shake, F, L, fnLayout, title, project, renders, mathView, texBlocks]);
+  }, [open, hidden, shake, quakeRise, loops, loopBeats, F, L, fnLayout, title, project, renders, mathView, texBlocks]);
 
   const clearTimers = () => {
     for (const list of [timers, takeTimers]) {
@@ -1052,6 +1067,31 @@ export function VideoStudio() {
                 <input type="checkbox" checked={quakeOn} onChange={(e) => setQuakeOn(e.target.checked)} /> Quake — shake with the bass
               </label>
               {quakeOn && <Slider label="Strength" value={quakeAmount} min={0.1} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={setQuakeAmount} reset={0.5} />}
+              {quakeOn && (
+                <>
+                  <Seg<boolean>
+                    value={quakeRise}
+                    onChange={setQuakeRise}
+                    options={[
+                      { value: false, label: 'Steady' },
+                      { value: true, label: 'Builds each loop' },
+                    ]}
+                  />
+                  {quakeRise && (
+                    <small className="muted">
+                      {(() => {
+                        const n = loops === FREE ? 4 : loops;
+                        const steps = Array.from({ length: Math.min(n, 8) }, (_, i) => `${Math.round(((i + 1) / n) * 100)}%`);
+                        return `${steps.join(' → ')}${n > 8 ? ' …' : ''}${loops === FREE ? ', then stays' : ''} of the strength, a step each loop`;
+                      })()}
+                    </small>
+                  )}
+                </>
+              )}
+              <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="Each note trembles while it sounds, and a gliding line or the function's curve vibrates behind the playhead like a plucked string">
+                <input type="checkbox" checked={trembleOn} onChange={(e) => setTrembleOn(e.target.checked)} /> Tremble — notes and lines shiver as they sound
+              </label>
+              {trembleOn && <Slider label="Strength" value={trembleAmount} min={0.1} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={setTrembleAmount} reset={0.5} />}
               <small className="muted">The backdrop, its strength and the fuse follow the main view.</small>
             </div>
             <div className="field">

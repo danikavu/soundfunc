@@ -140,6 +140,22 @@ export interface VizStage {
   onCanvas: (canvas: HTMLCanvasElement | null) => void;
   /** how much of each channel is heard (0 … 1): faded channels fade on screen too */
   level?: (trackId: string) => number;
+  /** 0 … 1: notes tremble while they sound, and a line vibrates like a plucked string behind the playhead */
+  tremble?: number;
+}
+
+/** a fast, uneven wobble, −1 … 1, its own for each seed */
+const wobble = (now: number, seed: number) => Math.sin(now * 53 + seed) * 0.55 + Math.sin(now * 89 + seed * 1.7) * 0.3 + Math.sin(now * 131 + seed * 2.3) * 0.15;
+
+/**
+ * How far a line is thrown at beat `b` while the playhead is at `play`: a string just plucked —
+ * strongest at the playhead, dying away over the beat behind it, a wave running along it.
+ */
+function stringAt(b: number, play: number | null, now: number, amp: number): number {
+  if (play === null || amp <= 0) return 0;
+  const d = play - b;
+  if (d < 0 || d > 1.5) return 0;
+  return amp * Math.exp(-d / 0.4) * Math.sin(b * Math.PI * 6 - now * 40);
 }
 
 export function Visualizer({ stage }: { stage?: VizStage } = {}) {
@@ -487,6 +503,9 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         /** draw-in: while playing, only what the playhead has reached this pass — the score is written as it plays */
         const until = drawIn && playBeat !== null ? playBeat : Infinity;
         const placed: Placed[] = [];
+        /** tremble: how far (px) a sounding note or line may be thrown */
+        const shiver = 3.2 * (stageRef.current?.tremble ?? 0);
+        const nowT = performance.now() / 1000;
 
         // raked sand: one line per in-scale pitch, the root a little darker (a video is left clear)
         if (melodic.length && !stageRef.current) {
@@ -551,6 +570,13 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           // on a lit screen notes read like a display: brighter, even when not selected
           g.globalAlpha = P.glow > 0 ? (isSel ? 0.55 + 0.45 * note.velocity : 0.35 + 0.35 * note.velocity) : isSel ? 0.35 + 0.65 * note.velocity : 0.2 + 0.3 * note.velocity;
           g.globalAlpha *= levelOf(track.id);
+          // trembling while it sounds: the loud and the low the most
+          if (sounding && shiver > 0) {
+            const k = shiver * (0.5 + 0.5 * note.velocity) * (note.midi < 48 ? 1.4 : 1);
+            const seed = note.beat * 7.3 + note.midi;
+            x += 0.5 * k * wobble(nowT, seed);
+            y += k * wobble(nowT, seed + 11);
+          }
           g.fillStyle = track.color;
           if (P.glow > 0) {
             g.shadowColor = track.color;
@@ -607,7 +633,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
                 flush();
                 continue;
               }
-              run.push([bx(b), my(m) + rowH / 2]);
+              run.push([bx(b), my(m) + rowH / 2 + stringAt(b, playBeat, nowT, shiver * 1.6 * Math.min(1, v * 1.5))]);
               if (playBeat !== null && b <= playBeat && playBeat - b < 0.05 && levelOf(track.id) > 0.1) {
                 sparks.push({ key: `${track.id}:${Math.floor(b * 4)}`, x: bx(b), y: my(m) + rowH / 2, color: track.color });
                 // a glide burns along its line: the spark rides it at the playhead
@@ -772,13 +798,17 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         // one path per stretch: sounding stretches glow, silent ones are a faint hairline
         let run: [number, number][] = [];
         let runSilent: boolean | null = null;
+        // tremble: the curve vibrates behind the playhead, like a plucked string
+        const pluck = 5 * (stageRef.current?.tremble ?? 0);
+        const fnPlay = pos === null ? null : pos % fnFull.total;
+        const fnNow = performance.now() / 1000;
         const flush = () => {
           if (runSilent) glowLine(g, run, P.ink3, selected.color, { width: 0.8, glow: 0, alpha: 0.4 });
           else glowLine(g, run, P.ink, selected.color, { width: 1.1, glow: 1 });
         };
         for (let i = Math.max(0, i0 - stride); i < i1; i += stride) {
           const silent = fnFull.vel[i] < 0.01;
-          const pt: [number, number] = [sx(i * dt), sy(fnFull.raw[i])];
+          const pt: [number, number] = [sx(i * dt), sy(fnFull.raw[i]) + (silent ? 0 : stringAt(i * dt, fnPlay, fnNow, pluck * Math.min(1, fnFull.vel[i] * 1.5)))];
           if (runSilent !== null && silent !== runSilent) {
             run.push(pt); // join the stretches
             flush();
