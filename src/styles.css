@@ -3936,8 +3936,17 @@ aside.panel:last-of-type .info-pop {
   font-size: var(--fs-sm);
   color: var(--ink-2);
 }
+.group-head {
+  background: color-mix(in srgb, var(--accent) 9%, var(--paper-2));
+  border-radius: var(--radius) var(--radius) 0 0;
+  border-top: none;
+  color: var(--ink);
+}
 .group-head:hover {
-  background: var(--paper-2);
+  background: color-mix(in srgb, var(--accent) 14%, var(--paper-2));
+}
+.group-head.collapsed {
+  border-radius: var(--radius);
 }
 .group-head .ms-col {
   gap: 1px;
@@ -3994,8 +4003,12 @@ aside.panel:last-of-type .info-pop {
 }
 .track.in-group {
   margin-left: 0;
-  border-left: 2px solid var(--line);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 35%, var(--line));
   padding-left: calc(var(--sp-2) - 2px);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.track.in-group.picked {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .track.drop-in::before {
   left: 16px;

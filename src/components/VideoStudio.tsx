@@ -6,7 +6,7 @@ import { compose, texVariants, toSource } from '../engine/symbolic';
 import { useStore } from '../state/store';
 import { sparkHead } from './fuse';
 import { toast } from './TopBar';
-import { Icon, Seg, TextField, download, fileSafe, getRender } from './ui';
+import { Icon, Seg, Slider, TextField, download, fileSafe, getRender } from './ui';
 import { Visualizer } from './Visualizer';
 import { mathImage, mathPending, preloadMath } from './mathSvg';
 
@@ -77,6 +77,34 @@ function shuffleRank(id: string, shuffle: number): number {
   h = Math.imul(h ^ (h >>> 15), 2246822519);
   h = Math.imul(h ^ (h >>> 13), 3266489917);
   return (h ^ (h >>> 16)) >>> 0;
+}
+
+/**
+ * The quake: how far the picture is thrown, frame by frame, by the sound — the low end most. Each
+ * band's level jumps up at once and settles back; the shake is a fast, uneven tremble scaled by it.
+ */
+const spectrum = new Uint8Array(1024);
+const quake = { bass: 0, mid: 0 };
+function shakeOf(amount: number, now: number): { dx: number; dy: number; turn: number } {
+  if (engine.position() === null || !engine.spectrum(spectrum)) {
+    quake.bass *= 0.85;
+    quake.mid *= 0.85;
+  } else {
+    const hz = engine.sampleRate / 2048;
+    const band = (lo: number, hi: number) => {
+      let sum = 0, n = 0;
+      for (let i = Math.max(1, Math.round(lo / hz)); i <= Math.round(hi / hz); i++, n++) sum += spectrum[i];
+      return n ? sum / n / 255 : 0;
+    };
+    // only what stands out of the quiet counts, and loud counts more
+    const bass = Math.max(0, band(30, 150) - 0.35) / 0.65, mid = Math.max(0, band(150, 700) - 0.35) / 0.65;
+    quake.bass = Math.max(bass * bass, quake.bass * 0.82);
+    quake.mid = Math.max(mid * mid, quake.mid * 0.75);
+  }
+  const k = amount * (quake.bass + 0.3 * quake.mid);
+  // a few fast, unrelated wobbles: a tremble, not a sway
+  const n = (a: number, b: number, c: number) => Math.sin(now * a) * 0.5 + Math.sin(now * b + 1.3) * 0.3 + Math.sin(now * c + 2.1) * 0.2;
+  return { dx: 26 * k * n(61, 97, 143), dy: 26 * k * n(73, 109, 157), turn: 0.012 * k * n(41, 89, 131) };
 }
 
 /** what a build-up brings in at a time: a channel, or a whole group */
@@ -292,6 +320,10 @@ export function VideoStudio() {
   /** the studio steps aside while the whole app is recorded */
   const [hidden, setHidden] = useState(false);
   const [mathView, setMathView] = useState<MathView>('formulas');
+  /** the quake: 0 off, else how hard the picture trembles with the sound (the low end most) */
+  const [quakeOn, setQuakeOn] = useState(false);
+  const [quakeAmount, setQuakeAmount] = useState(0.5);
+  const shake = quakeOn ? quakeAmount : 0;
   /** write only the pitch functions: no velocities, and so no drums */
   const [pitchOnly, setPitchOnly] = useState(false);
   /** which channels are up (fading in or in) or down (fading out or out) */
@@ -515,7 +547,19 @@ export function VideoStudio() {
       g.fillText(`${project.song.bpm} bpm · ${keyLabel(project.song)}`, head.x, head.y + head.h * 0.6, head.w);
       // the visualizer, drawn for this frame size
       const s = stageCanvas.current;
-      if (s && s.width) g.drawImage(s, L.viz.x, L.viz.y, L.viz.w, L.viz.h);
+      if (s && s.width) {
+        // the quake shakes the picture, not the words around it
+        const q = shake > 0 ? shakeOf(shake, now) : null;
+        g.save();
+        if (q) {
+          const cx = L.viz.x + L.viz.w / 2, cy = L.viz.y + L.viz.h / 2;
+          g.translate(cx + q.dx, cy + q.dy);
+          g.rotate(q.turn);
+          g.translate(-cx, -cy);
+        }
+        g.drawImage(s, L.viz.x, L.viz.y, L.viz.w, L.viz.h);
+        g.restore();
+      }
       // the functions: each channel's name in its colour (a spark while it sounds), its formulas under it,
       // faded as far as the channel is
       if (L.fns && fnLayout) {
@@ -597,7 +641,7 @@ export function VideoStudio() {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [open, hidden, F, L, fnLayout, title, project, renders, mathView, texBlocks]);
+  }, [open, hidden, shake, F, L, fnLayout, title, project, renders, mathView, texBlocks]);
 
   const clearTimers = () => {
     for (const list of [timers, takeTimers]) {
@@ -1004,6 +1048,10 @@ export function VideoStudio() {
                   <input type="checkbox" checked={pitchOnly} onChange={(e) => setPitchOnly(e.target.checked)} /> only the pitch functions
                 </label>
               )}
+              <label className="row" style={{ gap: 6, fontSize: 'var(--fs-md)' }} title="The picture trembles with the sound, like a quake — the bass shakes it most">
+                <input type="checkbox" checked={quakeOn} onChange={(e) => setQuakeOn(e.target.checked)} /> Quake — shake with the bass
+              </label>
+              {quakeOn && <Slider label="Strength" value={quakeAmount} min={0.1} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={setQuakeAmount} reset={0.5} />}
               <small className="muted">The backdrop, its strength and the fuse follow the main view.</small>
             </div>
             <div className="field">
