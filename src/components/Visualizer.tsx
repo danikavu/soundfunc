@@ -183,6 +183,11 @@ export interface VizStage {
   level?: (trackId: string) => number;
   /** 0 … 1: what sounds swells — a note grows and quakes a little; a line thickens and quakes just behind the playhead */
   swell?: number;
+  /** asked every frame: true draws nothing at all and forgets what was played (a take about to start) */
+  blank?: () => boolean;  /** asked every frame: true leaves the picture as it is (a take's last notes ringing out) */
+  hold?: () => boolean;
+  /** asked every frame: where a take began (a song position), or null — its first loop is written in as it plays */
+  takeFrom?: () => number | null;
 }
 
 /** a fast, uneven wobble, −1 … 1, its own for each seed */
@@ -447,6 +452,8 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         passRef.current = nowPass;
         setPass(nowPass);
       }
+      // a take ringing out: its last picture stays, rather than the whole score popping back
+      if (stageRef.current?.hold?.()) return;
       // a backdrop moves on its own, even while stopped
       if (!dirty.current && pos === null && backdropRef.current === 'off' && !stageRef.current) return;
       dirty.current = false;
@@ -459,6 +466,12 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
       const P = (palette.current ??= readPalette(wrapRef.current!));
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, W, H);
+      // a take about to start: an empty picture, and no trace of what played before
+      if (stageRef.current?.blank?.()) {
+        backdropMem.current = new BackdropMemory();
+        live.current = { ...live.current, playX: null, sparks: [] };
+        return;
+      }
       const secPerBeat = 60 / project.song.bpm;
       // the backdrop: a dot-matrix figure of the live sound, laid under everything, faint
       const bd = backdropRef.current;
@@ -534,7 +547,9 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         const scale = (SCALES[project.song.scale] ?? SCALES.major).steps;
         const playBeat = pos === null ? null : pos % total;
         /** draw-in: while playing, only what the playhead has reached this pass — the score is written as it plays */
-        const until = drawIn && playBeat !== null ? playBeat : Infinity;
+        const from = stageRef.current?.takeFrom?.() ?? null;
+        const firstLoop = pos !== null && from !== null && pos - from < total;
+        const until = (drawIn || firstLoop) && playBeat !== null ? playBeat : Infinity;
         const placed: Placed[] = [];
         /** swell: how much what sounds grows and quakes */
         const swell = stageRef.current?.swell ?? 0;
@@ -827,7 +842,10 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         }
         g.save();
         g.beginPath();
-        g.rect(padL - 1, 0, iw + 2, H);
+        // a take's first loop: the curve is written in up to the playhead
+        const takeAt = stageRef.current?.takeFrom?.() ?? null;
+        const writing = pos !== null && takeAt !== null && pos - takeAt < fnFull.total;
+        g.rect(padL - 1, 0, writing ? Math.max(0, sx(pos % fnFull.total) - padL + 1) : iw + 2, H);
         g.clip();
 
         // a channel switched off in a video shows no curve until it is back

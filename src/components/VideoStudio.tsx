@@ -106,6 +106,11 @@ function quakeLevel(now: number): number {
   while (quake.past.length && quake.past[0].t < now - 0.5) quake.past.shift();
   return k;
 }
+/** forget the shake of what played before (a take starts still) */
+const forgetQuake = () => {
+  quake.bass = quake.mid = 0;
+  quake.past = [];
+};
 /** the level as it was `ago` seconds back */
 const quakeAgo = (now: number, ago: number) => {
   const p = quake.past;
@@ -435,7 +440,18 @@ export function VideoStudio() {
   const onCanvas = useCallback((c: HTMLCanvasElement | null) => {
     stageCanvas.current = c;
   }, []);
-  const stage = useMemo(() => ({ view, pixelRatio: RATIO, onCanvas, level: (id: string) => engine.levelOf(id), swell: tremble }), [view, onCanvas, tremble]);
+  /**
+   * A take from the top starts on an empty picture: nothing from before it (no score, no trails, no
+   * shake) until its music starts. Once the music is over, the picture stays as the take left it.
+   */
+  const preRoll = useRef(false);
+  const blank = useCallback(() => {
+    if (preRoll.current && engine.position() !== null) preRoll.current = false;
+    return preRoll.current;
+  }, []);
+  const hold = useCallback(() => !preRoll.current && recorder.current?.state === 'recording' && engine.position() === null, []);
+  const fromNow = useCallback(() => (recorder.current?.state === 'recording' && !ending.current ? takeFrom.current : null), []);
+  const stage = useMemo(() => ({ view, pixelRatio: RATIO, onCanvas, level: (id: string) => engine.levelOf(id), swell: tremble, blank, hold, takeFrom: fromNow }), [view, onCanvas, tremble, blank, hold, fromNow]);
 
   /** fade a channel out, or back in, over the chosen length — the sound and the picture together */
   const downRef = useRef(new Set<string>());
@@ -590,14 +606,15 @@ export function VideoStudio() {
       g.fillText(`${project.song.bpm} bpm · ${keyLabel(project.song)}`, head.x, head.y + head.h * 0.6, head.w);
       // the visualizer, drawn for this frame size
       const s = stageCanvas.current;
-      if (s && s.width) {
+      const empty = blank();
+      if (s && s.width && !empty) {
         // the quake shakes the picture, not the words around it
         if (shake > 0) drawQuake(g, s, L.viz, shake * riseAt(), now);
         else g.drawImage(s, L.viz.x, L.viz.y, L.viz.w, L.viz.h);
       }
       // the functions: each channel's name in its colour (a spark while it sounds), its formulas under it,
       // faded as far as the channel is
-      if (L.fns && fnLayout) {
+      if (L.fns && fnLayout && !empty) {
         const on = sounding(engine.position());
         const box = L.fns;
         const math = mathView === 'latex' ? setMath(texBlocks, L.fns, L.font, T.ink) : null;
@@ -737,6 +754,8 @@ export function VideoStudio() {
     preparing.current = true;
     forgetClip();
     if (useStore.getState().playing) stopPlayback();
+    preRoll.current = true;
+    forgetQuake();
     // the math is all typeset before the take, so nothing pops in during it
     if (showFns && mathView === 'latex') {
       const ink = themeColours().ink;
@@ -865,7 +884,7 @@ export function VideoStudio() {
       if (useStore.getState().playing) stopPlayback();
       engine.hush();
       await new Promise((r) => setTimeout(r, HUSH * 1000));
-      if (cancelled.current || (app && session.current !== src)) return;
+      if (cancelled.current || (app && session.current !== src)) return void (preRoll.current = false);
     }
     const stream = src.stream;
     for (const t of engine.audioStream().getAudioTracks()) stream.addTrack(t);
@@ -873,6 +892,7 @@ export function VideoStudio() {
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     rec.onstop = () => {
+      preRoll.current = false;
       takeTimers.current.forEach((t) => clearTimeout(t));
       takeTimers.current = [];
       engine.ring = 0;
@@ -948,6 +968,7 @@ export function VideoStudio() {
   };
 
   const close = () => {
+    preRoll.current = false;
     if (phase === 'recording') {
       cancelled.current = true;
       finish(true);
