@@ -74,8 +74,47 @@ function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number,
 }
 
 /**
- * A thin ink line with a soft glow in the track's colour: the halo is one blurred,
- * translucent pass under the line. Points come in as one continuous run.
+ * A note's glow, made once per colour and blur and stretched around each note (nine slices, so
+ * its soft edge keeps its width on a note of any size). A live shadowBlur on every note, every
+ * frame, is what made playback and video takes stutter.
+ */
+const HALO_CORE = 8;
+const halos = new Map<string, { img: HTMLCanvasElement; m: number }>();
+function halo(color: string, blur: number) {
+  const key = `${color}|${blur}`;
+  let h = halos.get(key);
+  if (!h) {
+    // the shadow reaches about 1.5 × its blur beyond the shape (device pixels, like shadowBlur)
+    const m = Math.ceil(blur * 1.5) + 1;
+    const size = 2 * m + HALO_CORE;
+    const img = document.createElement('canvas');
+    img.width = img.height = size;
+    const c = img.getContext('2d')!;
+    // only the shadow: the shape sits off the canvas, its shadow thrown onto it
+    c.shadowColor = color;
+    c.shadowBlur = blur;
+    c.shadowOffsetX = size * 2;
+    c.fillStyle = color;
+    c.fillRect(m - size * 2, m, HALO_CORE, HALO_CORE);
+    if (halos.size > 400) halos.clear();
+    halos.set(key, (h = { img, m }));
+  }
+  return h;
+}
+/** draw the glow of a note (x, y, w, h in drawing units; `dpr` device pixels to the unit) */
+function drawHalo(g: CanvasRenderingContext2D, color: string, blur: number, dpr: number, x: number, y: number, w: number, h: number) {
+  const { img, m } = halo(color, Math.max(1, Math.round(blur)));
+  const e = m / dpr; // the soft edge, in drawing units
+  const src = [0, m, m + HALO_CORE, 2 * m + HALO_CORE];
+  const sw = [m, HALO_CORE, m];
+  const dx = [x - e, x, x + w], dw = [e, w, e];
+  const dy = [y - e, y, y + h], dh = [e, h, e];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) g.drawImage(img, src[c], src[r], sw[c], sw[r], dx[c], dy[r], dw[c], dh[r]);
+}
+
+/**
+ * A thin ink line with a soft glow in the track's colour: the halo is a few wide, faint strokes
+ * under the line (as soft as a blur, at a fraction of its cost). Points come in as one continuous run.
  */
 function glowLine(g: CanvasRenderingContext2D, pts: [number, number][], ink: string, color: string, opts: { width: number; glow: number; alpha?: number }) {
   if (pts.length < 2) return;
@@ -87,15 +126,17 @@ function glowLine(g: CanvasRenderingContext2D, pts: [number, number][], ink: str
   g.lineJoin = 'round';
   g.lineCap = 'round';
   if (opts.glow > 0) {
-    g.save();
     trace();
     g.strokeStyle = color;
-    g.globalAlpha = 0.32 * opts.glow;
-    g.lineWidth = opts.width + 2.6;
-    g.shadowColor = color;
-    g.shadowBlur = 9 * opts.glow;
-    g.stroke();
-    g.restore();
+    for (const [grow, a] of [
+      [9, 0.07],
+      [5, 0.11],
+      [2.6, 0.2],
+    ]) {
+      g.globalAlpha = a * opts.glow;
+      g.lineWidth = opts.width + grow * Math.min(1, 0.4 + opts.glow);
+      g.stroke();
+    }
   }
   trace();
   g.strokeStyle = ink;
@@ -140,7 +181,20 @@ export interface VizStage {
   onCanvas: (canvas: HTMLCanvasElement | null) => void;
   /** how much of each channel is heard (0 … 1): faded channels fade on screen too */
   level?: (trackId: string) => number;
+  /** 0 … 1: what sounds swells — a note grows and quakes a little; a line thickens and quakes just behind the playhead */
+  swell?: number;
+  /** asked every frame: true draws nothing at all and forgets what was played (a take about to start) */
+  blank?: () => boolean;  /** asked every frame: true leaves the picture as it is (a take's last notes ringing out) */
+  hold?: () => boolean;
+  /** asked every frame: where a take began (a song position), or null — its first loop is written in as it plays */
+  takeFrom?: () => number | null;
 }
+
+/** a fast, uneven wobble, −1 … 1, its own for each seed */
+const wobble = (now: number, seed: number) => Math.sin(now * 53 + seed) * 0.55 + Math.sin(now * 89 + seed * 1.7) * 0.3 + Math.sin(now * 131 + seed * 2.3) * 0.15;
+
+/** how much a line swells just behind the playhead (0 … 1): full at the playhead, gone a beat back */
+const SWELL_BEATS = 0.75;
 
 export function Visualizer({ stage }: { stage?: VizStage } = {}) {
   const project = useStore((s) => s.project);
@@ -398,6 +452,8 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         passRef.current = nowPass;
         setPass(nowPass);
       }
+      // a take ringing out: its last picture stays, rather than the whole score popping back
+      if (stageRef.current?.hold?.()) return;
       // a backdrop moves on its own, even while stopped
       if (!dirty.current && pos === null && backdropRef.current === 'off' && !stageRef.current) return;
       dirty.current = false;
@@ -410,6 +466,12 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
       const P = (palette.current ??= readPalette(wrapRef.current!));
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, W, H);
+      // a take about to start: an empty picture, and no trace of what played before
+      if (stageRef.current?.blank?.()) {
+        backdropMem.current = new BackdropMemory();
+        live.current = { ...live.current, playX: null, sparks: [] };
+        return;
+      }
       const secPerBeat = 60 / project.song.bpm;
       // the backdrop: a dot-matrix figure of the live sound, laid under everything, faint
       const bd = backdropRef.current;
@@ -485,8 +547,14 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         const scale = (SCALES[project.song.scale] ?? SCALES.major).steps;
         const playBeat = pos === null ? null : pos % total;
         /** draw-in: while playing, only what the playhead has reached this pass — the score is written as it plays */
-        const until = drawIn && playBeat !== null ? playBeat : Infinity;
+        const from = stageRef.current?.takeFrom?.() ?? null;
+        const firstLoop = pos !== null && from !== null && pos - from < total;
+        const until = (drawIn || firstLoop) && playBeat !== null ? playBeat : Infinity;
         const placed: Placed[] = [];
+        /** swell: how much what sounds grows and quakes */
+        const swell = stageRef.current?.swell ?? 0;
+        const lowness = (y: number) => Math.max(0, Math.min(1, (y - padT) / (H - padB - padT)));
+        const nowT = performance.now() / 1000;
 
         // raked sand: one line per in-scale pitch, the root a little darker (a video is left clear)
         if (melodic.length && !stageRef.current) {
@@ -551,14 +619,23 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           // on a lit screen notes read like a display: brighter, even when not selected
           g.globalAlpha = P.glow > 0 ? (isSel ? 0.55 + 0.45 * note.velocity : 0.35 + 0.35 * note.velocity) : isSel ? 0.35 + 0.65 * note.velocity : 0.2 + 0.3 * note.velocity;
           g.globalAlpha *= levelOf(track.id);
-          g.fillStyle = track.color;
-          if (P.glow > 0) {
-            g.shadowColor = track.color;
-            g.shadowBlur = P.glow * (sounding ? 14 : 7);
+          // swelling while it sounds, and a moment after it is struck (a drum hit is short): it grows, and quakes a little — the low a little more
+          const since = playBeat === null ? Infinity : ((playBeat - note.beat + total) % total) * secPerBeat;
+          const active = sounding ? 1 : since < 0.35 ? 1 - since / 0.35 : 0;
+          if (active > 0 && swell > 0) {
+            const k = swell * active * (0.6 + 0.4 * note.velocity);
+            const grow = h * 0.6 * k;
+            const quake = 2.6 * k * (0.6 + 0.6 * lowness(y));
+            const seed = note.beat * 7.3 + note.midi;
+            x += quake * wobble(nowT, seed) - grow / 2;
+            y += quake * wobble(nowT, seed + 11) - grow / 2;
+            w += grow;
+            h += grow;
           }
+          g.fillStyle = track.color;
+          if (P.glow > 0) drawHalo(g, track.color, P.glow * (sounding ? 14 : 7), dpr, x, y - (sounding ? 1 : 0), w, h + (sounding ? 2 : 0));
           roundRect(g, x, y - (sounding ? 1 : 0), w, h + (sounding ? 2 : 0), h * P.round);
           g.fill();
-          g.shadowBlur = 0;
           // a note that bends: draw the bend as a line leaving the note (a semitone per row)
           const e = note.expr;
           if (e && e.bend.some((b) => Math.abs(b) > 1e-3) && note.duration > 0) {
@@ -597,6 +674,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           if (glide.length) {
             // a glide track is one fine, glowing line per sounding stretch
             let run: [number, number][] = [];
+            const hot: [number, number][] = [];
             const flush = () => {
               glowLine(g, run, track.color, track.color, { width: isSel ? 1.3 : 0.9, glow: isSel ? 1 : 0.45, alpha: (isSel ? 0.95 : 0.5) * levelOf(track.id) });
               run = [];
@@ -608,6 +686,11 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
                 continue;
               }
               run.push([bx(b), my(m) + rowH / 2]);
+              // the stretch just played swells: drawn again over it, thicker, quaking a little
+              if (swell > 0 && playBeat !== null && b <= playBeat && playBeat - b < SWELL_BEATS && levelOf(track.id) > 0.1) {
+                const q = 2.2 * swell * Math.min(1, v * 1.5);
+                hot.push([bx(b) + q * wobble(nowT, b * 13), my(m) + rowH / 2 + q * wobble(nowT, b * 13 + 5)]);
+              }
               if (playBeat !== null && b <= playBeat && playBeat - b < 0.05 && levelOf(track.id) > 0.1) {
                 sparks.push({ key: `${track.id}:${Math.floor(b * 4)}`, x: bx(b), y: my(m) + rowH / 2, color: track.color });
                 // a glide burns along its line: the spark rides it at the playhead
@@ -616,6 +699,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
               }
             }
             flush();
+            if (hot.length > 1) glowLine(g, hot, track.color, track.color, { width: (isSel ? 1.3 : 0.9) * (1 + 3 * swell), glow: 1, alpha: levelOf(track.id) });
             continue;
           }
           for (const note of notes) {
@@ -758,7 +842,10 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         }
         g.save();
         g.beginPath();
-        g.rect(padL - 1, 0, iw + 2, H);
+        // a take's first loop: the curve is written in up to the playhead
+        const takeAt = stageRef.current?.takeFrom?.() ?? null;
+        const writing = pos !== null && takeAt !== null && pos - takeAt < fnFull.total;
+        g.rect(padL - 1, 0, writing ? Math.max(0, sx(pos % fnFull.total) - padL + 1) : iw + 2, H);
         g.clip();
 
         // a channel switched off in a video shows no curve until it is back
@@ -772,6 +859,11 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         // one path per stretch: sounding stretches glow, silent ones are a faint hairline
         let run: [number, number][] = [];
         let runSilent: boolean | null = null;
+        // swell: the stretch of the curve just played thickens and quakes a little
+        const swellFn = stageRef.current?.swell ?? 0;
+        const hotFn: [number, number][] = [];
+        const fnPlay = pos === null ? null : pos % fnFull.total;
+        const fnNow = performance.now() / 1000;
         const flush = () => {
           if (runSilent) glowLine(g, run, P.ink3, selected.color, { width: 0.8, glow: 0, alpha: 0.4 });
           else glowLine(g, run, P.ink, selected.color, { width: 1.1, glow: 1 });
@@ -779,6 +871,10 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
         for (let i = Math.max(0, i0 - stride); i < i1; i += stride) {
           const silent = fnFull.vel[i] < 0.01;
           const pt: [number, number] = [sx(i * dt), sy(fnFull.raw[i])];
+          if (swellFn > 0 && !silent && fnPlay !== null && i * dt <= fnPlay && fnPlay - i * dt < SWELL_BEATS) {
+            const q = 3 * swellFn * Math.min(1, fnFull.vel[i] * 1.5);
+            hotFn.push([pt[0] + q * wobble(fnNow, i * 0.7), pt[1] + q * wobble(fnNow, i * 0.7 + 5)]);
+          }
           if (runSilent !== null && silent !== runSilent) {
             run.push(pt); // join the stretches
             flush();
@@ -788,6 +884,7 @@ export function Visualizer({ stage }: { stage?: VizStage } = {}) {
           run.push(pt);
         }
         flush();
+        if (hotFn.length > 1) glowLine(g, hotFn, P.ink, selected.color, { width: 1.1 * (1 + 3 * swellFn), glow: 1 });
         g.globalAlpha = 1;
 
         // velocity: a continuous wash in glide mode, reeds per step in notes mode

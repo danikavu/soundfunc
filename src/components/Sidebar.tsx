@@ -1,7 +1,7 @@
 import { PRESET_GROUPS, PRESETS, TRACK_COLORS, groupOf, trackFromPreset, trackFromTemplate, type PresetGroup } from '../engine/presets';
 import { MiniScore } from './MiniScore';
 import { KitPicker } from './KitPicker';
-import { audibleTracks, stretchOf, voiceLabel } from '../engine/project';
+import { audibleTracks, groupRuns, stretchOf, voiceLabel, type Group, type Track } from '../engine/project';
 import { usePicked, useSelectedTrack, useStore } from '../state/store';
 import { Icon, download, fileSafe } from './ui';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
@@ -315,29 +315,53 @@ function Fold({ id, title, count, defaultOpen = false, children }: { id: string;
 /** how far the pointer goes before a press on a channel is a drag (px) */
 const DRAG_FROM = 5;
 
+/** where a drag lands: before the row `slot` of the list (the count = after the last), and in which group */
+interface Drop {
+  ids: string[];
+  slot: number;
+  group: string | null;
+}
+
 /**
  * Dragging channels to another place: the pressed one — or, when it is one of several selected, all
- * of them — goes where the line shows. Near the top or bottom the list scrolls; Esc lets go.
+ * of them; or a group, by its header — goes where the line shows. Dropped among a group's channels
+ * (or just under its header), a channel joins it; dropped anywhere else, it is loose. Near the top or
+ * bottom the list scrolls; Esc lets go.
  */
 function useChannelDrag() {
   const list = useRef<HTMLDivElement>(null);
-  const [drag, setDrag] = useState<{ ids: string[]; at: number } | null>(null);
+  const [drag, setDrag] = useState<Drop | null>(null);
   /** a drag just ended: the click that follows isn't one */
   const justDragged = useRef(false);
   const stop = useRef<(() => void) | null>(null);
   useEffect(() => () => stop.current?.(), []);
-  const onPointerDown = (e: ReactPointerEvent, id: string, ids: string[]) => {
-    if (e.button !== 0 || e.pointerType === 'touch' || (e.target as Element).closest('.ms-col, .track-actions')) return;
+  /** `group`: the group being dragged by its header */
+  const onPointerDown = (e: ReactPointerEvent, ids: string[], group?: string) => {
+    if (e.button !== 0 || e.pointerType === 'touch' || (e.target as Element).closest('.ms-col, .track-actions, .group-tools, input')) return;
     stop.current?.();
     const x0 = e.clientX, y0 = e.clientY;
     const ends = new AbortController();
     const { signal } = ends;
     let moving: string[] | null = null;
-    let at = 0, y = y0, raf = 0;
+    let drop: Drop | null = null, y = y0, raf = 0;
     const place = () => {
-      const rows = [...(list.current?.querySelectorAll('.track') ?? [])].map((r) => r.getBoundingClientRect());
-      at = rows.filter((r) => y > r.top + r.height / 2).length;
-      setDrag((d) => (d && d.at === at ? d : { ids: moving!, at }));
+      const rows = [...(list.current?.querySelectorAll<HTMLElement>('[data-row]') ?? [])];
+      const boxes = rows.map((r) => r.getBoundingClientRect());
+      let slot = boxes.filter((r) => y > r.top + r.height / 2).length;
+      const below = slot === rows.length && boxes.length > 0 && y > boxes[boxes.length - 1].bottom + 6;
+      const before = rows[slot - 1]?.dataset, after = rows[slot]?.dataset;
+      // just under an open group's header, or after one of its channels: in that group
+      let into: string | null = !below && before?.group && !(before.kind === 'head' && before.collapsed) ? before.group : null;
+      if (group) {
+        // a group never goes inside another: past it, instead
+        if (into && into !== group) {
+          while (rows[slot]?.dataset.group === into) slot++;
+        }
+        into = null;
+      }
+      void after;
+      drop = { ids: moving!, slot, group: into };
+      setDrag((d) => (d && d.slot === drop!.slot && d.group === drop!.group ? d : drop));
     };
     const scroll = () => {
       raf = requestAnimationFrame(scroll);
@@ -351,7 +375,7 @@ function useChannelDrag() {
       box.scrollTop += Math.max(-12, Math.min(12, over / 4));
       place();
     };
-    const done = (drop: boolean) => {
+    const done = (ok: boolean) => {
       ends.abort();
       cancelAnimationFrame(raf);
       stop.current = null;
@@ -360,7 +384,13 @@ function useChannelDrag() {
       setDrag(null);
       justDragged.current = true;
       setTimeout(() => (justDragged.current = false), 0);
-      if (drop) useStore.getState().moveTracks(moving, at);
+      if (!ok || !drop) return;
+      // the slot, as a place in the list of channels: before the channel that row is (or starts)
+      const rows = [...(list.current?.querySelectorAll<HTMLElement>('[data-row]') ?? [])];
+      const { tracks } = useStore.getState().project;
+      const r = rows[drop.slot]?.dataset;
+      const to = !r ? tracks.length : r.kind === 'track' ? tracks.findIndex((t) => t.id === r.id) : tracks.findIndex((t) => t.group === r.group);
+      useStore.getState().moveTracks(moving, Math.max(0, to), group ? undefined : drop.group);
     };
     stop.current = () => done(false);
     window.addEventListener(
@@ -369,7 +399,7 @@ function useChannelDrag() {
         y = m.clientY;
         if (!moving) {
           if (Math.hypot(m.clientX - x0, m.clientY - y0) < DRAG_FROM) return;
-          moving = ids.includes(id) ? ids : [id];
+          moving = ids;
           document.documentElement.classList.add('dragging-channels');
           scroll();
         }
@@ -392,8 +422,85 @@ function useChannelDrag() {
   return { list, drag, justDragged, onPointerDown };
 }
 
+/** a group's header: fold it, name it, mute or solo all of it, let it go; click to select its channels, drag to move them */
+function GroupHead({ group, tracks, row, drop, dragged, onPointerDown, justDragged }: { group: Group; tracks: Track[]; row: number; drop: string; dragged: boolean; onPointerDown: (e: ReactPointerEvent) => void; justDragged: { current: boolean } }) {
+  const { updateGroup, ungroup, editTracks, setPicked } = useStore();
+  const liveFades = useStore((st) => st.liveFades);
+  const [naming, setNaming] = useState(false);
+  const ids = tracks.map((t) => t.id);
+  const allMuted = liveFades ? ids.every((id) => liveFades.down.includes(id)) : tracks.every((t) => t.muted);
+  const allSolo = tracks.every((t) => t.solo);
+  return (
+    <div
+      className={`group-head ${group.collapsed ? 'collapsed' : ''} ${dragged ? 'dragged' : ''} ${drop}`}
+      data-row={row}
+      data-kind="head"
+      data-group={group.id}
+      data-collapsed={group.collapsed ? '1' : undefined}
+      onPointerDown={onPointerDown}
+      onClick={() => !justDragged.current && setPicked(ids)}
+      title="Click to select the group’s channels; drag to move the group"
+    >
+      <div className="ms-col" onClick={(e) => e.stopPropagation()}>
+        <button
+          className={`ms ${allMuted ? 'on' : ''}`}
+          title={liveFades ? (allMuted ? 'Bring the group in at the start of the next loop' : 'Switch the group off') : allMuted ? 'Unmute the group' : 'Mute the group'}
+          aria-label={`Mute group ${group.name}`}
+          onClick={() => (liveFades ? liveFades.toggleMany(ids) : editTracks(ids, { muted: !allMuted }))}
+        >
+          M
+        </button>
+        <button className={`ms solo ${allSolo ? 'on' : ''}`} title={allSolo ? 'Unsolo the group' : 'Solo the group'} aria-label={`Solo group ${group.name}`} onClick={() => editTracks(ids, { solo: !allSolo })}>
+          S
+        </button>
+      </div>
+      <button
+        className="group-fold"
+        onClick={(e) => (e.stopPropagation(), updateGroup(group.id, { collapsed: !group.collapsed }))}
+        aria-expanded={!group.collapsed}
+        title={group.collapsed ? 'Open the group' : 'Fold the group'}
+        aria-label={group.collapsed ? `Open ${group.name}` : `Fold ${group.name}`}
+      >
+        ›
+      </button>
+      {naming ? (
+        <input
+          className="input group-name-input"
+          autoFocus
+          defaultValue={group.name}
+          onFocus={(e) => e.target.select()}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={(e) => (setNaming(false), e.target.value.trim() && updateGroup(group.id, { name: e.target.value.trim() }))}
+          onKeyDown={(e) => (e.key === 'Enter' ? e.currentTarget.blur() : e.key === 'Escape' && setNaming(false))}
+          aria-label="Group name"
+        />
+      ) : (
+        <span className="group-name" onDoubleClick={(e) => (e.stopPropagation(), setNaming(true))} title="Double-click to rename">
+          {group.name} <small>{tracks.length}</small>
+        </span>
+      )}
+      <div className="group-tools" onClick={(e) => e.stopPropagation()}>
+        <button className="ms remove" title="Ungroup — the channels stay" aria-label={`Ungroup ${group.name}`} onClick={() => ungroup(group.id)}>
+          <Icon name="close" size={11} />
+        </button>
+        <button
+          className="ms remove"
+          title="Delete the group and its channels (⌘Z to undo)"
+          aria-label={`Delete group ${group.name}`}
+          onClick={() => {
+            useStore.getState().removeTracks(ids);
+            toast(`Deleted ${group.name} and its ${tracks.length} channels — ⌘Z brings them back`);
+          }}
+        >
+          <Icon name="trash" size={11} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Sidebar() {
-  const { project, selectTrack, pickTrack, updateTrack, editTracks, addTrack, removeTrack, duplicateTrack, duplicateTracks, removeTracks, setAllTracks } = useStore();
+  const { project, selectTrack, pickTrack, updateTrack, editTracks, addTrack, removeTrack, duplicateTrack, duplicateTracks, removeTracks, setAllTracks, groupTracks } = useStore();
   const picked = usePicked().map((t) => t.id);
   const many = picked.length > 1;
   const { list, drag, justDragged, onPointerDown } = useChannelDrag();
@@ -416,6 +523,90 @@ export function Sidebar() {
   const selected = useSelectedTrack();
   const liveFades = useStore((st) => st.liveFades);
   const audible = new Set(audibleTracks(project.tracks).map((t) => t.id));
+  // the list as it is drawn: each group's header, then its channels (unless folded); loose channels as they are
+  const rows: ({ kind: 'head'; group: Group; tracks: Track[] } | { kind: 'track'; t: Track; i: number })[] = [];
+  for (const run of groupRuns(project)) {
+    if (run.group) rows.push({ kind: 'head', group: run.group, tracks: run.tracks });
+    if (!run.group?.collapsed) for (const t of run.tracks) rows.push({ kind: 'track', t, i: project.tracks.indexOf(t) });
+  }
+  /** the drop line, on a row: above it — or below it, for the very end */
+  const dropAt = (ri: number) => (!drag ? '' : drag.slot === ri ? `drop-before ${drag.group ? 'drop-in' : ''}` : drag.slot === rows.length && ri === rows.length - 1 ? `drop-after ${drag.group ? 'drop-in' : ''}` : '');
+  const trackRow = (t: Track, i: number, ri: number) => (
+        <div
+          key={t.id}
+          className={`track ${t.group ? 'in-group' : ''} ${selected?.id === t.id ? 'selected' : ''} ${many && picked.includes(t.id) ? 'picked' : ''} ${audible.has(t.id) ? '' : 'dim'} ${drag?.ids.includes(t.id) ? 'dragged' : ''} ${dropAt(ri)}`}
+          aria-selected={picked.includes(t.id)}
+          data-row={ri}
+          data-kind="track"
+          data-id={t.id}
+          data-group={t.group}
+          onPointerDown={(e) => onPointerDown(e, picked.includes(t.id) ? picked : [t.id])}
+          onClick={(e) => {
+            if (justDragged.current) return;
+            if (e.shiftKey) pickTrack(t.id, 'range');
+            else if (e.metaKey || e.ctrlKey) pickTrack(t.id, 'toggle');
+            else selectTrack(t.id);
+          }}
+        >
+          <div className="ms-col" onClick={(e) => e.stopPropagation()}>
+            {liveFades ? (
+              // video studio: M switches the channel — off at once, back on at the start of the next loop
+              <button
+                className={`ms ${liveFades.down.includes(t.id) ? 'on' : ''} ${liveFades.cued.includes(t.id) ? 'cued' : ''}`}
+                title={liveFades.cued.includes(t.id) ? 'Comes in at the start of the next loop' : liveFades.down.includes(t.id) ? 'Bring in at the start of the next loop' : 'Switch off'}
+                aria-label={`Mute ${t.name}`}
+                onClick={() => liveFades.toggle(t.id)}
+              >
+                M
+              </button>
+            ) : (
+              <button className={`ms ${t.muted ? 'on' : ''}`} title="Mute" aria-label={`Mute ${t.name}`} onClick={() => flag(t, { muted: !t.muted })}>
+                M
+              </button>
+            )}
+            <button className={`ms solo ${t.solo ? 'on' : ''}`} title="Solo" aria-label={`Solo ${t.name}`} onClick={() => flag(t, { solo: !t.solo })}>
+              S
+            </button>
+            <button
+              className={`ms lock ${t.locked ? 'on' : ''}`}
+              title={t.locked ? 'Locked — Mutate leaves this channel alone. Click to unlock' : 'Lock this channel against Mutate'}
+              aria-label={`${t.locked ? 'Unlock' : 'Lock'} ${t.name}`}
+              aria-pressed={!!t.locked}
+              onClick={() => flag(t, { locked: !t.locked })}
+            >
+              <Icon name={t.locked ? 'lock' : 'unlock'} size={10} />
+            </button>
+          </div>
+          {/* the number is a tick: click it to select several */}
+          <span
+            className="ch-num"
+            style={{ background: t.color }}
+            title={`${many && picked.includes(t.id) ? 'Take out of' : 'Add to'} the selection (also ⌘-click the channel, ⇧-click for a run). Drag the channel to move it`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (justDragged.current) return;
+              pickTrack(t.id, e.shiftKey ? 'range' : 'toggle');
+            }}
+          >
+            {i + 1}
+          </span>
+          <div style={{ minWidth: 0 }} title={`${voiceLabel(t.waveform)}${t.playMode === 'glide' ? ' · glide' : ''} · ${t.steps} steps`}>
+            <div className="track-name">
+              {t.name}
+              {stretchOf(t) !== 1 && <small className="stretch-badge">×{Number(stretchOf(t).toFixed(3))}</small>}
+            </div>
+          </div>
+          <span className={`led ${audible.has(t.id) ? 'on' : ''}`} title={audible.has(t.id) ? 'Sounding' : t.muted ? 'Muted' : 'Silent — another channel is soloed'} />
+          <div className="track-actions" onClick={(e) => e.stopPropagation()}>
+            <button className="ms remove" title="Duplicate channel — every node, value and slider" aria-label={`Duplicate ${t.name}`} onClick={() => duplicateTrack(t.id)}>
+              <Icon name="copy" size={11} />
+            </button>
+            <button className="ms remove" title="Remove channel (⌘Z to undo)" aria-label={`Remove ${t.name}`} onClick={() => removeTrack(t.id)}>
+              <Icon name="close" size={11} />
+            </button>
+          </div>
+        </div>
+      );
   // two halves that scroll on their own: the channels always in view above, kits and functions below
   return (
     <aside className="panel side-split">
@@ -426,6 +617,17 @@ export function Sidebar() {
         <div className={`eyebrow ${many ? 'eyebrow-picked' : ''}`}>{many ? `${picked.length} selected` : 'Channels'}</div>
         {many && (
           <div className="picked-tools" role="toolbar" aria-label="Selected channels">
+            <button
+              className="icon-btn"
+              onClick={() => {
+                groupTracks(picked);
+                toast(`Grouped ${picked.length} channels — double-click the group’s name to rename it`);
+              }}
+              title={`Group the ${picked.length} selected channels`}
+              aria-label="Group the selected channels"
+            >
+              <Icon name="folder" size={12} />
+            </button>
             <button className="icon-btn" onClick={() => duplicateTracks(picked)} title={`Duplicate the ${picked.length} selected channels`} aria-label="Duplicate the selected channels">
               <Icon name="copy" size={12} />
             </button>
@@ -499,78 +701,13 @@ export function Sidebar() {
         </div>
       </div>
       </div>
-      {project.tracks.map((t, i) => (
-        <div
-          key={t.id}
-          className={`track ${selected?.id === t.id ? 'selected' : ''} ${many && picked.includes(t.id) ? 'picked' : ''} ${audible.has(t.id) ? '' : 'dim'} ${drag?.ids.includes(t.id) ? 'dragged' : ''} ${drag?.at === i ? 'drop-before' : ''} ${drag && drag.at === project.tracks.length && i === drag.at - 1 ? 'drop-after' : ''}`}
-          aria-selected={picked.includes(t.id)}
-          onPointerDown={(e) => onPointerDown(e, t.id, picked)}
-          onClick={(e) => {
-            if (justDragged.current) return;
-            if (e.shiftKey) pickTrack(t.id, 'range');
-            else if (e.metaKey || e.ctrlKey) pickTrack(t.id, 'toggle');
-            else selectTrack(t.id);
-          }}
-        >
-          <div className="ms-col" onClick={(e) => e.stopPropagation()}>
-            {liveFades ? (
-              // video studio: M switches the channel — off at once, back on at the start of the next loop
-              <button
-                className={`ms ${liveFades.down.includes(t.id) ? 'on' : ''} ${liveFades.cued.includes(t.id) ? 'cued' : ''}`}
-                title={liveFades.cued.includes(t.id) ? 'Comes in at the start of the next loop' : liveFades.down.includes(t.id) ? 'Bring in at the start of the next loop' : 'Switch off'}
-                aria-label={`Mute ${t.name}`}
-                onClick={() => liveFades.toggle(t.id)}
-              >
-                M
-              </button>
-            ) : (
-              <button className={`ms ${t.muted ? 'on' : ''}`} title="Mute" aria-label={`Mute ${t.name}`} onClick={() => flag(t, { muted: !t.muted })}>
-                M
-              </button>
-            )}
-            <button className={`ms solo ${t.solo ? 'on' : ''}`} title="Solo" aria-label={`Solo ${t.name}`} onClick={() => flag(t, { solo: !t.solo })}>
-              S
-            </button>
-            <button
-              className={`ms lock ${t.locked ? 'on' : ''}`}
-              title={t.locked ? 'Locked — Mutate leaves this channel alone. Click to unlock' : 'Lock this channel against Mutate'}
-              aria-label={`${t.locked ? 'Unlock' : 'Lock'} ${t.name}`}
-              aria-pressed={!!t.locked}
-              onClick={() => flag(t, { locked: !t.locked })}
-            >
-              <Icon name={t.locked ? 'lock' : 'unlock'} size={10} />
-            </button>
-          </div>
-          {/* the number is a tick: click it to select several */}
-          <span
-            className="ch-num"
-            style={{ background: t.color }}
-            title={`${many && picked.includes(t.id) ? 'Take out of' : 'Add to'} the selection (also ⌘-click the channel, ⇧-click for a run). Drag the channel to move it`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (justDragged.current) return;
-              pickTrack(t.id, e.shiftKey ? 'range' : 'toggle');
-            }}
-          >
-            {i + 1}
-          </span>
-          <div style={{ minWidth: 0 }} title={`${voiceLabel(t.waveform)}${t.playMode === 'glide' ? ' · glide' : ''} · ${t.steps} steps`}>
-            <div className="track-name">
-              {t.name}
-              {stretchOf(t) !== 1 && <small className="stretch-badge">×{Number(stretchOf(t).toFixed(3))}</small>}
-            </div>
-          </div>
-          <span className={`led ${audible.has(t.id) ? 'on' : ''}`} title={audible.has(t.id) ? 'Sounding' : t.muted ? 'Muted' : 'Silent — another channel is soloed'} />
-          <div className="track-actions" onClick={(e) => e.stopPropagation()}>
-            <button className="ms remove" title="Duplicate channel — every node, value and slider" aria-label={`Duplicate ${t.name}`} onClick={() => duplicateTrack(t.id)}>
-              <Icon name="copy" size={11} />
-            </button>
-            <button className="ms remove" title="Remove channel (⌘Z to undo)" aria-label={`Remove ${t.name}`} onClick={() => removeTrack(t.id)}>
-              <Icon name="close" size={11} />
-            </button>
-          </div>
-        </div>
-      ))}
+      {rows.map((r, ri) =>
+        r.kind === 'head' ? (
+          <GroupHead key={r.group.id} group={r.group} tracks={r.tracks} row={ri} drop={dropAt(ri)} dragged={!!drag && r.tracks.every((t) => drag.ids.includes(t.id))} justDragged={justDragged} onPointerDown={(e) => onPointerDown(e, r.tracks.map((t) => t.id), r.group.id)} />
+        ) : (
+          trackRow(r.t, r.i, ri)
+        ),
+      )}
       {project.tracks.length === 0 && <p className="muted serif">An empty track. Plant something below.</p>}
       </div>
 

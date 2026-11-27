@@ -18,8 +18,9 @@ import { MidiDropOverlay, MidiImportSheet, isMidiFile, openMidiFile, useMidiImpo
 import { saveGarden } from './components/GardenMenu';
 import { paintOverlays } from './components/overlays';
 
+// a tick box or a slider isn't typing: Space still plays
 const isTyping = (t: EventTarget | null) =>
-  t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
+  t instanceof HTMLElement && (t.isContentEditable || ['TEXTAREA', 'SELECT'].includes(t.tagName) || (t instanceof HTMLInputElement && !['checkbox', 'radio', 'range', 'button'].includes(t.type)));
 
 // development only: lets in-browser checks listen to the very engine that is playing
 if (import.meta.env.DEV) (window as unknown as { __engine: typeof engine }).__engine = engine;

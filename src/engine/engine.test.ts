@@ -8,7 +8,7 @@ import { compose, toSource, toTex, trackCode } from './symbolic';
 import { compileGraph, euclid, evalCurve, NODE_DEFS, parseCurve } from './graph';
 import { docFor } from './nodeDocs';
 import { exportMidi, collectNotes, simplifyCurve, CURVE_TOLERANCE } from './midi';
-import { patternBeats, songWindows, stretchOf } from './project';
+import { groupRuns, patternBeats, songWindows, stretchOf } from './project';
 import { degreeToMidi, SCALES, valueToMidi } from './music';
 import { CHANNEL_PALETTE, KITS, PRESETS, defaultProject, pickColor, trackFromPreset, trackFromTemplate, voicedInversion, voicedPitch, wire, type Preset } from './presets';
 
@@ -1947,5 +1947,49 @@ describe('reordering and selecting several channels', () => {
     st().removeTracks(pickedIds(st()));
     expect(order()).toBe('abcd');
     expect(picked()).toBe('d');
+  });
+});
+
+describe('groups of channels', () => {
+  const st = () => useStore.getState();
+  const list = () => st().project.tracks.map((t) => `${t.group ? `${st().project.groups!.find((g) => g.id === t.group)!.name}/` : ''}${t.id}`).join(' ');
+  const fresh = () => {
+    const [base] = defaultProject().tracks;
+    const tracks = ['a', 'b', 'c', 'd', 'e'].map((id): Track => ({ ...structuredClone(base), id, name: id }));
+    useStore.setState({ project: { ...defaultProject(), tracks, groups: [] }, past: [], future: [], selectedTrackId: 'a', picked: [] });
+  };
+
+  it('gathers a group where its first channel is, names it, and lets it go', () => {
+    fresh();
+    const g = st().groupTracks(['b', 'e'])!;
+    expect(list()).toBe('a Group 1/b Group 1/e c d');
+    st().updateGroup(g, { name: 'Drums' });
+    expect(list()).toBe('a Drums/b Drums/e c d');
+    st().groupTracks(['c']);
+    expect(st().project.groups!.map((x) => x.name)).toEqual(['Drums', 'Group 1']);
+    st().ungroup(g);
+    expect(list()).toBe('a b e Group 1/c d');
+  });
+
+  it('joins, leaves and moves as a whole; an empty group is gone', () => {
+    fresh();
+    st().groupTracks(['b', 'c']);
+    st().moveTracks(['e'], 2, st().project.groups![0].id);
+    expect(list()).toBe('a Group 1/b Group 1/e Group 1/c d');
+    st().moveTracks(['b'], 5, null);
+    expect(list()).toBe('a Group 1/e Group 1/c d b');
+    st().moveTracks(['e', 'c'], 5);
+    expect(list()).toBe('a d b Group 1/e Group 1/c');
+    st().removeTracks(['e', 'c']);
+    expect(st().project.groups).toEqual([]);
+  });
+
+  it('keeps a saved project sound: scattered channels are brought together, unknown groups dropped', () => {
+    const [base] = defaultProject().tracks;
+    const t = (id: string, group?: string): Track => ({ ...structuredClone(base), id, name: id, group });
+    const p = normalizeProject({ ...defaultProject(), groups: [{ id: 'g', name: 'G' }, { id: 'empty', name: 'E' }], tracks: [t('a', 'g'), t('b'), t('c', 'g'), t('d', 'nope')] });
+    expect(p.tracks.map((x) => `${x.id}${x.group ?? ''}`)).toEqual(['ag', 'cg', 'b', 'd']);
+    expect(p.groups!.map((g) => g.id)).toEqual(['g']);
+    expect(groupRuns(p).map((r) => [r.group?.name ?? '-', r.tracks.length])).toEqual([['G', 2], ['-', 1], ['-', 1]]);
   });
 });
